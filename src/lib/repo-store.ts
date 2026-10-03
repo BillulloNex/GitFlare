@@ -651,10 +651,10 @@ Repository hosted on **GitFlare** — GitHub on Cloudflare Workers edge.
 
 \`\`\`bash
 # Clone repository
-git clone https://gitflare.thomas-aed.workers.dev/git/${repoName}.git
+git clone https://git.beenex.company/git/${repoName}.git
 
 # Add remote to existing repository
-git remote add gitflare https://gitflare.thomas-aed.workers.dev/git/${repoName}.git
+git remote add gitflare https://git.beenex.company/git/${repoName}.git
 git push gitflare main
 \`\`\`
 

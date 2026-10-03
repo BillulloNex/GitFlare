@@ -40,7 +40,7 @@ export async function handleCIJob(message: CIJobMessage, env: Env): Promise<void
 							branch: message.branch,
 							commitSha: message.commitSha,
 							coolifyAppId: t.coolify_app_id,
-								callbackUrl: 'https://gitflare.thomas-aed.workers.dev/api/internal/ci/callback'
+							callbackUrl: 'https://git.beenex.company/api/internal/ci/callback'
 						})
 					});
 
