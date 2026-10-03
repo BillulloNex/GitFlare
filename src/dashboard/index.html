@@ -389,6 +389,8 @@
             const list = document.getElementById('repoList');
             list.innerHTML = '';
             repos.forEach(repo => {
+                repo.status = repo.status || 'active';
+                repo.remote = repo.remote || `${window.location.origin}/git/${repo.name}`;
                 const li = document.createElement('li');
                 li.className = `repo-item ${activeRepo === repo.name ? 'active' : ''}`;
                 li.onclick = () => selectRepo(repo);
@@ -396,7 +398,7 @@
                 li.innerHTML = `
                     <div class="repo-name">${repo.name}</div>
                     <div class="repo-status">
-                        <div class="status-dot ${repo.status}"></div>
+                        <div class="status-dot ${repo.status === 'active' ? 'running' : repo.status}"></div>
                         ${repo.status}
                     </div>
                 `;
@@ -406,6 +408,7 @@
 
         function selectRepo(repo) {
             activeRepo = repo.name;
+            repo.remote = repo.remote || `${window.location.origin}/git/${repo.name}`;
             renderRepoList();
             renderRepoDetails(repo);
             connectToLogs(repo.name);
@@ -417,45 +420,48 @@
                 <div class="repo-header">
                     <h2>${repo.name}</h2>
                     <div class="clone-url">
-                        <span>${repo.remote || `https://gitflare.example.com/${repo.name}.git`}</span>
+                        <span id="cloneUrlText">${repo.remote}</span>
                         <button class="btn btn-small" onclick="navigator.clipboard.writeText('${repo.remote}')">Copy</button>
                     </div>
                 </div>
 
                 <div class="tabs">
                     <div class="tab active" onclick="switchTab(this, 'code')">Code</div>
-                    <div class="tab" onclick="switchTab(this, 'ci')">CI Runs</div>
-                    <div class="tab" onclick="switchTab(this, 'deploy')">Deploy Targets</div>
+                    <div class="tab" onclick="switchTab(this, 'ci'); fetchCIRuns('${repo.name}')">CI Runs</div>
+                    <div class="tab" onclick="switchTab(this, 'deploy'); fetchDeployTargets('${repo.name}')">Deploy Targets</div>
                 </div>
 
                 <div id="code" class="tab-content active">
                     <div class="card">
-                        <h3>Repository Empty</h3>
-                        <p style="color: var(--text-muted); margin-bottom: 1rem;">Push code to this repository to get started.</p>
+                        <h3>Repository Remote</h3>
+                        <p style="color: var(--text-muted); margin-bottom: 1rem;">Push code to GitFlare to automatically trigger CI/CD pipelines and Coolify deployments.</p>
                         <pre style="background: var(--bg-dark); padding: 1rem; border-radius: 4px; border: 1px solid var(--border); color: var(--text-muted);">
-git clone ${repo.remote}
-cd ${repo.name}
-touch README.md
-git add README.md
-git commit -m "Initial commit"
-git push -u origin main</pre>
+# Add GitFlare remote
+git remote add gitflare ${repo.remote}
+
+# Push changes to deploy
+git push gitflare main</pre>
                     </div>
                 </div>
 
                 <div id="ci" class="tab-content">
                     <div class="card">
-                        <h3>Recent Runs</h3>
-                        <table>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                            <h3>Pipeline Runs</h3>
+                            <button class="btn btn-small" onclick="fetchCIRuns('${repo.name}')">Refresh</button>
+                        </div>
+                        <table style="width:100%; border-collapse:collapse;">
                             <thead>
-                                <tr><th>Commit</th><th>Branch</th><th>Status</th><th>Duration</th></tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td style="font-family:monospace">a1b2c3d</td>
-                                    <td>main</td>
-                                    <td><span style="color:var(--success)">Passed</span></td>
-                                    <td>45s</td>
+                                <tr style="border-bottom:1px solid var(--border); text-align:left;">
+                                    <th style="padding:8px 0;">Commit</th>
+                                    <th>Branch</th>
+                                    <th>Trigger</th>
+                                    <th>Status</th>
+                                    <th>Finished</th>
                                 </tr>
+                            </thead>
+                            <tbody id="ciRunsTableBody">
+                                <tr><td colspan="5" style="color:var(--text-muted); padding:12px 0;">Loading pipeline runs...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -463,14 +469,80 @@ git push -u origin main</pre>
 
                 <div id="deploy" class="tab-content">
                     <div class="card">
-                        <div style="display:flex; justify-content:space-between; margin-bottom:1rem;">
-                            <h3>Coolify Targets</h3>
-                            <button class="btn btn-small">Add Target</button>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                            <h3>Coolify Deploy Targets</h3>
+                            <button class="btn btn-small" onclick="fetchDeployTargets('${repo.name}')">Refresh</button>
                         </div>
-                        <p style="color:var(--text-muted)">No deployment targets configured yet.</p>
+                        <div id="deployTargetsContainer" style="color:var(--text-muted);">Loading targets...</div>
                     </div>
                 </div>
             `;
+        }
+
+        async function fetchCIRuns(repoName) {
+            const tbody = document.getElementById('ciRunsTableBody');
+            if (!tbody) return;
+            try {
+                const res = await fetch(`${API_BASE}/repos/${repoName}/ci/runs`, { headers: authHeaders() });
+                if (!res.ok) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--danger)">Failed to load CI runs</td></tr>';
+                    return;
+                }
+                const { data } = await res.json();
+                if (!data || !data.length) {
+                    tbody.innerHTML = '<tr><td colspan="5" style="color:var(--text-muted); padding:12px 0;">No CI runs yet. Push code to trigger one!</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = data.map(run => {
+                    const statusColor = run.status === 'passed' ? 'var(--success)' : run.status === 'failed' ? 'var(--danger)' : 'var(--accent)';
+                    const commitDisplay = run.commit_sha ? run.commit_sha.substring(0, 7) : 'HEAD';
+                    const timeAgo = run.finished_at ? new Date(run.finished_at).toLocaleTimeString() : run.status;
+                    return `
+                        <tr style="border-bottom:1px solid #222;">
+                            <td style="font-family:monospace; padding:8px 0;">${commitDisplay}</td>
+                            <td>${run.branch}</td>
+                            <td><span style="font-size:12px; background:#222; padding:2px 6px; border-radius:3px;">${run.trigger}</span></td>
+                            <td><span style="color:${statusColor}; font-weight:600; text-transform:capitalize;">${run.status}</span></td>
+                            <td style="color:var(--text-muted); font-size:13px;">${timeAgo}</td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (e) {
+                tbody.innerHTML = '<tr><td colspan="5" style="color:var(--danger)">Error fetching runs</td></tr>';
+            }
+        }
+
+        async function fetchDeployTargets(repoName) {
+            const container = document.getElementById('deployTargetsContainer');
+            if (!container) return;
+            try {
+                const res = await fetch(`${API_BASE}/repos/${repoName}/deploys`, { headers: authHeaders() });
+                if (!res.ok) {
+                    container.innerHTML = '<p style="color:var(--danger)">Failed to load deploy targets</p>';
+                    return;
+                }
+                const { data } = await res.json();
+                if (!data || !data.length) {
+                    container.innerHTML = '<p style="color:var(--text-muted)">No deployment targets configured yet.</p>';
+                    return;
+                }
+                container.innerHTML = data.map(t => `
+                    <div style="background:var(--bg-dark); border:1px solid var(--border); border-radius:6px; padding:12px; margin-bottom:10px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                            <strong style="color:var(--text); font-size:15px;">${t.name}</strong>
+                            <span style="color:var(--success); font-size:12px; font-weight:600; text-transform:uppercase;">${t.type}</span>
+                        </div>
+                        <div style="font-size:13px; color:var(--text-muted); margin-bottom:4px;">
+                            App UUID: <code style="color:var(--accent);">${t.coolify_app_id || 'N/A'}</code>
+                        </div>
+                        <div style="font-size:13px; color:var(--text-muted);">
+                            Branches: <code style="color:var(--text);">${t.branch_filter || 'all'}</code>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                container.innerHTML = '<p style="color:var(--danger)">Error fetching deploy targets</p>';
+            }
         }
 
         function showCreateRepo() {
