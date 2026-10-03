@@ -39,7 +39,7 @@ export class CoolifyClient {
 	 * Deploy an application
 	 */
 	async deploy(appId: string): Promise<any> {
-		return this.request(`/api/v1/applications/${appId}/deploy`, {
+		return this.request(`/api/v1/deploy?uuid=${appId}&force=false`, {
 			method: 'POST'
 		});
 	}

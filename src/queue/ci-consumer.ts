@@ -61,25 +61,30 @@ export async function handleCIJob(message: CIJobMessage, env: Env): Promise<void
 				}
 
 				if (useFallback) {
-					const runId = crypto.randomUUID();
-					await DB.prepare('INSERT INTO deployments (id, repo_id, target_id, status, created_at) VALUES (?, ?, ?, ?, ?)')
-						.bind(runId, message.repoId, t.id, 'queued', new Date().toISOString()).run();
+					const baseUrl = (t.coolify_base_url as string) || env.COOLIFY_BASE_URL;
+					const apiKey = (t.coolify_api_key_encrypted as string) || (t.coolify_api_key as string) || env.COOLIFY_API_KEY;
+					if (baseUrl && apiKey && t.coolify_app_id) {
+						const client = new CoolifyClient(baseUrl, apiKey);
+						try {
+							const deployRes = await client.deploy(t.coolify_app_id as string);
+							console.log("Coolify deploy triggered successfully:", JSON.stringify(deployRes));
 
-					await DEPLOY_QUEUE.send({
-						runId,
-						repoId: message.repoId,
-						repoName: message.repoName,
-						branch: message.branch,
-						commitSha: message.commitSha,
-						target: {
-							id: t.id as string,
-							type: "coolify",
-							coolifyAppId: t.coolify_app_id as string,
-							coolifyBaseUrl: t.coolify_base_url as string,
-							coolifyApiKey: t.coolify_api_key as string,
-							branchFilter: branchFilter
+							const stepId = crypto.randomUUID();
+							await DB.prepare('INSERT INTO ci_steps (id, run_id, job_name, name, status, finished_at, exit_code) VALUES (?, ?, ?, ?, ?, ?, ?)')
+								.bind(stepId, message.runId, 'deploy', 'Coolify Deploy', 'passed', new Date().toISOString(), 0).run();
+
+							await DB.prepare("UPDATE ci_runs SET status = 'passed', finished_at = ? WHERE id = ?")
+								.bind(new Date().toISOString(), message.runId).run();
+
+							runnerHandled = true;
+						} catch (deployErr: any) {
+							console.error("Direct deploy failed:", deployErr);
+							const stepId = crypto.randomUUID();
+							await DB.prepare('INSERT INTO ci_steps (id, run_id, job_name, name, status, finished_at, exit_code) VALUES (?, ?, ?, ?, ?, ?, ?)')
+								.bind(stepId, message.runId, 'deploy', 'Coolify Deploy', 'failed', new Date().toISOString(), 1).run();
+							throw deployErr;
 						}
-					});
+					}
 				}
 			} else {
 				const runId = crypto.randomUUID();
