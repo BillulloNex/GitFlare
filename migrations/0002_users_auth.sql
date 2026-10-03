@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS repo_members (
 );
 CREATE INDEX IF NOT EXISTS idx_repo_members_user ON repo_members(user_id);
 
--- ─── Link API keys to users ─────────────────────────────────────
-ALTER TABLE api_keys ADD COLUMN user_id TEXT REFERENCES users(id) ON DELETE SET NULL;
+-- ─── Link API keys to users ────────────────────────────────────
+-- user_id column already exists (added prior to migration tracking)
+-- ALTER TABLE api_keys ADD COLUMN user_id TEXT REFERENCES users(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id);
