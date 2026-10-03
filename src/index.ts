@@ -17,6 +17,7 @@ import authApp from './api/auth.ts';
 import keysApp from './api/keys.ts';
 import { handleCIJob, handleDeployJob } from './queue/ci-consumer.ts';
 import dashboardHtml from './dashboard/index.html';
+import logoPng from '../assets/octopus-on-fire.png';
 
 // ─── Re-export Durable Objects ──────────────────────────────────
 export { RepoCoordinator } from './do/repo-coordinator.ts';
@@ -32,11 +33,21 @@ app.use('/api/*', logger());
 
 // ─── Public Routes (no auth required) ───────────────────────────
 
+// Serve the app logo
+app.get('/logo.png', (c) => {
+	return new Response(logoPng, {
+		headers: {
+			'Content-Type': 'image/png',
+			'Cache-Control': 'public, max-age=86400',
+		},
+	});
+});
+
 app.get('/health', (c) => {
 	return c.json({
 		service: 'gitflare',
 		status: 'ok',
-		version: c.env.GITFLARE_VERSION ?? '0.1.0',
+		version: c.env.GITFLARE_VERSION ?? '1.0.0',
 	});
 });
 
@@ -53,7 +64,7 @@ app.get('/', async (c) => {
 	return c.json({
 		service: 'gitflare',
 		status: 'ok',
-		version: c.env.GITFLARE_VERSION ?? '0.1.0',
+		version: c.env.GITFLARE_VERSION ?? '1.0.0',
 	});
 });
 
