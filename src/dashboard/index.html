@@ -317,30 +317,67 @@
         let repos = [];
         let activeRepo = null;
         let ws = null;
+        let apiKey = localStorage.getItem('gf_api_key') || '';
 
-        // Mock API base URL (in real app, it's the same domain)
         const API_BASE = '/api';
+
+        function authHeaders() {
+            return { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' };
+        }
+
+        function showKeyPrompt(msg) {
+            document.getElementById('mainContent').innerHTML = `
+                <div style="display:flex; flex-direction:column; justify-content:center; align-items:center; height:100%; gap:16px;">
+                    <div style="font-size:1.4rem; color:var(--text-primary);">🔑 API Key Required</div>
+                    <p style="color:var(--text-muted); max-width:400px; text-align:center;">${msg || 'Enter your GitFlare API key to view repositories.'}</p>
+                    <div style="display:flex; gap:8px; width:100%; max-width:480px;">
+                        <input id="keyInput" type="password" placeholder="gf_..." 
+                            style="flex:1; padding:10px 14px; border-radius:8px; border:1px solid var(--border); background:var(--bg-secondary); color:var(--text-primary); font-size:0.95rem; font-family:monospace;"
+                            onkeydown="if(event.key==='Enter')submitKey()" />
+                        <button class="btn" onclick="submitKey()" style="padding:10px 20px;">Connect</button>
+                    </div>
+                </div>`;
+            setTimeout(() => document.getElementById('keyInput')?.focus(), 100);
+        }
+
+        function submitKey() {
+            const val = document.getElementById('keyInput')?.value?.trim();
+            if (val) {
+                apiKey = val;
+                localStorage.setItem('gf_api_key', apiKey);
+                fetchRepos();
+            }
+        }
 
         // Initialize
         async function init() {
+            if (!apiKey) {
+                showKeyPrompt();
+                return;
+            }
             await fetchRepos();
         }
 
         async function fetchRepos() {
-            // Replace with real fetch
             try {
-                const res = await fetch(`${API_BASE}/repos`);
+                const res = await fetch(`${API_BASE}/repos`, { headers: authHeaders() });
                 if(res.ok) {
                     const data = await res.json();
                     repos = data.repos || [];
                     renderRepoList();
+                    if (repos.length && !activeRepo) selectRepo(repos[0]);
+                    else if (!repos.length) {
+                        document.getElementById('mainContent').innerHTML = `
+                            <div style="display:flex; justify-content:center; align-items:center; height:100%; color:var(--text-muted)">
+                                No repositories yet. Click <b style="color:var(--accent); margin:0 4px;">+</b> to create one.
+                            </div>`;
+                    }
+                } else if (res.status === 401 || res.status === 403) {
+                    localStorage.removeItem('gf_api_key');
+                    apiKey = '';
+                    showKeyPrompt('Invalid or expired API key. Please try again.');
                 } else {
-                    // Fallback mock data for testing UI
-                    repos = [
-                        { name: 'frontend-app', status: 'success', remote: 'https://gitflare.example.com/frontend-app.git' },
-                        { name: 'backend-api', status: 'pending', remote: 'https://gitflare.example.com/backend-api.git' },
-                        { name: 'docs', status: 'error', remote: 'https://gitflare.example.com/docs.git' }
-                    ];
+                    repos = [];
                     renderRepoList();
                 }
             } catch (e) {
@@ -503,10 +540,10 @@ git push -u origin main</pre>
                     
                     if (data.type === 'log') {
                         const line = document.createElement('div');
-                        line.className = \`log-line \${data.stream}\`;
+                        line.className = `log-line ${data.stream}`;
                         
                         const time = new Date(data.timestamp).toLocaleTimeString();
-                        line.innerHTML = \`<span class="timestamp">[\${time}]</span><span class="step">\${data.step}</span>\${data.line}\`;
+                        line.innerHTML = `<span class="timestamp">[${time}]</span><span class="step">${data.step}</span>${data.line}`;
                         
                         logContent.appendChild(line);
                         logContent.scrollTop = logContent.scrollHeight;
@@ -519,7 +556,7 @@ git push -u origin main</pre>
                     document.getElementById('logStatus').textContent = 'Disconnected';
                 };
             } catch(e) {
-                logContent.innerHTML += \`\\n<div style="color:var(--error)">Failed to connect to WebSocket: \${e.message}</div>\`;
+                logContent.innerHTML += `\n<div style="color:var(--error)">Failed to connect to WebSocket: ${e.message}</div>`;
             }
         }
 

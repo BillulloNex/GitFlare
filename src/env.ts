@@ -92,6 +92,8 @@ export interface Env {
 	GITFLARE_VERSION: string;
 	DEFAULT_SANDBOX_TIER: string;
 	MAX_CI_DURATION_MS: string;
+	RUNNER_URL: string;
+	RUNNER_SECRET: string;
 }
 
 // ─── Queue Message Types ────────────────────────────────────────

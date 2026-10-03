@@ -8,6 +8,7 @@ import gitApp from './api/git.ts';
 import ciApp from './api/ci.ts';
 import deployApp from './api/deploy.ts';
 import bootstrapApp from './api/bootstrap.ts';
+import internal from './api/internal.ts';
 import { handleCIJob, handleDeployJob } from './queue/ci-consumer.ts';
 import dashboardHtml from './dashboard/index.html';
 
@@ -55,6 +56,9 @@ app.get('/', (c) => {
 // ─── API Routes ─────────────────────────────────────────────────
 // ─── Bootstrap (uses ADMIN_API_KEY secret, no D1 key needed) ────
 app.route('/api/bootstrap', bootstrapApp);
+
+// Internal runner callbacks
+app.route('/api', internal);
 
 // Repo CRUD
 app.route('/api/repos', reposApp);

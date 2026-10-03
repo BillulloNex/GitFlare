@@ -1,0 +1,10 @@
+services:
+  runner:
+    build: .
+    ports:
+      - "7654:7654"
+    environment:
+      - RUNNER_SECRET=${RUNNER_SECRET}
+      - COOLIFY_BASE_URL=${COOLIFY_BASE_URL}
+      - COOLIFY_API_KEY=${COOLIFY_API_KEY}
+    restart: unless-stopped
