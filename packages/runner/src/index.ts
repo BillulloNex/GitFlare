@@ -74,7 +74,7 @@ const server = http.createServer((req, res) => {
             return;
           }
 
-          const coolifyRes = await fetch(`${COOLIFY_BASE_URL}/api/v1/applications/${coolifyAppId}/deploy`, {
+          const coolifyRes = await fetch(`${COOLIFY_BASE_URL}/api/v1/deploy?uuid=${coolifyAppId}&force=false`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${COOLIFY_API_KEY}`,
@@ -91,8 +91,8 @@ const server = http.createServer((req, res) => {
             return;
           }
 
-          const coolifyData = await coolifyRes.json();
-          const deploymentUuid = coolifyData.deployment_uuid || coolifyData.uuid || coolifyData.id;
+          const coolifyData = await coolifyRes.json() as any;
+          const deploymentUuid = coolifyData.deployments?.[0]?.deployment_uuid || coolifyData.deployment_uuid || coolifyData.uuid;
           
           res.writeHead(202, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ status: 'accepted', deploymentUuid }));
