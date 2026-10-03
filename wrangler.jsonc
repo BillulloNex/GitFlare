@@ -20,7 +20,7 @@
 		{
 			"binding": "DB",
 			"database_name": "gitflare-db",
-			"database_id": "00000000-0000-0000-0000-000000000000",
+			"database_id": "4c45888c-4159-4f7a-9733-afedf181cf25",
 			"migrations_dir": "migrations"
 		}
 	],
@@ -37,7 +37,7 @@
 	"kv_namespaces": [
 		{
 			"binding": "CACHE",
-			"id": "00000000000000000000000000000000"
+			"id": "4307512814534b69a9ef37a04522f4ca"
 		}
 	],
 
