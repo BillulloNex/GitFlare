@@ -1,122 +1,149 @@
 import { createMiddleware } from 'hono/factory';
-import type { Env, ApiKey } from '../env.ts';
+import type { Env, ApiKey, UserRecord } from '../env.ts';
+import { validateSession } from '../lib/session.ts';
 
-type ContextVariables = {
-  apiKey: ApiKey;
+// ─── Auth Context ───────────────────────────────────────────────
+// Every authenticated request has either a user (session) or an apiKey, or both.
+
+type AuthVariables = {
+    user: UserRecord | null;
+    apiKey: ApiKey | null;
+    authType: 'session' | 'apikey' | 'none';
 };
+
+export type { AuthVariables };
 
 /**
  * Hashes the API key using SHA-256 for secure storage lookup.
- * @param key The raw API key string.
- * @returns The hex string representation of the hashed key.
  */
 async function hashKey(key: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(key);
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-  const hashArray = Array.from(new Uint8Array(hashBuffer));
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    const encoder = new TextEncoder();
+    const data = encoder.encode(key);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**
- * Middleware that extracts and validates the API key.
- * Supports Bearer and Basic authentication schemes.
+ * Extract API key from Authorization header.
  */
-export const auth = createMiddleware<{ Bindings: Env; Variables: ContextVariables }>(async (c, next) => {
-  const authHeader = c.req.header('Authorization');
-  let rawKey = '';
-
-  if (!authHeader) {
-    return c.json({ error: 'Unauthorized: Missing Authorization header' }, 401);
-  }
-
-  if (authHeader.startsWith('Bearer ')) {
-    rawKey = authHeader.substring(7);
-  } else if (authHeader.startsWith('Basic ')) {
-    const b64 = authHeader.substring(6);
-    const decoded = atob(b64);
-    const parts = decoded.split(':');
-    if (parts.length === 2) {
-      rawKey = parts[1]; // password is the key
-    } else {
-      rawKey = decoded;
+function extractApiKeyFromHeader(authHeader: string): string | null {
+    if (authHeader.startsWith('Bearer ')) {
+        return authHeader.substring(7);
     }
-  } else {
-    return c.json({ error: 'Unauthorized: Unsupported Authorization type' }, 401);
-  }
-
-  if (!rawKey) {
-    return c.json({ error: 'Unauthorized: Empty token' }, 401);
-  }
-
-  const hashedKey = await hashKey(rawKey);
-
-  const keyRecord = await c.env.DB
-    .prepare('SELECT * FROM api_keys WHERE key_hash = ? AND (expires_at IS NULL OR expires_at > ?)')
-    .bind(hashedKey, new Date().toISOString())
-    .first<ApiKey>();
-
-  if (!keyRecord) {
-    return c.json({ error: 'Unauthorized: Invalid or expired token' }, 401);
-  }
-
-  // Update last_used_at in background
-  c.executionCtx.waitUntil(
-    c.env.DB.prepare('UPDATE api_keys SET last_used_at = ? WHERE id = ?')
-      .bind(new Date().toISOString(), keyRecord.id)
-      .run()
-  );
-
-  c.set('apiKey', keyRecord);
-  await next();
-});
+    if (authHeader.startsWith('Basic ')) {
+        const decoded = atob(authHeader.substring(6));
+        const parts = decoded.split(':');
+        return parts.length === 2 ? parts[1] : decoded;
+    }
+    return null;
+}
 
 /**
- * Lenient middleware that validates API key if provided, but allows public access if omitted.
+ * Look up and validate an API key from D1.
  */
-export const optionalAuth = createMiddleware<{ Bindings: Env; Variables: Partial<ContextVariables> }>(async (c, next) => {
-  const authHeader = c.req.header('Authorization');
-  if (!authHeader) {
-    return await next();
-  }
-
-  let rawKey = '';
-  if (authHeader.startsWith('Bearer ')) {
-    rawKey = authHeader.substring(7);
-  } else if (authHeader.startsWith('Basic ')) {
-    const b64 = authHeader.substring(6);
-    const decoded = atob(b64);
-    const parts = decoded.split(':');
-    rawKey = parts.length === 2 ? parts[1] : decoded;
-  }
-
-  if (rawKey) {
+async function lookupApiKey(db: D1Database, rawKey: string): Promise<ApiKey | null> {
     const hashedKey = await hashKey(rawKey);
-    const keyRecord = await c.env.DB
-      .prepare('SELECT * FROM api_keys WHERE key_hash = ? AND (expires_at IS NULL OR expires_at > ?)')
-      .bind(hashedKey, new Date().toISOString())
-      .first<ApiKey>();
-    if (keyRecord) {
-      c.set('apiKey', keyRecord);
-    }
-  }
+    return await db
+        .prepare('SELECT * FROM api_keys WHERE key_hash = ? AND (expires_at IS NULL OR expires_at > ?)')
+        .bind(hashedKey, new Date().toISOString())
+        .first<ApiKey>() ?? null;
+}
 
-  await next();
+/**
+ * Primary auth middleware: requires authentication via EITHER session cookie OR API key.
+ * Sets `user`, `apiKey`, and `authType` on the context.
+ */
+export const auth = createMiddleware<{ Bindings: Env; Variables: AuthVariables }>(async (c, next) => {
+    // 1. Try session cookie first (UI users)
+    const user = await validateSession(c.env.DB, c.req.header('Cookie'));
+    if (user) {
+        c.set('user', user);
+        c.set('apiKey', null);
+        c.set('authType', 'session');
+        return await next();
+    }
+
+    // 2. Try API key (agents / programmatic access)
+    const authHeader = c.req.header('Authorization');
+    if (authHeader) {
+        const rawKey = extractApiKeyFromHeader(authHeader);
+        if (rawKey) {
+            const keyRecord = await lookupApiKey(c.env.DB, rawKey);
+            if (keyRecord) {
+                // Update last_used_at in background
+                c.executionCtx.waitUntil(
+                    c.env.DB.prepare('UPDATE api_keys SET last_used_at = ? WHERE id = ?')
+                        .bind(new Date().toISOString(), keyRecord.id)
+                        .run()
+                );
+                c.set('user', null);
+                c.set('apiKey', keyRecord);
+                c.set('authType', 'apikey');
+                return await next();
+            }
+        }
+    }
+
+    return c.json({ error: 'Unauthorized: Provide a session cookie or API key' }, 401);
 });
 
 /**
- * Middleware that checks if the authenticated API key has the required permission level.
- * @param requiredLevel The minimum permission level required.
+ * Lenient auth: authenticates if credentials provided, but allows anonymous access.
+ */
+export const optionalAuth = createMiddleware<{ Bindings: Env; Variables: Partial<AuthVariables> }>(async (c, next) => {
+    // Try session
+    const user = await validateSession(c.env.DB, c.req.header('Cookie'));
+    if (user) {
+        c.set('user', user);
+        c.set('apiKey', null);
+        c.set('authType', 'session');
+        return await next();
+    }
+
+    // Try API key
+    const authHeader = c.req.header('Authorization');
+    if (authHeader) {
+        const rawKey = extractApiKeyFromHeader(authHeader);
+        if (rawKey) {
+            const keyRecord = await lookupApiKey(c.env.DB, rawKey);
+            if (keyRecord) {
+                c.set('user', null);
+                c.set('apiKey', keyRecord);
+                c.set('authType', 'apikey');
+            }
+        }
+    }
+
+    return await next();
+});
+
+/**
+ * Permission check middleware. Works with both session users and API keys.
+ * For session users: checks user.role (admin has all permissions).
+ * For API keys: checks key.permissions level.
  */
 export const requirePermission = (requiredLevel: 'read' | 'write' | 'admin') => {
-  return createMiddleware<{ Bindings: Env; Variables: ContextVariables }>(async (c, next) => {
-    const key = c.get('apiKey');
-    const levels = { read: 0, write: 1, admin: 2 };
-    
-    if (!key || levels[key.permissions as keyof typeof levels] < levels[requiredLevel]) {
-      return c.json({ error: `Forbidden: Requires ${requiredLevel} permission` }, 403);
-    }
-    
-    await next();
-  });
+    return createMiddleware<{ Bindings: Env; Variables: AuthVariables }>(async (c, next) => {
+        const levels = { read: 0, write: 1, admin: 2 };
+        const authType = c.get('authType');
+
+        if (authType === 'session') {
+            const user = c.get('user');
+            // Session users get write by default, admin if user.role === 'admin'
+            const userLevel = user?.role === 'admin' ? 2 : 1;
+            if (userLevel < levels[requiredLevel]) {
+                return c.json({ error: `Forbidden: Requires ${requiredLevel} permission` }, 403);
+            }
+        } else if (authType === 'apikey') {
+            const key = c.get('apiKey');
+            if (!key || levels[key.permissions as keyof typeof levels] < levels[requiredLevel]) {
+                return c.json({ error: `Forbidden: Requires ${requiredLevel} permission` }, 403);
+            }
+        } else {
+            return c.json({ error: 'Unauthorized' }, 401);
+        }
+
+        await next();
+    });
 };

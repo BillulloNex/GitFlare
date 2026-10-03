@@ -88,6 +88,9 @@ export interface Env {
 	COOLIFY_API_KEY: string;
 	COOLIFY_BASE_URL: string;
 	ADMIN_API_KEY: string;
+	GOOGLE_CLIENT_ID: string;
+	GOOGLE_CLIENT_SECRET: string;
+	SESSION_SECRET: string;
 
 	// ── Vars (from wrangler.jsonc) ──
 	GITFLARE_VERSION: string;
@@ -95,6 +98,7 @@ export interface Env {
 	MAX_CI_DURATION_MS: string;
 	RUNNER_URL: string;
 	RUNNER_SECRET: string;
+	APP_URL: string; // e.g., https://git.beenex.company
 }
 
 // ─── Queue Message Types ────────────────────────────────────────
@@ -194,6 +198,7 @@ export interface APIKeyRecord {
 	id: string;
 	name: string;
 	repo_id: string | null; // null = all repos
+	user_id: string | null;
 	permissions: string; // "read" | "write" | "admin"
 	created_at: string;
 	expires_at: string | null;
@@ -201,3 +206,30 @@ export interface APIKeyRecord {
 
 /** Alias for downstream modules that import as ApiKey */
 export type ApiKey = APIKeyRecord;
+
+// ─── User & Session Types ───────────────────────────────────────
+
+export interface UserRecord {
+    id: string;
+    google_id: string | null;
+    email: string;
+    name: string;
+    avatar_url: string | null;
+    role: 'user' | 'admin';
+    created_at: string;
+    updated_at: string;
+}
+
+export interface SessionRecord {
+    id: string;
+    user_id: string;
+    expires_at: string;
+    created_at: string;
+}
+
+export interface RepoMemberRecord {
+    repo_id: string;
+    user_id: string;
+    role: 'read' | 'write' | 'admin';
+    created_at: string;
+}

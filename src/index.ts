@@ -11,6 +11,7 @@ import deployApp from './api/deploy.ts';
 import bootstrapApp from './api/bootstrap.ts';
 import internal from './api/internal.ts';
 import ticketsApp from './api/tickets.ts';
+import authApp from './api/auth.ts';
 import { handleCIJob, handleDeployJob } from './queue/ci-consumer.ts';
 import dashboardHtml from './dashboard/index.html';
 
@@ -57,6 +58,9 @@ app.get('/', (c) => {
 });
 
 // ─── API Routes ─────────────────────────────────────────────────
+// Authentication (Google OAuth, sessions)
+app.route('/api/auth', authApp);
+
 // ─── Bootstrap (uses ADMIN_API_KEY secret, no D1 key needed) ────
 app.route('/api/bootstrap', bootstrapApp);
 
