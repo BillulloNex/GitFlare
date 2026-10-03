@@ -6,7 +6,7 @@ const COOLIFY_BASE_URL = process.env.COOLIFY_BASE_URL || 'https://cloud.comfyspa
 const COOLIFY_API_KEY = process.env.COOLIFY_API_KEY;
 
 async function pollDeployment(deploymentUuid: string, runId: string, callbackUrl: string, startTime: number) {
-  const checkInterval = 15000;
+  const checkInterval = 2500;
   
   const poll = async () => {
     try {
