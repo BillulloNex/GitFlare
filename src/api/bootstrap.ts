@@ -32,7 +32,7 @@ app.post('/', async (c) => {
 		.join('');
 
 	const id = crypto.randomUUID();
-	const body = await c.req.json<{ name?: string }>().catch(() => ({}));
+	const body = (await c.req.json().catch(() => ({}))) as { name?: string };
 
 	await c.env.DB.prepare(
 		`INSERT INTO api_keys (id, name, key_hash, key_prefix, repo_id, permissions, created_at)
