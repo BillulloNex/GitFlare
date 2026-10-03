@@ -78,6 +78,7 @@ export interface Env {
 	// ── Durable Objects ──
 	REPO_COORDINATOR: DurableObjectNamespace;
 	CI_SESSION: DurableObjectNamespace;
+	TICKET_QUEUE: DurableObjectNamespace;
 
 	// ── AI ──
 	AI: Ai;

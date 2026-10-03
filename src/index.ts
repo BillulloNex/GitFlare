@@ -10,6 +10,7 @@ import commitsApp from './api/commits.ts';
 import deployApp from './api/deploy.ts';
 import bootstrapApp from './api/bootstrap.ts';
 import internal from './api/internal.ts';
+import ticketsApp from './api/tickets.ts';
 import { handleCIJob, handleDeployJob } from './queue/ci-consumer.ts';
 import dashboardHtml from './dashboard/index.html';
 
@@ -17,6 +18,7 @@ import dashboardHtml from './dashboard/index.html';
 // Wrangler needs these at the top level of the worker module
 export { RepoCoordinator } from './do/repo-coordinator.ts';
 export { CISession } from './do/ci-session.ts';
+export { TicketQueue } from './do/ticket-queue.ts';
 
 // ─── Hono App ───────────────────────────────────────────────────
 const app = new Hono<{ Bindings: Env }>();
@@ -72,6 +74,9 @@ app.route('/api/repos', ciApp);
 
 // Deploy targets: /api/repos/:repo/deploys/*
 app.route('/api/repos', deployApp);
+
+// Tickets & Merge Queue: /api/repos/:repo/tickets/*
+app.route('/api/repos', ticketsApp);
 
 // Repo CRUD
 app.route('/api/repos', reposApp);

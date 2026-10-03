@@ -86,6 +86,10 @@
 			{
 				"name": "CI_SESSION",
 				"class_name": "CISession"
+			},
+			{
+				"name": "TICKET_QUEUE",
+				"class_name": "TicketQueue"
 			}
 		]
 	},
@@ -109,6 +113,10 @@
 		{
 			"tag": "v1",
 			"new_sqlite_classes": ["RepoCoordinator", "CISession"]
+		},
+		{
+			"tag": "v2",
+			"new_sqlite_classes": ["TicketQueue"]
 		}
 	],
 
