@@ -233,3 +233,28 @@ export interface RepoMemberRecord {
     role: 'read' | 'write' | 'admin';
     created_at: string;
 }
+
+// ─── GitHub Mirror Types ────────────────────────────────────────
+
+export interface GitHubMirrorRecord {
+    id: string;
+    repo_id: string;
+    github_url: string;
+    is_enabled: boolean;
+    branch_filter: string[] | null;
+    last_sync_at: string | null;
+    last_sync_status: 'success' | 'failed' | 'pending' | null;
+    last_sync_error: string | null;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface MirrorSyncMessage {
+    mirrorId: string;
+    repoId: string;
+    repoName: string;
+    branches: string[];
+    commitShas: Record<string, string>;
+    githubUrl: string;
+    githubToken: string;
+}

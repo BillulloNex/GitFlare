@@ -13,6 +13,8 @@
 		"db:migrate:remote": "wrangler d1 execute gitflare-db --remote --file=migrations/0001_initial.sql",
 		"db:migrate:auth:local": "wrangler d1 execute gitflare-db --local --file=migrations/0002_users_auth.sql",
 		"db:migrate:auth:remote": "wrangler d1 execute gitflare-db --remote --file=migrations/0002_users_auth.sql",
+		"db:migrate:mirror:local": "wrangler d1 execute gitflare-db --local --file=migrations/0003_github_mirror.sql",
+		"db:migrate:mirror:remote": "wrangler d1 execute gitflare-db --remote --file=migrations/0003_github_mirror.sql",
 		"cf-typegen": "wrangler types"
 	},
 	"dependencies": {

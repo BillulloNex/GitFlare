@@ -7,6 +7,7 @@ import {
 	buildRejectResponse,
 	type RefUpdate,
 } from '../lib/git-protocol.ts';
+import { triggerGitHubMirror } from '../lib/github-mirror.ts';
 
 const app = new Hono<{ Bindings: Env; Variables: { apiKey: ApiKey } }>();
 
@@ -472,6 +473,13 @@ jobs:
 					}
 				}
 			})());
+		}
+
+		// ── Step 6.5: Mirror to GitHub (async, non-blocking) ────────
+		if (successfulBranches.length > 0) {
+			c.executionCtx.waitUntil(
+				triggerGitHubMirror(c.env, repoRecord.id, repoRecord.name, successfulBranches, successfulShas)
+			);
 		}
 
 		// ── Step 7: Release lock ────────────────────────────────────

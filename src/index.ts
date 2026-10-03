@@ -10,6 +10,7 @@ import gitApp from './api/git.ts';
 import ciApp from './api/ci.ts';
 import commitsApp from './api/commits.ts';
 import deployApp from './api/deploy.ts';
+import mirrorsApp from './api/mirrors.ts';
 import bootstrapApp from './api/bootstrap.ts';
 import internal from './api/internal.ts';
 import ticketsApp from './api/tickets.ts';
@@ -98,6 +99,9 @@ app.route('/api/repos', ciApp);
 
 // Deploy targets: /api/repos/:repo/deploys/*
 app.route('/api/repos', deployApp);
+
+// GitHub Mirror: /api/repos/:repo/mirror/*
+app.route('/api/repos', mirrorsApp);
 
 // Tickets & Merge Queue: /api/repos/:repo/tickets/*
 app.route('/api/repos', ticketsApp);
