@@ -72,6 +72,39 @@ export const auth = createMiddleware<{ Bindings: Env; Variables: ContextVariable
 });
 
 /**
+ * Lenient middleware that validates API key if provided, but allows public access if omitted.
+ */
+export const optionalAuth = createMiddleware<{ Bindings: Env; Variables: Partial<ContextVariables> }>(async (c, next) => {
+  const authHeader = c.req.header('Authorization');
+  if (!authHeader) {
+    return await next();
+  }
+
+  let rawKey = '';
+  if (authHeader.startsWith('Bearer ')) {
+    rawKey = authHeader.substring(7);
+  } else if (authHeader.startsWith('Basic ')) {
+    const b64 = authHeader.substring(6);
+    const decoded = atob(b64);
+    const parts = decoded.split(':');
+    rawKey = parts.length === 2 ? parts[1] : decoded;
+  }
+
+  if (rawKey) {
+    const hashedKey = await hashKey(rawKey);
+    const keyRecord = await c.env.DB
+      .prepare('SELECT * FROM api_keys WHERE key_hash = ? AND (expires_at IS NULL OR expires_at > ?)')
+      .bind(hashedKey, new Date().toISOString())
+      .first<ApiKey>();
+    if (keyRecord) {
+      c.set('apiKey', keyRecord);
+    }
+  }
+
+  await next();
+});
+
+/**
  * Middleware that checks if the authenticated API key has the required permission level.
  * @param requiredLevel The minimum permission level required.
  */

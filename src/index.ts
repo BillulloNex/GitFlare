@@ -6,6 +6,7 @@ import reposApp from './api/repos.ts';
 import filesApp from './api/files.ts';
 import gitApp from './api/git.ts';
 import ciApp from './api/ci.ts';
+import commitsApp from './api/commits.ts';
 import deployApp from './api/deploy.ts';
 import bootstrapApp from './api/bootstrap.ts';
 import internal from './api/internal.ts';
@@ -60,17 +61,20 @@ app.route('/api/bootstrap', bootstrapApp);
 // Internal runner callbacks
 app.route('/api', internal);
 
-// Repo CRUD
-app.route('/api/repos', reposApp);
-
-// File browsing: /api/repos/:repo/files/*
+// File browsing: /api/repos/:repo/tree, /blob, /raw
 app.route('/api/repos', filesApp);
+
+// Commits: /api/repos/:repo/commits, /api/repos/:repo/commits/:sha
+app.route('/api/repos', commitsApp);
 
 // CI pipeline: /api/repos/:repo/ci/*
 app.route('/api/repos', ciApp);
 
 // Deploy targets: /api/repos/:repo/deploys/*
 app.route('/api/repos', deployApp);
+
+// Repo CRUD
+app.route('/api/repos', reposApp);
 
 // ─── Git Smart HTTP Protocol ────────────────────────────────────
 // Standard git clone/push/pull via Smart HTTP v2
