@@ -1,44 +1,9 @@
 import { Hono } from 'hono';
-import type { Env, ApiKey } from '../env.ts';
+import type { Env } from '../env.ts';
+import type { AuthVariables } from '../middleware/auth.ts';
 import { getBranches, getRepoTree, getRepoBlob } from '../lib/repo-store.ts';
 
-const app = new Hono<{ Bindings: Env; Variables: { apiKey?: ApiKey } }>();
-
-/**
- * Optional or lenient auth: check API key if provided, or allow if public
- */
-app.use('*', async (c, next) => {
-  const authHeader = c.req.header('Authorization');
-  if (authHeader) {
-    try {
-      let rawKey = '';
-      if (authHeader.startsWith('Bearer ')) {
-        rawKey = authHeader.substring(7);
-      } else if (authHeader.startsWith('Basic ')) {
-        const b64 = authHeader.substring(6);
-        const decoded = atob(b64);
-        rawKey = decoded.includes(':') ? decoded.split(':')[1] : decoded;
-      }
-      if (rawKey) {
-        const encoder = new TextEncoder();
-        const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(rawKey));
-        const keyHash = Array.from(new Uint8Array(hashBuffer))
-          .map(b => b.toString(16).padStart(2, '0'))
-          .join('');
-        const keyRecord = await c.env.DB
-          .prepare('SELECT * FROM api_keys WHERE key_hash = ? AND (expires_at IS NULL OR expires_at > ?)')
-          .bind(keyHash, new Date().toISOString())
-          .first<ApiKey>();
-        if (keyRecord) {
-          c.set('apiKey', keyRecord);
-        }
-      }
-    } catch (e) {
-      // Ignore auth parse errors
-    }
-  }
-  await next();
-});
+const app = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
 
 /**
  * GET /:repo/branches

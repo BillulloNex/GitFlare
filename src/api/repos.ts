@@ -1,11 +1,10 @@
 import { Hono } from 'hono';
-import type { Env, ApiKey } from '../env.ts';
-import { auth, requirePermission, optionalAuth } from '../middleware/auth.ts';
+import type { Env } from '../env.ts';
+import { requirePermission } from '../middleware/auth.ts';
+import type { AuthVariables } from '../middleware/auth.ts';
 import { audit } from '../lib/audit.ts';
 
-const app = new Hono<{ Bindings: Env; Variables: { apiKey?: ApiKey } }>();
-
-app.use('*', optionalAuth);
+const app = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
 
 /**
  * List repositories with pagination.
@@ -25,7 +24,7 @@ app.get('/', async (c) => {
 /**
  * Create a new repository in Artifacts and D1.
  */
-app.post('/', auth, requirePermission('write'), async (c) => {
+app.post('/', requirePermission('write'), async (c) => {
   const body = await c.req.json<{ name: string; description?: string; is_private?: boolean; default_branch?: string }>();
   
   if (!body.name) {
@@ -63,10 +62,11 @@ app.post('/', auth, requirePermission('write'), async (c) => {
     .bind(id, body.name, body.description || null, body.is_private ? 1 : 0, body.default_branch || 'main', body.name, now, now)
     .run();
 
+  const user = c.get('user');
   const apiKey = c.get('apiKey');
   await audit(c.env.DB, {
     repoId: id,
-    actor: apiKey ? apiKey.id : 'system',
+    actor: user?.id ?? apiKey?.id ?? 'system',
     action: 'repo.create',
     details: { name: body.name },
     ipAddress: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || undefined
@@ -106,7 +106,7 @@ app.get('/:repo', async (c) => {
 /**
  * Delete a repository from Artifacts and D1.
  */
-app.delete('/:repo', auth, requirePermission('admin'), async (c) => {
+app.delete('/:repo', requirePermission('admin'), async (c) => {
   const repoName = c.req.param('repo');
 
   const repo = await c.env.DB
@@ -131,10 +131,11 @@ app.delete('/:repo', auth, requirePermission('admin'), async (c) => {
     .bind(repoName)
     .run();
 
+  const user = c.get('user');
   const apiKey = c.get('apiKey');
   await audit(c.env.DB, {
     repoId: repo.id,
-    actor: apiKey ? apiKey.id : 'system',
+    actor: user?.id ?? apiKey?.id ?? 'system',
     action: 'repo.delete',
     details: { name: repoName },
     ipAddress: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || undefined

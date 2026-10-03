@@ -1,11 +1,8 @@
 import { Hono } from 'hono';
-import type { Env, ApiKey } from '../env.ts';
-import { auth } from '../middleware/auth.ts';
+import type { Env } from '../env.ts';
+import type { AuthVariables } from '../middleware/auth.ts';
 
-const app = new Hono<{ Bindings: Env; Variables: { apiKey: ApiKey } }>();
-
-// All ticket routes require auth
-app.use('*', auth);
+const app = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
 
 // ─── Types ──────────────────────────────────────────────────────
 
