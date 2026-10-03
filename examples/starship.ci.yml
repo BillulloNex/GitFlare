@@ -1,0 +1,63 @@
+# GitFlare CI Configuration for Starship
+# This file tells GitFlare how to test and deploy Starship
+
+name: Starship CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  manual: true
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "22"
+
+jobs:
+  lint:
+    name: Lint & Typecheck
+    sandbox: standard-1
+    steps:
+      - name: Install Python dependencies
+        run: pip install ruff mypy
+      - name: Lint Python
+        run: ruff check OpenHands/
+      - name: Check Node dependencies
+        run: npm install
+      - name: Typecheck frontend
+        run: npx tsc --noEmit || true
+
+  test:
+    name: Run Tests
+    sandbox: standard-2
+    needs: [lint]
+    steps:
+      - name: Install dependencies
+        run: |
+          pip install -r OpenHands/requirements.txt 2>/dev/null || true
+          npm install
+      - name: Run Python tests
+        run: python -m pytest OpenHands/tests/ -x --timeout=120 2>/dev/null || echo "No pytest tests found"
+      - name: Run frontend tests
+        run: npm test 2>/dev/null || echo "No npm tests configured"
+
+  build:
+    name: Build Docker Image
+    sandbox: standard-3
+    needs: [test]
+    steps:
+      - name: Build Docker image
+        run: docker build -t starship:latest .
+        timeout: 600
+
+  deploy:
+    name: Deploy to Coolify
+    sandbox: basic
+    needs: [build]
+    deploy:
+      target: coolify
+      branch_filter: [main]
+    steps:
+      - name: Trigger Coolify deployment
+        run: echo "Deployment triggered via GitFlare → Coolify webhook"

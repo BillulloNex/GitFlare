@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitFlare Dashboard</title>
+    <style>
+        :root {
+            --bg-dark: #121212;
+            --bg-panel: #1e1e1e;
+            --bg-lighter: #2c2c2c;
+            --text-main: #e0e0e0;
+            --text-muted: #9e9e9e;
+            --accent-orange: #F6821F;
+            --accent-hover: #ff983f;
+            --border: #333333;
+            --success: #4caf50;
+            --error: #f44336;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* Header */
+        header {
+            background-color: var(--bg-panel);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .logo span {
+            color: var(--accent-orange);
+        }
+
+        .version {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            background-color: var(--bg-lighter);
+            padding: 0.2rem 0.5rem;
+            border-radius: 4px;
+        }
+
+        /* Layout */
+        .container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 300px;
+            background-color: var(--bg-panel);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .repo-list {
+            flex: 1;
+            overflow-y: auto;
+            list-style: none;
+        }
+
+        .repo-item {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .repo-item:hover, .repo-item.active {
+            background-color: var(--bg-lighter);
+        }
+
+        .repo-name {
+            font-weight: bold;
+            margin-bottom: 0.3rem;
+        }
+
+        .repo-status {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--text-muted);
+        }
+        .status-dot.success { background-color: var(--success); }
+        .status-dot.error { background-color: var(--error); }
+        .status-dot.pending { background-color: var(--accent-orange); }
+
+        /* Main Content */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background-color: var(--bg-dark);
+        }
+
+        .repo-details {
+            padding: 2rem;
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .repo-header {
+            margin-bottom: 2rem;
+        }
+
+        .clone-url {
+            background-color: var(--bg-lighter);
+            padding: 0.8rem;
+            border-radius: 4px;
+            font-family: monospace;
+            border: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 1rem;
+        }
+
+        /* Bottom Panel - Logs */
+        .log-panel {
+            height: 30%;
+            background-color: var(--bg-panel);
+            border-top: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .log-header {
+            padding: 0.5rem 1rem;
+            background-color: var(--bg-lighter);
+            border-bottom: 1px solid var(--border);
+            font-size: 0.9rem;
+            font-weight: bold;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .log-content {
+            flex: 1;
+            padding: 1rem;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            white-space: pre-wrap;
+        }
+
+        .log-line.stdout { color: #e0e0e0; }
+        .log-line.stderr { color: var(--error); }
+        .log-line .timestamp { color: #666; margin-right: 1rem; }
+        .log-line .step { color: var(--accent-orange); margin-right: 1rem; }
+
+        /* Buttons & Forms */
+        .btn {
+            background-color: var(--accent-orange);
+            color: #fff;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+
+        .btn:hover {
+            background-color: var(--accent-hover);
+        }
+        
+        .btn-small {
+            padding: 0.3rem 0.6rem;
+            font-size: 0.8rem;
+        }
+
+        .card {
+            background-color: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        h2, h3 { margin-bottom: 1rem; }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 0.8rem;
+            background-color: var(--bg-dark);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            border-radius: 4px;
+            margin-bottom: 1rem;
+        }
+
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 1rem;
+        }
+
+        .tab {
+            padding: 0.8rem 1.5rem;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+        }
+
+        .tab.active {
+            border-bottom-color: var(--accent-orange);
+            color: var(--accent-orange);
+            font-weight: bold;
+        }
+
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            text-align: left;
+            padding: 0.8rem;
+            border-bottom: 1px solid var(--border);
+        }
+        th { color: var(--text-muted); font-weight: normal; }
+
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
+            Git<span>Flare</span>
+        </div>
+        <div style="display: flex; gap: 1rem; align-items: center;">
+            <button class="btn btn-small" onclick="showCreateKeyModal()">New API Key</button>
+            <span class="version">v0.1.0-alpha</span>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h3>Repositories</h3>
+                <button class="btn btn-small" onclick="showCreateRepo()">+</button>
+            </div>
+            <ul class="repo-list" id="repoList">
+                <!-- Populated by JS -->
+            </ul>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <div class="repo-details" id="mainContent">
+                <div style="display:flex; justify-content:center; align-items:center; height:100%; color:var(--text-muted)">
+                    Select a repository or create a new one.
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Bottom Panel -->
+    <div class="log-panel" id="logPanel" style="display:none;">
+        <div class="log-header">
+            <span>Live CI Logs <span id="logStatus" class="version" style="margin-left: 10px;">Idle</span></span>
+            <button class="btn btn-small" onclick="document.getElementById('logPanel').style.display='none'" style="background:transparent; color:var(--text-muted)">✕</button>
+        </div>
+        <div class="log-content" id="logContent"></div>
+    </div>
+
+    <script>
+        // State
+        let repos = [];
+        let activeRepo = null;
+        let ws = null;
+
+        // Mock API base URL (in real app, it's the same domain)
+        const API_BASE = '/api';
+
+        // Initialize
+        async function init() {
+            await fetchRepos();
+        }
+
+        async function fetchRepos() {
+            // Replace with real fetch
+            try {
+                const res = await fetch(`${API_BASE}/repos`);
+                if(res.ok) {
+                    const data = await res.json();
+                    repos = data.repos || [];
+                    renderRepoList();
+                } else {
+                    // Fallback mock data for testing UI
+                    repos = [
+                        { name: 'frontend-app', status: 'success', remote: 'https://gitflare.example.com/frontend-app.git' },
+                        { name: 'backend-api', status: 'pending', remote: 'https://gitflare.example.com/backend-api.git' },
+                        { name: 'docs', status: 'error', remote: 'https://gitflare.example.com/docs.git' }
+                    ];
+                    renderRepoList();
+                }
+            } catch (e) {
+                console.error("Failed to fetch repos", e);
+            }
+        }
+
+        function renderRepoList() {
+            const list = document.getElementById('repoList');
+            list.innerHTML = '';
+            repos.forEach(repo => {
+                const li = document.createElement('li');
+                li.className = `repo-item ${activeRepo === repo.name ? 'active' : ''}`;
+                li.onclick = () => selectRepo(repo);
+                
+                li.innerHTML = `
+                    <div class="repo-name">${repo.name}</div>
+                    <div class="repo-status">
+                        <div class="status-dot ${repo.status}"></div>
+                        ${repo.status}
+                    </div>
+                `;
+                list.appendChild(li);
+            });
+        }
+
+        function selectRepo(repo) {
+            activeRepo = repo.name;
+            renderRepoList();
+            renderRepoDetails(repo);
+            connectToLogs(repo.name);
+        }
+
+        function renderRepoDetails(repo) {
+            const main = document.getElementById('mainContent');
+            main.innerHTML = `
+                <div class="repo-header">
+                    <h2>${repo.name}</h2>
+                    <div class="clone-url">
+                        <span>${repo.remote || `https://gitflare.example.com/${repo.name}.git`}</span>
+                        <button class="btn btn-small" onclick="navigator.clipboard.writeText('${repo.remote}')">Copy</button>
+                    </div>
+                </div>
+
+                <div class="tabs">
+                    <div class="tab active" onclick="switchTab(this, 'code')">Code</div>
+                    <div class="tab" onclick="switchTab(this, 'ci')">CI Runs</div>
+                    <div class="tab" onclick="switchTab(this, 'deploy')">Deploy Targets</div>
+                </div>
+
+                <div id="code" class="tab-content active">
+                    <div class="card">
+                        <h3>Repository Empty</h3>
+                        <p style="color: var(--text-muted); margin-bottom: 1rem;">Push code to this repository to get started.</p>
+                        <pre style="background: var(--bg-dark); padding: 1rem; border-radius: 4px; border: 1px solid var(--border); color: var(--text-muted);">
+git clone ${repo.remote}
+cd ${repo.name}
+touch README.md
+git add README.md
+git commit -m "Initial commit"
+git push -u origin main</pre>
+                    </div>
+                </div>
+
+                <div id="ci" class="tab-content">
+                    <div class="card">
+                        <h3>Recent Runs</h3>
+                        <table>
+                            <thead>
+                                <tr><th>Commit</th><th>Branch</th><th>Status</th><th>Duration</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td style="font-family:monospace">a1b2c3d</td>
+                                    <td>main</td>
+                                    <td><span style="color:var(--success)">Passed</span></td>
+                                    <td>45s</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="deploy" class="tab-content">
+                    <div class="card">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:1rem;">
+                            <h3>Coolify Targets</h3>
+                            <button class="btn btn-small">Add Target</button>
+                        </div>
+                        <p style="color:var(--text-muted)">No deployment targets configured yet.</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        function showCreateRepo() {
+            activeRepo = null;
+            renderRepoList();
+            const main = document.getElementById('mainContent');
+            main.innerHTML = `
+                <div class="card" style="max-width: 500px; margin: 0 auto; margin-top: 2rem;">
+                    <h2>Create Repository</h2>
+                    <div style="margin-bottom: 1rem;">
+                        <label style="display:block; margin-bottom:0.5rem; color:var(--text-muted);">Repository Name</label>
+                        <input type="text" id="newRepoName" placeholder="e.g., my-awesome-project">
+                    </div>
+                    <button class="btn" onclick="createRepo()">Create Repository</button>
+                </div>
+            `;
+        }
+
+        async function createRepo() {
+            const name = document.getElementById('newRepoName').value;
+            if(!name) return;
+            
+            try {
+                // Mock API call
+                // const res = await fetch(`${API_BASE}/repos`, { method: 'POST', body: JSON.stringify({ name }) });
+                
+                repos.push({ name, status: 'pending', remote: `https://gitflare.example.com/${name}.git` });
+                selectRepo(repos[repos.length-1]);
+            } catch (e) {
+                alert("Error creating repo");
+            }
+        }
+
+        function showCreateKeyModal() {
+            alert("API Key creation not fully implemented in mock.");
+        }
+
+        function switchTab(el, id) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            
+            el.classList.add('active');
+            document.getElementById(id).classList.add('active');
+        }
+
+        // WebSocket for logs
+        function connectToLogs(repoName) {
+            if(ws) ws.close();
+            
+            document.getElementById('logPanel').style.display = 'flex';
+            const logContent = document.getElementById('logContent');
+            logContent.innerHTML = '<div style="color:var(--text-muted)">Connecting to CI log stream...</div>';
+            
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${wsProtocol}//${window.location.host}/api/ci/${repoName}/session/websocket`;
+            
+            try {
+                ws = new WebSocket(wsUrl);
+                
+                ws.onopen = () => {
+                    logContent.innerHTML = '<div style="color:var(--success)">Connected to CI session. Waiting for logs...</div>';
+                    document.getElementById('logStatus').textContent = 'Connected';
+                };
+                
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.type === 'log') {
+                        const line = document.createElement('div');
+                        line.className = \`log-line \${data.stream}\`;
+                        
+                        const time = new Date(data.timestamp).toLocaleTimeString();
+                        line.innerHTML = \`<span class="timestamp">[\${time}]</span><span class="step">\${data.step}</span>\${data.line}\`;
+                        
+                        logContent.appendChild(line);
+                        logContent.scrollTop = logContent.scrollHeight;
+                    } else if (data.type === 'status') {
+                        document.getElementById('logStatus').textContent = data.status;
+                    }
+                };
+                
+                ws.onclose = () => {
+                    document.getElementById('logStatus').textContent = 'Disconnected';
+                };
+            } catch(e) {
+                logContent.innerHTML += \`\\n<div style="color:var(--error)">Failed to connect to WebSocket: \${e.message}</div>\`;
+            }
+        }
+
+        // Start
+        init();
+    </script>
+</body>
+</html>

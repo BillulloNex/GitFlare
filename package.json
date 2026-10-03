@@ -1,0 +1,31 @@
+{
+	"name": "gitflare",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "wrangler dev",
+		"deploy": "wrangler deploy",
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run",
+		"test:watch": "vitest",
+		"db:migrate:local": "wrangler d1 execute gitflare-db --local --file=migrations/0001_initial.sql",
+		"db:migrate:remote": "wrangler d1 execute gitflare-db --remote --file=migrations/0001_initial.sql",
+		"cf-typegen": "wrangler types"
+	},
+	"dependencies": {
+		"hono": "^4.7.0",
+		"yaml": "^2.7.0",
+		"zod": "^3.24.0"
+	},
+	"devDependencies": {
+		"@cloudflare/vitest-pool-workers": "^0.8.0",
+		"@cloudflare/workers-types": "latest",
+		"typescript": "^5.7.0",
+		"vitest": "^3.1.0",
+		"wrangler": "^4.14.0"
+	},
+	"engines": {
+		"node": ">=22"
+	}
+}

@@ -1,0 +1,114 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "gitflare",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-09-01",
+	"compatibility_flags": ["nodejs_compat"],
+
+	// ─── Git Repository Storage ─────────────────────────────────
+	// Cloudflare Artifacts: Git-native storage engine (Zig/WASM)
+	// Handles Smart HTTP v2 protocol, packfiles, ref management
+	"artifacts": [
+		{
+			"binding": "REPOS",
+			"namespace": "gitflare-repos"
+		}
+	],
+
+	// ─── Metadata Database ──────────────────────────────────────
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "gitflare-db",
+			"database_id": "00000000-0000-0000-0000-000000000000",
+			"migrations_dir": "migrations"
+		}
+	],
+
+	// ─── Large File / LFS / Build Artifact Storage ──────────────
+	"r2_buckets": [
+		{
+			"binding": "STORAGE",
+			"bucket_name": "gitflare-storage"
+		}
+	],
+
+	// ─── Cache Layer ────────────────────────────────────────────
+	"kv_namespaces": [
+		{
+			"binding": "CACHE",
+			"id": "00000000000000000000000000000000"
+		}
+	],
+
+	// ─── CI/CD Job Queue ────────────────────────────────────────
+	"queues": {
+		"producers": [
+			{
+				"binding": "CI_QUEUE",
+				"queue": "gitflare-ci-jobs"
+			},
+			{
+				"binding": "DEPLOY_QUEUE",
+				"queue": "gitflare-deploy-jobs"
+			}
+		],
+		"consumers": [
+			{
+				"queue": "gitflare-ci-jobs",
+				"max_batch_size": 5,
+				"max_retries": 3,
+				"dead_letter_queue": "gitflare-ci-dlq"
+			},
+			{
+				"queue": "gitflare-deploy-jobs",
+				"max_batch_size": 5,
+				"max_retries": 3,
+				"dead_letter_queue": "gitflare-deploy-dlq"
+			}
+		]
+	},
+
+	// ─── Durable Objects (Coordination & Real-time) ─────────────
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "REPO_COORDINATOR",
+				"class_name": "RepoCoordinator"
+			},
+			{
+				"name": "CI_SESSION",
+				"class_name": "CISession"
+			}
+		]
+	},
+
+	// ─── AI (Code Review, Search) ───────────────────────────────
+	"ai": {
+		"binding": "AI"
+	},
+
+	// ─── Observability ──────────────────────────────────────────
+	"observability": {
+		"enabled": true,
+		"logs": {
+			"enabled": true,
+			"invocation_logs": true
+		}
+	},
+
+	// ─── DO Migrations ──────────────────────────────────────────
+	"migrations": [
+		{
+			"tag": "v1",
+			"new_sqlite_classes": ["RepoCoordinator", "CISession"]
+		}
+	],
+
+	// ─── Environment Variables ──────────────────────────────────
+	"vars": {
+		"GITFLARE_VERSION": "0.1.0",
+		"DEFAULT_SANDBOX_TIER": "standard-2",
+		"MAX_CI_DURATION_MS": "900000"
+	}
+}
