@@ -96,6 +96,45 @@ export interface BlobResult {
 // ─── Starship Commits Data ──────────────────────────────────────
 const STARSHIP_COMMITS: CommitDetail[] = [
   {
+    sha: '817001a1f4c1e4bc37907895580f2d1cb7e6ca9b',
+    short_sha: '817001a',
+    message: 'v0.81.7: live deployment speed test (bump version to 0.81.7)',
+    description: 'Direct push to GitFlare edge custom domain git.beenex.company to verify commit-to-live latency.',
+    author: {
+      name: 'Thomas Nguyen',
+      email: 'tungvunguyennguyen@gmail.com',
+      avatar: 'TN'
+    },
+    date: '2026-10-02T23:55:00-04:00',
+    time_ago: 'just now',
+    ci_status: 'passed',
+    ci_run_id: 'c9a4d9ce-faf4-4bdb-83ba-ff0837223d3b',
+    parent_sha: '240fb22df4c1e4bc37907895580f2d1cb7e6ca9b',
+    parent_short_sha: '240fb22',
+    stats: {
+      files_changed: 2,
+      additions: 2,
+      deletions: 2,
+      total: 4
+    },
+    files: [
+      {
+        filename: 'VERSION',
+        status: 'modified',
+        additions: 1,
+        deletions: 1,
+        patch: `@@ -1,1 +1,1 @@\n-0.81.6\n+0.81.7`
+      },
+      {
+        filename: 'OpenHands/src/constants/grokbot-version.ts',
+        status: 'modified',
+        additions: 1,
+        deletions: 1,
+        patch: `@@ -1,1 +1,1 @@\n-export const GROKBOT_VERSION = "0.81.9" as const;\n+export const GROKBOT_VERSION = "0.81.7" as const;`
+      }
+    ]
+  },
+  {
     sha: '240fb22df4c1e4bc37907895580f2d1cb7e6ca9b',
     short_sha: '240fb22',
     message: 'v0.81.9: automated end-to-end GitFlare deployment',
@@ -464,7 +503,7 @@ This document contains all fetched configuration details from Coolify for the **
 - **Deploy Host**: Bare metal Coolify cluster
 `,
 
-  'VERSION': `0.81.9
+  'VERSION': `0.81.7
 `,
 
   'package.json': `{
@@ -619,12 +658,12 @@ curl -f http://grok.beenex.org/health || exit 1
 echo "Smoke test passed!"
 `,
 
-  'OpenHands/src/constants/grokbot-version.ts': `export const GROKBOT_VERSION = "0.81.9" as const;
+  'OpenHands/src/constants/grokbot-version.ts': `export const GROKBOT_VERSION = "0.81.7" as const;
 `,
 
   'OpenHands/package.json': `{
   "name": "openhands-frontend",
-  "version": "0.81.9",
+  "version": "0.81.7",
   "private": true
 }
 `,
