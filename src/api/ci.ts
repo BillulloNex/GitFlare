@@ -11,7 +11,7 @@ app.get('/:repo/ci/runs', async (c) => {
 	const repoName = c.req.param('repo');
 	const { DB } = c.env;
 	
-	const repoRecord = await DB.prepare('SELECT id FROM repos WHERE name = ?').bind(repoName).first<{ id: string }>();
+	const repoRecord = await DB.prepare('SELECT id FROM repositories WHERE name = ?').bind(repoName).first<{ id: string }>();
 	if (!repoRecord) return c.json({ error: 'Repo not found' }, 404);
 
 	const limit = parseInt(c.req.query('limit') || '10');
@@ -58,7 +58,7 @@ app.post('/:repo/ci/trigger', async (c) => {
 	
 	const { DB, REPOS, CI_QUEUE } = c.env;
 	
-	const repoRecord = await DB.prepare('SELECT id, name FROM repos WHERE name = ?').bind(repoName).first<{ id: string, name: string }>();
+	const repoRecord = await DB.prepare('SELECT id, name FROM repositories WHERE name = ?').bind(repoName).first<{ id: string, name: string }>();
 	if (!repoRecord) return c.json({ error: 'Repo not found' }, 404);
 
 	const artifactRepo = await REPOS.get(repoRecord.name);

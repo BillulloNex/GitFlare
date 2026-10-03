@@ -10,7 +10,7 @@ app.get('/:repo/deploys', async (c) => {
 	const repoName = c.req.param('repo');
 	const { DB } = c.env;
 	
-	const repoRecord = await DB.prepare('SELECT id FROM repos WHERE name = ?').bind(repoName).first<{ id: string }>();
+	const repoRecord = await DB.prepare('SELECT id FROM repositories WHERE name = ?').bind(repoName).first<{ id: string }>();
 	if (!repoRecord) return c.json({ error: 'Repo not found' }, 404);
 
 	const { results } = await DB.prepare('SELECT * FROM deploy_targets WHERE repo_id = ?').bind(repoRecord.id).all();
@@ -25,11 +25,11 @@ app.post('/:repo/deploys', async (c) => {
 	const body = await c.req.json();
 	const { DB } = c.env;
 
-	const repoRecord = await DB.prepare('SELECT id FROM repos WHERE name = ?').bind(repoName).first<{ id: string }>();
+	const repoRecord = await DB.prepare('SELECT id FROM repositories WHERE name = ?').bind(repoName).first<{ id: string }>();
 	if (!repoRecord) return c.json({ error: 'Repo not found' }, 404);
 
 	const id = crypto.randomUUID();
-	await DB.prepare(`INSERT INTO deploy_targets (id, repo_id, name, type, coolify_app_id, coolify_base_url, coolify_api_key, branch_filter, created_at)
+	await DB.prepare(`INSERT INTO deploy_targets (id, repo_id, name, type, coolify_app_id, coolify_base_url, coolify_api_key_encrypted, branch_filter, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 		.bind(
 			id, repoRecord.id, body.name, body.type, 
@@ -50,7 +50,7 @@ app.put('/:repo/deploys/:id', async (c) => {
 	const { DB } = c.env;
 
 	await DB.prepare(`UPDATE deploy_targets 
-		SET name = ?, type = ?, coolify_app_id = ?, coolify_base_url = ?, coolify_api_key = ?, branch_filter = ? 
+		SET name = ?, type = ?, coolify_app_id = ?, coolify_base_url = ?, coolify_api_key_encrypted = ?, branch_filter = ? 
 		WHERE id = ?`)
 		.bind(
 			body.name, body.type, 
@@ -81,7 +81,7 @@ app.post('/:repo/deploys/:id/run', async (c) => {
 	const repoName = c.req.param('repo');
 	const { DB, DEPLOY_QUEUE } = c.env;
 
-	const repoRecord = await DB.prepare('SELECT id, name FROM repos WHERE name = ?').bind(repoName).first<{ id: string, name: string }>();
+	const repoRecord = await DB.prepare('SELECT id, name FROM repositories WHERE name = ?').bind(repoName).first<{ id: string, name: string }>();
 	if (!repoRecord) return c.json({ error: 'Repo not found' }, 404);
 
 	const target = await DB.prepare('SELECT * FROM deploy_targets WHERE id = ?').bind(targetId).first();
@@ -96,7 +96,7 @@ app.post('/:repo/deploys/:id/run', async (c) => {
 		type: target.type as "coolify" | "cloudflare",
 		coolifyAppId: target.coolify_app_id as string | undefined,
 		coolifyBaseUrl: target.coolify_base_url as string | undefined,
-		coolifyApiKey: target.coolify_api_key as string | undefined,
+		coolifyApiKey: target.coolify_api_key_encrypted as string | undefined,
 		branchFilter: target.branch_filter ? JSON.parse(target.branch_filter as string) : undefined
 	};
 

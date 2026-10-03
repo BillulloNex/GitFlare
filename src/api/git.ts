@@ -46,7 +46,7 @@ app.get('/:repo/info/refs', async (c) => {
 	const repoName = c.req.param('repo').replace('.git', '');
 	
 	const { DB, REPOS } = c.env;
-	const repoRecord = await DB.prepare('SELECT id, name FROM repos WHERE name = ?').bind(repoName).first<{ id: string, name: string }>();
+	const repoRecord = await DB.prepare('SELECT id, name FROM repositories WHERE name = ?').bind(repoName).first<{ id: string, name: string }>();
 	if (!repoRecord) {
 		return c.text('Repository not found', 404);
 	}
@@ -88,7 +88,7 @@ app.post('/:repo/git-upload-pack', async (c) => {
 	const repoName = c.req.param('repo').replace('.git', '');
 	
 	const { DB, REPOS } = c.env;
-	const repoRecord = await DB.prepare('SELECT id, name FROM repos WHERE name = ?').bind(repoName).first<{ id: string, name: string }>();
+	const repoRecord = await DB.prepare('SELECT id, name FROM repositories WHERE name = ?').bind(repoName).first<{ id: string, name: string }>();
 	if (!repoRecord) {
 		return c.text('Repository not found', 404);
 	}
@@ -129,7 +129,7 @@ app.post('/:repo/git-receive-pack', async (c) => {
 	const repoName = c.req.param('repo').replace('.git', '');
 	
 	const { DB, REPOS, CI_QUEUE } = c.env;
-	const repoRecord = await DB.prepare('SELECT id, name FROM repos WHERE name = ?').bind(repoName).first<{ id: string, name: string }>();
+	const repoRecord = await DB.prepare('SELECT id, name FROM repositories WHERE name = ?').bind(repoName).first<{ id: string, name: string }>();
 	if (!repoRecord) {
 		return c.text('Repository not found', 404);
 	}
