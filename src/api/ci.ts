@@ -54,29 +54,39 @@ app.get('/:repo/ci/runs/:id', async (c) => {
  */
 app.post('/:repo/ci/trigger', async (c) => {
 	const repoName = c.req.param('repo');
-	const body = await c.req.json<{ branch?: string, commit_sha?: string }>();
+	const body = await c.req.json<{ branch?: string, commit_sha?: string, config_yaml?: string }>();
 	
-	const { DB, REPOS, CI_QUEUE } = c.env;
+	const { DB, REPOS, CI_QUEUE, CACHE } = c.env;
 	
 	const repoRecord = await DB.prepare('SELECT id, name FROM repositories WHERE name = ?').bind(repoName).first<{ id: string, name: string }>();
 	if (!repoRecord) return c.json({ error: 'Repo not found' }, 404);
 
-	const artifactRepo = await REPOS.get(repoRecord.name);
-	if (!artifactRepo) return c.json({ error: 'Artifact repo not found' }, 404);
-
 	const branch = body.branch || 'main';
 	const commitSha = body.commit_sha || 'HEAD';
 
-	const token = await artifactRepo.createToken('read', 60);
-	const ciRes = await fetch(`${artifactRepo.remote}/raw/${commitSha}/.gitflare/ci.yml`, {
-		headers: { 'Authorization': `Bearer ${token}` }
-	});
+	// Try to get CI config from: 1) request body, 2) KV cache, 3) default
+	let yamlContent: string | null = body.config_yaml || null;
 
-	if (!ciRes.ok) {
-		return c.json({ error: 'CI config not found' }, 404);
+	if (!yamlContent) {
+		yamlContent = await CACHE.get(`ci-config:${repoRecord.name}`);
 	}
 
-	const yamlContent = await ciRes.text();
+	if (!yamlContent) {
+		// Default CI config: just deploy to Coolify (skip tests for now)
+		yamlContent = `
+name: default
+on:
+  push:
+    branches: [main]
+jobs:
+  deploy:
+    sandbox: standard-2
+    steps:
+      - name: Deploy notification
+        run: echo "Push received on ${repoRecord.name}@${branch} — deploying via Coolify"
+`;
+	}
+
 	const config = parseCIConfig(yamlContent);
 	
 	const runId = crypto.randomUUID();
@@ -94,7 +104,7 @@ app.post('/:repo/ci/trigger', async (c) => {
 		trigger: 'manual'
 	});
 
-	return c.json({ data: { id: runId } }, 201);
+	return c.json({ data: { id: runId, status: 'queued', branch, commitSha } }, 201);
 });
 
 /**

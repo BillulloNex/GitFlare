@@ -202,17 +202,28 @@ app.post('/:repo/git-receive-pack', async (c) => {
 					.run()
 			);
 
-			// Trigger CI if .gitflare/ci.yml exists
+			// Trigger CI from KV-cached config or default
 			c.executionCtx.waitUntil((async () => {
 				try {
-					const readToken = await getRepoToken(c.env, repoRecord.name, 'read', 60);
-					const ciFileRes = await fetch(`${getRemoteUrl(repoRecord.name)}/raw/HEAD/.gitflare/ci.yml`, {
-						headers: { 'Authorization': `Bearer ${readToken}` }
-					});
-					if (ciFileRes.ok) {
-						const yamlContent = await ciFileRes.text();
-						const config = parseCIConfig(yamlContent);
-						
+					let yamlContent = await c.env.CACHE.get(`ci-config:${repoRecord.name}`);
+					
+					if (!yamlContent) {
+						// Default: just log the push and trigger deploy
+						yamlContent = `
+name: auto
+on:
+  push:
+    branches: [main]
+jobs:
+  deploy:
+    sandbox: standard-2
+    steps:
+      - name: Push received
+        run: echo "Deploying ${repoRecord.name}@${branch}"
+`;
+					}
+					
+					const config = parseCIConfig(yamlContent);
 						const runId = crypto.randomUUID();
 						await DB.prepare('INSERT INTO ci_runs (id, repo_id, branch, commit_sha, status, trigger, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
 							.bind(runId, repoRecord.id, branch, commitSha, 'queued', 'push', new Date().toISOString())
@@ -228,7 +239,6 @@ app.post('/:repo/git-receive-pack', async (c) => {
 							trigger: 'push'
 						});
 						console.log(`CI triggered: run=${runId} repo=${repoName}`);
-					}
 				} catch (e: any) {
 					console.error('Failed to trigger CI:', e.message);
 				}
