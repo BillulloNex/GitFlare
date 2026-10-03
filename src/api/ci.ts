@@ -44,7 +44,7 @@ app.get('/:repo/ci/runs/:id', async (c) => {
 	const run = await DB.prepare('SELECT * FROM ci_runs WHERE id = ?').bind(runId).first();
 	if (!run) return c.json({ error: 'Run not found' }, 404);
 
-	const { results: steps } = await DB.prepare('SELECT * FROM ci_steps WHERE run_id = ? ORDER BY created_at ASC').bind(runId).all();
+	const { results: steps } = await DB.prepare('SELECT * FROM ci_steps WHERE run_id = ? ORDER BY step_index ASC').bind(runId).all();
 	
 	return c.json({ data: { ...run, steps } });
 });

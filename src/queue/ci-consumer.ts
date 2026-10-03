@@ -50,8 +50,8 @@ export async function handleCIJob(message: CIJobMessage, env: Env): Promise<void
 							.bind(new Date().toISOString(), message.runId).run();
 						
 						const stepId = crypto.randomUUID();
-						await DB.prepare('INSERT INTO ci_steps (id, run_id, job_name, name, status, started_at) VALUES (?, ?, ?, ?, ?, ?)')
-							.bind(stepId, message.runId, 'deploy', 'Runner Deploy', 'running', new Date().toISOString()).run();
+						await DB.prepare('INSERT INTO ci_steps (id, run_id, job_name, step_index, name, command, status, started_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+							.bind(stepId, message.runId, 'deploy', 0, 'Runner Deploy', 'webhook', 'running', new Date().toISOString()).run();
 					} else {
 						useFallback = true;
 					}
@@ -70,8 +70,8 @@ export async function handleCIJob(message: CIJobMessage, env: Env): Promise<void
 							console.log("Coolify deploy triggered successfully:", JSON.stringify(deployRes));
 
 							const stepId = crypto.randomUUID();
-							await DB.prepare('INSERT INTO ci_steps (id, run_id, job_name, name, status, finished_at, exit_code) VALUES (?, ?, ?, ?, ?, ?, ?)')
-								.bind(stepId, message.runId, 'deploy', 'Coolify Deploy', 'passed', new Date().toISOString(), 0).run();
+							await DB.prepare('INSERT INTO ci_steps (id, run_id, job_name, step_index, name, command, status, finished_at, exit_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+								.bind(stepId, message.runId, 'deploy', 0, 'Coolify Deploy', 'api', 'passed', new Date().toISOString(), 0).run();
 
 							await DB.prepare("UPDATE ci_runs SET status = 'passed', finished_at = ? WHERE id = ?")
 								.bind(new Date().toISOString(), message.runId).run();
@@ -80,8 +80,8 @@ export async function handleCIJob(message: CIJobMessage, env: Env): Promise<void
 						} catch (deployErr: any) {
 							console.error("Direct deploy failed:", deployErr);
 							const stepId = crypto.randomUUID();
-							await DB.prepare('INSERT INTO ci_steps (id, run_id, job_name, name, status, finished_at, exit_code) VALUES (?, ?, ?, ?, ?, ?, ?)')
-								.bind(stepId, message.runId, 'deploy', 'Coolify Deploy', 'failed', new Date().toISOString(), 1).run();
+							await DB.prepare('INSERT INTO ci_steps (id, run_id, job_name, step_index, name, command, status, finished_at, exit_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+								.bind(stepId, message.runId, 'deploy', 0, 'Coolify Deploy', 'api', 'failed', new Date().toISOString(), 1).run();
 							throw deployErr;
 						}
 					}
