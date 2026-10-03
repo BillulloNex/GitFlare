@@ -83,8 +83,11 @@ const server = http.createServer((req, res) => {
           });
 
           if (!coolifyRes.ok) {
+            const errBody = await coolifyRes.text();
+            console.error(`Coolify deploy failed: ${coolifyRes.status} ${coolifyRes.statusText}`, errBody);
+            console.error(`URL: ${COOLIFY_BASE_URL}/api/v1/applications/${coolifyAppId}/deploy`);
             res.writeHead(502);
-            res.end(JSON.stringify({ error: 'Failed Coolify deployment' }));
+            res.end(JSON.stringify({ error: 'Failed Coolify deployment', status: coolifyRes.status, detail: errBody }));
             return;
           }
 
@@ -116,4 +119,7 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log(`Runner listening on port ${PORT}`);
+  console.log(`COOLIFY_BASE_URL: ${COOLIFY_BASE_URL}`);
+  console.log(`COOLIFY_API_KEY: ${COOLIFY_API_KEY ? '***set***' : 'MISSING'}`);
+  console.log(`RUNNER_SECRET: ${RUNNER_SECRET ? '***set***' : 'MISSING'}`);
 });
