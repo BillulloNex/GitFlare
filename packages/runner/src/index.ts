@@ -25,11 +25,15 @@ async function pollDeployment(deploymentUuid: string, runId: string, callbackUrl
         const finalStatus = status === 'finished' ? 'success' : 'failed';
         const durationMs = Date.now() - startTime;
         
+        console.log(`Deployment ${deploymentUuid} finished with status ${status} (${finalStatus}). Calling callback: ${callbackUrl}`);
         await fetch(callbackUrl, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${RUNNER_SECRET}`
+          },
           body: JSON.stringify({ runId, status: finalStatus, deploymentUuid, durationMs })
-        }).catch(err => console.error("Callback failed", err));
+        }).then(r => console.log(`Callback response: ${r.status}`)).catch(err => console.error("Callback failed", err));
         
         return;
       }

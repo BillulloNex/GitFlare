@@ -19,8 +19,12 @@ app.post('/internal/ci/callback', async (c) => {
   }>();
   
   const ciStatus = body.status === 'success' ? 'passed' : 'failed';
+  const exitCode = body.status === 'success' ? 0 : 1;
+  const now = new Date().toISOString();
   await c.env.DB.prepare('UPDATE ci_runs SET status = ?, finished_at = ? WHERE id = ?')
-    .bind(ciStatus, new Date().toISOString(), body.runId).run();
+    .bind(ciStatus, now, body.runId).run();
+  await c.env.DB.prepare('UPDATE ci_steps SET status = ?, finished_at = ?, exit_code = ? WHERE run_id = ?')
+    .bind(ciStatus, now, exitCode, body.runId).run();
   
   return c.json({ ok: true });
 });
