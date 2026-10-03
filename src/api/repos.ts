@@ -32,23 +32,35 @@ app.post('/', requirePermission('write'), async (c) => {
     return c.json({ error: 'Name is required' }, 400);
   }
 
+  // Check if repo already exists in D1
+  const existing = await c.env.DB
+    .prepare('SELECT id FROM repositories WHERE name = ?')
+    .bind(body.name)
+    .first();
+  if (existing) {
+    return c.json({ error: 'Repository already exists' }, 409);
+  }
+
   const id = crypto.randomUUID();
   const now = new Date().toISOString();
   
-  // Create in Artifacts
+  // Create in Artifacts (idempotent — ignore "already exists")
   try {
     await c.env.REPOS.create(body.name);
   } catch (err: any) {
-    return c.json({ error: 'Failed to create repo in Artifacts: ' + err.message }, 500);
+    // If it already exists in Artifacts, that's fine — just continue
+    if (!err.message?.includes('already exists')) {
+      return c.json({ error: 'Failed to create repo in Artifacts: ' + err.message }, 500);
+    }
   }
 
   // Insert into D1
   await c.env.DB
     .prepare(
-      `INSERT INTO repositories (id, name, description, is_private, default_branch, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO repositories (id, name, description, is_private, default_branch, artifact_name, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .bind(id, body.name, body.description || null, body.is_private ? 1 : 0, body.default_branch || 'main', now, now)
+    .bind(id, body.name, body.description || null, body.is_private ? 1 : 0, body.default_branch || 'main', body.name, now, now)
     .run();
 
   await audit(c.env.DB, {
