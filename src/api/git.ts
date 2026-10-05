@@ -277,7 +277,7 @@ app.post('/:repo/git-receive-pack', async (c) => {
 			);
 
 			const wrappedReject = wrapInSideband(rejectBody);
-			return new Response(wrappedReject.buffer.slice(wrappedReject.byteOffset, wrappedReject.byteOffset + wrappedReject.byteLength), {
+			return new Response(Uint8Array.from(wrappedReject), {
 				status: 200, // Git protocol uses 200 even for rejections
 				headers: {
 					'Content-Type': 'application/x-git-receive-pack-result',
@@ -530,4 +530,3 @@ jobs:
 });
 
 export default app;
-

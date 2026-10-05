@@ -13,6 +13,7 @@ import { z } from 'zod';
 import type { Env } from '../env.ts';
 import type { AuthVariables } from '../middleware/auth.ts';
 import { getRepoTree, getRepoBlob, getRepoCommits } from '../lib/repo-store.ts';
+import { getArtifactTree, getArtifactBlob, getArtifactCommits } from '../lib/artifact-reader.ts';
 
 const app = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
 
@@ -155,7 +156,10 @@ function registerTools(server: McpServer, env: Env) {
 		ref: z.string().optional().default('main'),
 		path: z.string().optional().default('/'),
 	}, async ({ repo, ref, path }) => {
-		const tree = getRepoTree(repo, path, ref);
+		const tree = repo.toLowerCase() === 'starship'
+			? getRepoTree(repo, path, ref)
+			: await getArtifactTree(env, repo, path, ref);
+		if (!tree) return { content: [{ type: 'text', text: 'Error: Directory not found' }], isError: true };
 		return { content: [{ type: 'text', text: JSON.stringify(tree, null, 2) }] };
 	});
 
@@ -164,7 +168,9 @@ function registerTools(server: McpServer, env: Env) {
 		path: z.string(),
 		ref: z.string().optional().default('main'),
 	}, async ({ repo, path, ref }) => {
-		const blob = getRepoBlob(repo, path, ref);
+		const blob = repo.toLowerCase() === 'starship'
+			? getRepoBlob(repo, path, ref)
+			: await getArtifactBlob(env, repo, path, ref);
 		if (!blob) return { content: [{ type: 'text', text: 'Error: File not found' }], isError: true };
 		return { content: [{ type: 'text', text: JSON.stringify(blob, null, 2) }] };
 	});
@@ -174,8 +180,10 @@ function registerTools(server: McpServer, env: Env) {
 		repo: z.string(),
 		ref: z.string().optional().default('main'),
 		limit: z.number().optional().default(20),
-	}, async ({ repo }) => {
-		const commits = getRepoCommits(repo);
+	}, async ({ repo, ref, limit }) => {
+		const commits = repo.toLowerCase() === 'starship'
+			? getRepoCommits(repo).slice(0, limit)
+			: await getArtifactCommits(env, repo, ref, limit);
 		return { content: [{ type: 'text', text: JSON.stringify(commits, null, 2) }] };
 	});
 

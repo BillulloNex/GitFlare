@@ -10,11 +10,34 @@ export interface ArtifactRepo {
 	readonly name: string;
 	/** Git remote URL for this artifact */
 	readonly remote: string;
+	info(): Promise<{ defaultBranch: string }>;
+	log(options?: { ref?: string; limit?: number; offset?: number }): Promise<ArtifactCommit[]>;
+	readTree(hash: string): Promise<ArtifactTreeEntry[] | null>;
+	readCommit(hash: string): Promise<ArtifactCommit | null>;
+	readFile(options: { ref: string; path: string }): Promise<Blob | null>;
 	/** Create a scoped, short-lived token for Git CLI access */
 	createToken(
 		permission: "read" | "write" | "admin",
 		ttlSeconds: number
 	): Promise<string>;
+}
+
+export interface ArtifactTreeEntry {
+	name: string;
+	mode: string;
+	hash: string;
+	type: 'tree' | 'blob' | 'symlink' | 'gitlink' | 'exec';
+}
+
+export interface ArtifactCommit {
+	hash: string;
+	treeHash: string;
+	message: string;
+	author: { name: string; email: string };
+	committer: { name: string; email: string };
+	parents: string[];
+	authoredAt: number;
+	committedAt: number;
 }
 
 export interface ArtifactNamespace {

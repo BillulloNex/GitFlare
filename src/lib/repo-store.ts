@@ -67,7 +67,7 @@ export interface TreeResult {
     author: CommitAuthor;
     date: string;
     time_ago: string;
-  };
+  } | null;
   entries: TreeEntry[];
   readme?: {
     name: string;

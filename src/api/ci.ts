@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Env } from '../env.ts';
 import { parseCIConfig } from '../lib/ci-parser.ts';
 import { getRepoCommits } from '../lib/repo-store.ts';
+import { getArtifactCommits } from '../lib/artifact-reader.ts';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -55,7 +56,9 @@ app.get('/:repo/ci/runs', async (c) => {
 	params.push(limit, offset);
 	
 	const { results } = await DB.prepare(query).bind(...params).all<any>();
-	const commits = getRepoCommits(repoName);
+	const commits = repoName.toLowerCase() === 'starship'
+		? getRepoCommits(repoName)
+		: await getArtifactCommits(c.env, repoName);
 
 	const enrichedRuns = results.map(run => {
 		const matchedCommit = commits.find(cm => 
@@ -92,7 +95,9 @@ app.get('/:repo/ci/runs/:id', async (c) => {
 	const run = await DB.prepare('SELECT * FROM ci_runs WHERE id = ?').bind(runId).first<any>();
 	if (!run) return c.json({ error: 'Run not found' }, 404);
 
-	const commits = getRepoCommits(repoName);
+	const commits = repoName.toLowerCase() === 'starship'
+		? getRepoCommits(repoName)
+		: await getArtifactCommits(c.env, repoName);
 	const matchedCommit = commits.find(cm => 
 		cm.sha === run.commit_sha || 
 		cm.short_sha === run.commit_sha ||

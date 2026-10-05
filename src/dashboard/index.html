@@ -183,6 +183,7 @@
         .badge-running { background: rgba(210, 153, 34, 0.15); color: var(--warning-fg); border: 1px solid rgba(210, 153, 34, 0.4); }
         .badge-queued { background: var(--bg-muted); color: var(--text-secondary); border: 1px solid var(--border-default); }
         .badge-public { border: 1px solid var(--border-default); color: var(--text-secondary); background: transparent; }
+        .badge-private { border: 1px solid var(--border-default); color: var(--text-primary); background: transparent; }
 
         /* ─── App Body Layout ────────────────────────────────────── */
         .app-body {
@@ -1071,7 +1072,7 @@
                     <div class="repo-breadcrumbs">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/></svg>
                         <a href="javascript:void(0)" onclick="switchMainTab('code')" id="currentRepoNameDisplay">starship</a>
-                        <span class="badge badge-public">Public</span>
+                        <span class="badge badge-public" id="repoVisibilityBadge">Public</span>
                     </div>
                     <div class="repo-actions-top" style="position:relative;">
                         <button class="btn btn-sm" onclick="triggerManualWorkflow()">▶ Run Workflow</button>
@@ -1396,6 +1397,11 @@
             activeRepo = name;
             currentPath = '';
             document.getElementById('currentRepoNameDisplay').textContent = name;
+            const visibilityBadge = document.getElementById('repoVisibilityBadge');
+            const isPrivate = Boolean(repos.find(repo => repo.name === name)?.is_private);
+            visibilityBadge.textContent = isPrivate ? 'Private' : 'Public';
+            visibilityBadge.classList.toggle('badge-private', isPrivate);
+            visibilityBadge.classList.toggle('badge-public', !isPrivate);
             renderRepoSelect();
 
             // Set clone URL
@@ -1545,8 +1551,8 @@
                 toggle.style.display = isMarkdown ? 'flex' : 'none';
 
                 // Fill line numbers and code
-                document.getElementById('fileLineNumbers').innerHTML = Array.from({ length: data.lines }, (_, i) => i + 1).join('<br>');
-                document.getElementById('fileLinesCode').textContent = data.content;
+                document.getElementById('fileLineNumbers').innerHTML = data.is_binary ? '' : Array.from({ length: data.lines }, (_, i) => i + 1).join('<br>');
+                document.getElementById('fileLinesCode').textContent = data.is_binary ? 'Binary file. Use Raw to open it.' : data.content;
 
                 if (isMarkdown) {
                     document.getElementById('fileContentPreview').innerHTML = renderSimpleMarkdown(data.content);
