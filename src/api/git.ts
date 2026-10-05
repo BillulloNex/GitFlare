@@ -5,6 +5,7 @@ import {
 	parseReceivePackRequest,
 	parseReceivePackResponse,
 	buildRejectResponse,
+	wrapInSideband,
 	type RefUpdate,
 } from '../lib/git-protocol.ts';
 import { triggerGitHubMirror } from '../lib/github-mirror.ts';
@@ -275,7 +276,8 @@ app.post('/:repo/git-receive-pack', async (c) => {
 					).run()
 			);
 
-			return new Response(rejectBody, {
+			const wrappedReject = wrapInSideband(rejectBody);
+			return new Response(wrappedReject.buffer.slice(wrappedReject.byteOffset, wrappedReject.byteOffset + wrappedReject.byteLength), {
 				status: 200, // Git protocol uses 200 even for rejections
 				headers: {
 					'Content-Type': 'application/x-git-receive-pack-result',
@@ -310,7 +312,7 @@ app.post('/:repo/git-receive-pack', async (c) => {
 					parsedRefs,
 					'another push is in progress for this ref — try again shortly'
 				);
-				return new Response(rejectBody, {
+				return new Response(wrapInSideband(rejectBody), {
 					status: 200,
 					headers: {
 						'Content-Type': 'application/x-git-receive-pack-result',
@@ -495,7 +497,13 @@ jobs:
 			);
 		}
 
-		return new Response(responseBody, {
+		// The client negotiates side-band-64k, so wrap the Artifacts response
+		// in sideband framing. Artifacts returns raw report-status pkt-lines
+		// (e.g. "unpack ok\n", "ok refs/heads/main\n") without sideband
+		// wrapping, but the client expects band-1 framing.
+		const sidebandBody = wrapInSideband(responseBody);
+
+		return new Response(sidebandBody, {
 			status: response.status,
 			headers: {
 				'Content-Type': 'application/x-git-receive-pack-result',
