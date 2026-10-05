@@ -18,6 +18,7 @@
 		"cf-typegen": "wrangler types"
 	},
 	"dependencies": {
+		"@modelcontextprotocol/sdk": "^1.32.0",
 		"hono": "^4.7.0",
 		"yaml": "^2.7.0",
 		"zod": "^3.24.0"

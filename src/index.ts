@@ -16,6 +16,7 @@ import internal from './api/internal.ts';
 import ticketsApp from './api/tickets.ts';
 import authApp from './api/auth.ts';
 import keysApp from './api/keys.ts';
+import mcpApp from './api/mcp.ts';
 import { handleCIJob, handleDeployJob } from './queue/ci-consumer.ts';
 import dashboardHtml from './dashboard/index.html';
 import logoPng from '../assets/octopus-on-fire.png';
@@ -82,8 +83,13 @@ app.route('/api', internal);
 // Everything below this line requires authentication
 // (session cookie for UI users, API key for agents)
 app.use('/api/*', auth);
+app.use('/mcp/*', auth);
+app.use('/mcp', auth);
 
 // ─── Authenticated API Routes ───────────────────────────────────
+
+// MCP endpoint: /mcp (Streamable HTTP for AI agents)
+app.route('/mcp', mcpApp);
 
 // API key management: /api/keys
 app.route('/api/keys', keysApp);
