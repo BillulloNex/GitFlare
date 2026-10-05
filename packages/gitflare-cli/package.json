@@ -1,0 +1,22 @@
+{
+  "name": "gitflare",
+  "version": "1.0.0",
+  "description": "CLI for GitFlare - GitHub on Cloudflare",
+  "type": "module",
+  "bin": { "gitflare": "./dist/index.js" },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch"
+  },
+  "dependencies": {
+    "@gitflare/client": "file:../gitflare-client",
+    "commander": "^13.0.0",
+    "chalk": "^5.4.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.7.0",
+    "@types/node": "^22.0.0"
+  },
+  "engines": { "node": ">=22" }
+}
