@@ -8,7 +8,8 @@
   },
   "scripts": {
     "build": "tsup",
-    "dev": "tsup --watch"
+    "dev": "tsup --watch",
+    "start:http": "node dist/http.js"
   },
   "dependencies": {
     "@gitflare/client": "file:../gitflare-client",
