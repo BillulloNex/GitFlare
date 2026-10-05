@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { Env, ApiKey } from '../env.ts';
 import { getRepoCommits, getCommitDetail } from '../lib/repo-store.ts';
+import { getArtifactCommits, getArtifactCommitDetail } from '../lib/artifact-reader.ts';
 
 const app = new Hono<{ Bindings: Env; Variables: { apiKey?: ApiKey } }>();
 
@@ -18,7 +19,9 @@ app.get('/:repo/commits', async (c) => {
     return c.json({ error: 'Repository not found' }, 404);
   }
 
-  const commits = getRepoCommits(repoName);
+  const commits = repoName.toLowerCase() === 'starship'
+    ? getRepoCommits(repoName)
+    : await getArtifactCommits(c.env, repoName, branch);
 
   // If repo exists in D1, enrich with latest CI run statuses
   if (repo) {
@@ -63,7 +66,9 @@ app.get('/:repo/commits/:sha', async (c) => {
   const repoName = c.req.param('repo');
   const sha = c.req.param('sha');
 
-  const commit = getCommitDetail(repoName, sha);
+  const commit = repoName.toLowerCase() === 'starship'
+    ? getCommitDetail(repoName, sha)
+    : await getArtifactCommitDetail(c.env, repoName, sha);
   if (!commit) {
     return c.json({ error: 'Commit not found' }, 404);
   }

@@ -76,6 +76,60 @@ app.post('/', requirePermission('write'), async (c) => {
 });
 
 /**
+ * Update repository metadata.
+ */
+app.patch('/:repo', requirePermission('write'), async (c) => {
+  const repoName = c.req.param('repo');
+
+  const repo = await c.env.DB
+    .prepare('SELECT id FROM repositories WHERE name = ?')
+    .bind(repoName)
+    .first<{ id: string }>();
+
+  if (!repo) {
+    return c.json({ error: 'Repository not found' }, 404);
+  }
+
+  const body = await c.req.json<{ description?: string; is_private?: boolean }>();
+  const sets: string[] = [];
+  const values: (string | number)[] = [];
+
+  if (body.description !== undefined) {
+    sets.push('description = ?');
+    values.push(body.description);
+  }
+  if (body.is_private !== undefined) {
+    sets.push('is_private = ?');
+    values.push(body.is_private ? 1 : 0);
+  }
+
+  if (sets.length === 0) {
+    return c.json({ error: 'Nothing to update' }, 400);
+  }
+
+  sets.push('updated_at = ?');
+  values.push(new Date().toISOString());
+  values.push(repoName);
+
+  await c.env.DB
+    .prepare(`UPDATE repositories SET ${sets.join(', ')} WHERE name = ?`)
+    .bind(...values)
+    .run();
+
+  const user = c.get('user');
+  const apiKey = c.get('apiKey');
+  await audit(c.env.DB, {
+    repoId: repo.id,
+    actor: user?.id ?? apiKey?.id ?? 'system',
+    action: 'repo.update',
+    details: body,
+    ipAddress: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || undefined
+  });
+
+  return c.json({ success: true });
+});
+
+/**
  * Get repository details.
  */
 app.get('/:repo', async (c) => {

@@ -67,7 +67,7 @@ export interface TreeResult {
     author: CommitAuthor;
     date: string;
     time_ago: string;
-  };
+  } | null;
   entries: TreeEntry[];
   readme?: {
     name: string;
@@ -753,30 +753,9 @@ export function getRepoCommits(repoName: string): CommitSummary[] {
     return STARSHIP_COMMITS;
   }
 
-  // Fallback / dynamic repos
-  return [
-    {
-      sha: 'a1b2c3d4e5f678901234567890abcdef12345678',
-      short_sha: 'a1b2c3d',
-      message: `Initial commit for ${repoName}`,
-      description: 'Repository initialized with README and .gitflare CI configuration.',
-      author: {
-        name: 'GitFlare Admin',
-        email: 'admin@gitflare.dev',
-        avatar: 'GF'
-      },
-      date: new Date().toISOString(),
-      time_ago: 'just now',
-      ci_status: 'passed',
-      ci_run_id: null,
-      stats: {
-        additions: 42,
-        deletions: 0,
-        total: 42,
-        files_changed: 3
-      }
-    }
-  ];
+  // Non-starship repos must use Artifacts — return empty so callers
+  // fall through to getArtifactCommits() instead of showing stub data.
+  return [];
 }
 
 export function getCommitDetail(repoName: string, sha: string): CommitDetail | null {
@@ -809,9 +788,12 @@ export function getCommitDetail(repoName: string, sha: string): CommitDetail | n
   };
 }
 
-export function getRepoTree(repoName: string, subPath: string = '', ref: string = 'main'): TreeResult {
+export function getRepoTree(repoName: string, subPath: string = '', ref: string = 'main'): TreeResult | null {
+  // Non-starship repos must use Artifacts — return null so callers use getArtifactTree()
+  if (repoName.toLowerCase() !== 'starship') return null;
+
   const cleanPath = subPath.replace(/^\/+|\/+$/g, '');
-  const filesMap = repoName.toLowerCase() === 'starship' ? STARSHIP_FILES : getDefaultRepoFiles(repoName);
+  const filesMap = STARSHIP_FILES;
   const commits = getRepoCommits(repoName);
   const latestCommit = commits[0] || {
     sha: '240fb22df4c1e4bc37907895580f2d1cb7e6ca9b',
@@ -905,8 +887,11 @@ export function getRepoTree(repoName: string, subPath: string = '', ref: string 
 }
 
 export function getRepoBlob(repoName: string, filePath: string, ref: string = 'main'): BlobResult | null {
+  // Non-starship repos must use Artifacts — return null so callers use getArtifactBlob()
+  if (repoName.toLowerCase() !== 'starship') return null;
+
   const cleanPath = filePath.replace(/^\/+/, '');
-  const filesMap = repoName.toLowerCase() === 'starship' ? STARSHIP_FILES : getDefaultRepoFiles(repoName);
+  const filesMap = STARSHIP_FILES;
   const content = filesMap[cleanPath];
 
   if (content === undefined) return null;
