@@ -38,8 +38,15 @@ async function artifactRepo(env: Env, name: string): Promise<ArtifactRepo | null
 
 export async function getArtifactCommits(env: Env, name: string, ref = 'main', limit = 20): Promise<CommitSummary[]> {
   const repo = await artifactRepo(env, name);
-  if (!repo) return [];
-  return (await repo.log({ ref, limit: Math.min(Math.max(limit, 1), 100) })).map(summary);
+  if (!repo) {
+    console.warn(`[artifact-reader] repo not found in Artifacts: ${name}`);
+    return [];
+  }
+  const commits = await repo.log({ ref, limit: Math.min(Math.max(limit, 1), 100) });
+  if (commits.length === 0) {
+    console.warn(`[artifact-reader] no commits found for ${name}@${ref} — ref may not exist yet`);
+  }
+  return commits.map(summary);
 }
 
 export async function getArtifactCommitDetail(env: Env, name: string, sha: string): Promise<CommitDetail | null> {
@@ -68,7 +75,10 @@ export async function getArtifactBranches(env: Env, name: string, defaultBranch:
 
 export async function getArtifactTree(env: Env, name: string, subPath = '', ref = 'main'): Promise<TreeResult | null> {
   const repo = await artifactRepo(env, name);
-  if (!repo) return null;
+  if (!repo) {
+    console.warn(`[artifact-reader] repo not found in Artifacts for tree: ${name}`);
+    return null;
+  }
   const cleanPath = subPath.replace(/^\/+|\/+$/g, '');
   const segments = cleanPath ? cleanPath.split('/') : [];
   if (segments.some(segment => !segment || segment === '.' || segment === '..')) return null;
