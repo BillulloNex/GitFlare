@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { Env, ApiKey } from '../env.ts';
-import { getRepoCommits, getCommitDetail } from '../lib/repo-store.ts';
+// repo-store.ts static data no longer used — all repos read from Artifacts
 import { getArtifactCommits, getArtifactCommitDetail } from '../lib/artifact-reader.ts';
 
 const app = new Hono<{ Bindings: Env; Variables: { apiKey?: ApiKey } }>();
@@ -15,13 +15,11 @@ app.get('/:repo/commits', async (c) => {
 
   // Check repo
   const repo = await c.env.DB.prepare('SELECT id, name FROM repositories WHERE name = ?').bind(repoName).first<{ id: string, name: string }>();
-  if (!repo && repoName.toLowerCase() !== 'starship') {
+
+  const commits = await getArtifactCommits(c.env, repoName, branch);
+  if (!repo && commits.length === 0) {
     return c.json({ error: 'Repository not found' }, 404);
   }
-
-  const commits = repoName.toLowerCase() === 'starship'
-    ? getRepoCommits(repoName)
-    : await getArtifactCommits(c.env, repoName, branch);
 
   // If repo exists in D1, enrich with latest CI run statuses
   if (repo) {
@@ -66,9 +64,7 @@ app.get('/:repo/commits/:sha', async (c) => {
   const repoName = c.req.param('repo');
   const sha = c.req.param('sha');
 
-  const commit = repoName.toLowerCase() === 'starship'
-    ? getCommitDetail(repoName, sha)
-    : await getArtifactCommitDetail(c.env, repoName, sha);
+  const commit = await getArtifactCommitDetail(c.env, repoName, sha);
   if (!commit) {
     return c.json({ error: 'Commit not found' }, 404);
   }
