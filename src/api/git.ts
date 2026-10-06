@@ -180,7 +180,8 @@ app.post('/:repo/git-upload-pack', async (c) => {
 async function getProtectedRefs(
 	db: D1Database,
 	repoId: string,
-	refs: RefUpdate[]
+	refs: RefUpdate[],
+	pusherId?: string
 ): Promise<{ ref: RefUpdate; rule: any }[]> {
 	const { results: rules } = await db.prepare(
 		'SELECT * FROM protected_branches WHERE repo_id = ?'
@@ -192,6 +193,11 @@ async function getProtectedRefs(
 
 	for (const ref of refs) {
 		for (const rule of rules) {
+			// If merge queue enforcement is disabled, allow direct pushes
+			if (!(rule.enforce_merge_queue as number)) {
+				continue;
+			}
+
 			const pattern = rule.branch_pattern as string;
 			let matches = false;
 
@@ -204,6 +210,16 @@ async function getProtectedRefs(
 			}
 
 			if (matches) {
+				// Check bypass_actors — JSON array of API key IDs that can skip protection
+				if (pusherId && rule.bypass_actors) {
+					try {
+						const bypassList = JSON.parse(rule.bypass_actors as string) as string[];
+						if (bypassList.includes(pusherId)) {
+							continue; // This actor is allowed to bypass
+						}
+					} catch { /* invalid JSON — don't bypass */ }
+				}
+
 				violations.push({ ref, rule });
 				break;
 			}
@@ -252,7 +268,8 @@ app.post('/:repo/git-receive-pack', async (c) => {
 
 	// ── Step 2: Branch protection ───────────────────────────────
 	if (parsedRefs.length > 0 && !isInternalMerge) {
-		const violations = await getProtectedRefs(DB, repoRecord.id, parsedRefs);
+		const apiKeyForProtection = c.get('apiKey');
+		const violations = await getProtectedRefs(DB, repoRecord.id, parsedRefs, apiKeyForProtection?.id);
 
 		if (violations.length > 0) {
 			const protectedNames = violations.map(v => v.ref.branch).join(', ');

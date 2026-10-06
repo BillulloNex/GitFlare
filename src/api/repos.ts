@@ -198,4 +198,141 @@ app.delete('/:repo', requirePermission('admin'), async (c) => {
   return c.json({ success: true });
 });
 
+// ─── Branch Protection Management ──────────────────────────────
+
+/**
+ * List branch protection rules for a repo.
+ */
+app.get('/:repo/protection', async (c) => {
+  const repoName = c.req.param('repo');
+  const repo = await c.env.DB
+    .prepare('SELECT id FROM repositories WHERE name = ?')
+    .bind(repoName)
+    .first<{ id: string }>();
+
+  if (!repo) {
+    return c.json({ error: 'Repository not found' }, 404);
+  }
+
+  const { results } = await c.env.DB
+    .prepare('SELECT * FROM protected_branches WHERE repo_id = ? ORDER BY created_at')
+    .bind(repo.id)
+    .all();
+
+  return c.json({ rules: results });
+});
+
+/**
+ * Update a branch protection rule (toggle enforcement, set bypass actors, etc).
+ */
+app.patch('/:repo/protection/:ruleId', requirePermission('admin'), async (c) => {
+  const repoName = c.req.param('repo');
+  const ruleId = c.req.param('ruleId');
+
+  const repo = await c.env.DB
+    .prepare('SELECT id FROM repositories WHERE name = ?')
+    .bind(repoName)
+    .first<{ id: string }>();
+
+  if (!repo) {
+    return c.json({ error: 'Repository not found' }, 404);
+  }
+
+  const rule = await c.env.DB
+    .prepare('SELECT * FROM protected_branches WHERE id = ? AND repo_id = ?')
+    .bind(ruleId, repo.id)
+    .first();
+
+  if (!rule) {
+    return c.json({ error: 'Protection rule not found' }, 404);
+  }
+
+  const body = await c.req.json<{
+    enforce_merge_queue?: boolean;
+    allow_force_push?: boolean;
+    allow_deletion?: boolean;
+    bypass_actors?: string[];
+  }>();
+
+  const sets: string[] = [];
+  const values: (string | number)[] = [];
+
+  if (body.enforce_merge_queue !== undefined) {
+    sets.push('enforce_merge_queue = ?');
+    values.push(body.enforce_merge_queue ? 1 : 0);
+  }
+  if (body.allow_force_push !== undefined) {
+    sets.push('allow_force_push = ?');
+    values.push(body.allow_force_push ? 1 : 0);
+  }
+  if (body.allow_deletion !== undefined) {
+    sets.push('allow_deletion = ?');
+    values.push(body.allow_deletion ? 1 : 0);
+  }
+  if (body.bypass_actors !== undefined) {
+    sets.push('bypass_actors = ?');
+    values.push(JSON.stringify(body.bypass_actors));
+  }
+
+  if (sets.length === 0) {
+    return c.json({ error: 'Nothing to update' }, 400);
+  }
+
+  sets.push('updated_at = ?');
+  values.push(new Date().toISOString());
+  values.push(ruleId);
+  values.push(repo.id);
+
+  await c.env.DB
+    .prepare(`UPDATE protected_branches SET ${sets.join(', ')} WHERE id = ? AND repo_id = ?`)
+    .bind(...values)
+    .run();
+
+  const user = c.get('user');
+  const apiKey = c.get('apiKey');
+  await audit(c.env.DB, {
+    repoId: repo.id,
+    actor: user?.id ?? apiKey?.id ?? 'system',
+    action: 'branch_protection.update',
+    details: { ruleId, ...body },
+    ipAddress: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || undefined
+  });
+
+  return c.json({ success: true });
+});
+
+/**
+ * Delete a branch protection rule.
+ */
+app.delete('/:repo/protection/:ruleId', requirePermission('admin'), async (c) => {
+  const repoName = c.req.param('repo');
+  const ruleId = c.req.param('ruleId');
+
+  const repo = await c.env.DB
+    .prepare('SELECT id FROM repositories WHERE name = ?')
+    .bind(repoName)
+    .first<{ id: string }>();
+
+  if (!repo) {
+    return c.json({ error: 'Repository not found' }, 404);
+  }
+
+  await c.env.DB
+    .prepare('DELETE FROM protected_branches WHERE id = ? AND repo_id = ?')
+    .bind(ruleId, repo.id)
+    .run();
+
+  const user = c.get('user');
+  const apiKey = c.get('apiKey');
+  await audit(c.env.DB, {
+    repoId: repo.id,
+    actor: user?.id ?? apiKey?.id ?? 'system',
+    action: 'branch_protection.delete',
+    details: { ruleId },
+    ipAddress: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || undefined
+  });
+
+  return c.json({ success: true });
+});
+
 export default app;
