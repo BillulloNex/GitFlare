@@ -405,14 +405,15 @@ app.post('/:repo/git-receive-pack', async (c) => {
 				}
 			}
 
-			// Last resort: if both request and response parsing failed but Artifacts
-			// returned 200, we know *something* was pushed successfully. Use the
-			// request URL's repo name and assume "main" was updated.
-			if (successfulBranches.length === 0 && parsedRefs.length === 0) {
-				console.warn(`Both request and response parsing failed for ${repoName} — falling back to main`);
+			// Last resort: if no successful branches were identified after all
+			// parsing attempts, but Artifacts returned 200, we know *something*
+			// was pushed. Assume "main" was updated.
+			if (successfulBranches.length === 0) {
+				console.warn(`No successful branches identified for ${repoName} (parsedRefs=${parsedRefs.length}) — falling back to main`);
 				successfulBranches.push('main');
 				successfulShas.set('main', 'HEAD');
 			}
+			console.log(`Post-push hooks for ${repoName}: branches=[${successfulBranches}] shas=[${Array.from(successfulShas.entries()).map(([k,v])=>`${k}:${v.slice(0,7)}`)}]`);
 		}
 
 		// ── Step 6: Post-push hooks (only for actually-successful refs) ──
