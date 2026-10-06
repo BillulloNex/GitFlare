@@ -93,6 +93,15 @@ export interface BlobResult {
   };
 }
 
+// ─── Time Helpers ───────────────────────────────────────────────
+function timeAgo(dateString: string): string {
+  const diffSec = Math.max(0, Math.floor((Date.now() - new Date(dateString).getTime()) / 1000));
+  if (diffSec < 60) return 'just now';
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)} minutes ago`;
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)} hours ago`;
+  return `${Math.floor(diffSec / 86400)} days ago`;
+}
+
 // ─── Starship Commits Data ──────────────────────────────────────
 const STARSHIP_COMMITS: CommitDetail[] = [
   {
@@ -750,7 +759,7 @@ export function getBranches(repoName: string): { name: string; is_default: boole
 
 export function getRepoCommits(repoName: string): CommitSummary[] {
   if (repoName.toLowerCase() === 'starship') {
-    return STARSHIP_COMMITS;
+    return STARSHIP_COMMITS.map(c => ({ ...c, time_ago: timeAgo(c.date) }));
   }
 
   // Non-starship repos must use Artifacts — return empty so callers
@@ -761,16 +770,17 @@ export function getRepoCommits(repoName: string): CommitSummary[] {
 export function getCommitDetail(repoName: string, sha: string): CommitDetail | null {
   const commits = repoName.toLowerCase() === 'starship' ? STARSHIP_COMMITS : [];
   const found = commits.find(c => c.sha.startsWith(sha.toLowerCase()) || c.short_sha === sha.toLowerCase());
-  if (found) return found;
+  if (found) return { ...found, time_ago: timeAgo(found.date) };
 
   // Fallback commit detail
+  const now = new Date().toISOString();
   return {
     sha: sha.padEnd(40, '0'),
     short_sha: sha.slice(0, 7),
     message: `Commit ${sha.slice(0, 7)}`,
     author: { name: 'GitFlare User', email: 'user@gitflare.dev', avatar: 'GU' },
-    date: new Date().toISOString(),
-    time_ago: 'recently',
+    date: now,
+    time_ago: timeAgo(now),
     ci_status: 'passed',
     ci_run_id: null,
     parent_sha: null,
@@ -801,7 +811,7 @@ export function getRepoTree(repoName: string, subPath: string = '', ref: string 
     message: 'Latest updates',
     author: { name: 'Thomas Nguyen', email: 'tungvunguyennguyen@gmail.com', avatar: 'TN' },
     date: '2026-10-02T23:07:34-04:00',
-    time_ago: '3 hours ago'
+    time_ago: timeAgo('2026-10-02T23:07:34-04:00')
   };
 
   // Breadcrumbs
@@ -835,7 +845,7 @@ export function getRepoTree(repoName: string, subPath: string = '', ref: string 
           type: 'tree',
           path: fullEntryPath,
           message: 'Update ' + entryName,
-          updated_at: '3 hours ago'
+          updated_at: latestCommit.time_ago
         });
       } else {
         entriesMap.set(entryName, {
