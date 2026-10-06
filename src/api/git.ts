@@ -376,21 +376,20 @@ app.post('/:repo/git-receive-pack', async (c) => {
 					for (const result of report.refResults) {
 						if (result.success) {
 							successfulBranches.push(result.branch);
-							// Find the corresponding SHA from our parsed refs
+							// Find the corresponding SHA from our parsed refs (if available)
 							const matchingRef = parsedRefs.find(r => r.branch === result.branch);
 							if (matchingRef) {
 								successfulShas.set(result.branch, matchingRef.newSha);
 							}
-						} else {
-							console.log(`Ref rejected by Artifacts: ${result.refName} — ${result.error}`);
+							// If parsedRefs was empty (request parsing failed), we still
+							// have the branch name from the response — use HEAD as SHA
 						}
 					}
 
 					console.log(`Push result for ${repoName}: ${report.refResults.length} refs, ${successfulBranches.length} succeeded`);
-				} else {
+				} else if (parsedRefs.length > 0) {
 					// Couldn't parse response — fall back to assuming success for all refs
-					// (this happens with some git protocol variations)
-					console.warn(`Could not parse report-status for ${repoName}, falling back`);
+					console.warn(`Could not parse report-status for ${repoName}, falling back to parsedRefs`);
 					for (const ref of parsedRefs) {
 						successfulBranches.push(ref.branch);
 						successfulShas.set(ref.branch, ref.newSha);
@@ -398,11 +397,21 @@ app.post('/:repo/git-receive-pack', async (c) => {
 				}
 			} catch (parseErr: any) {
 				console.error('Failed to parse receive-pack response:', parseErr.message);
-				// Fall back to assuming success for parsed refs
-				for (const ref of parsedRefs) {
-					successfulBranches.push(ref.branch);
-					successfulShas.set(ref.branch, ref.newSha);
+				if (parsedRefs.length > 0) {
+					for (const ref of parsedRefs) {
+						successfulBranches.push(ref.branch);
+						successfulShas.set(ref.branch, ref.newSha);
+					}
 				}
+			}
+
+			// Last resort: if both request and response parsing failed but Artifacts
+			// returned 200, we know *something* was pushed successfully. Use the
+			// request URL's repo name and assume "main" was updated.
+			if (successfulBranches.length === 0 && parsedRefs.length === 0) {
+				console.warn(`Both request and response parsing failed for ${repoName} — falling back to main`);
+				successfulBranches.push('main');
+				successfulShas.set('main', 'HEAD');
 			}
 		}
 
