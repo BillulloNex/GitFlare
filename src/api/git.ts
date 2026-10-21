@@ -1,12 +1,15 @@
 import { Hono } from 'hono';
 import type { Env, ApiKey } from '../env.ts';
 import { parseCIConfig } from '../lib/ci-parser.ts';
+import { deployOnlyConfig, readRepoCiYaml } from '../lib/ci-source.ts';
 import {
 	parseReceivePackRequest,
 	parseReceivePackResponse,
 	buildRejectResponse,
+	selectSuccessfulUpdates,
 	wrapInSideband,
 	type RefUpdate,
+	type ReportStatus,
 } from '../lib/git-protocol.ts';
 import { triggerGitHubMirror } from '../lib/github-mirror.ts';
 
@@ -365,53 +368,34 @@ app.post('/:repo/git-receive-pack', async (c) => {
 		let successfulShas: Map<string, string> = new Map();
 
 		if (response.ok) {
+			let report: ReportStatus | null = null;
 			try {
-				const report = parseReceivePackResponse(responseBody);
-
-				if (report) {
-					if (!report.unpackOk) {
-						console.error(`Unpack failed for ${repoName}: ${report.unpackError}`);
-					}
-
-					for (const result of report.refResults) {
-						if (result.success) {
-							successfulBranches.push(result.branch);
-							// Find the corresponding SHA from our parsed refs (if available)
-							const matchingRef = parsedRefs.find(r => r.branch === result.branch);
-							if (matchingRef) {
-								successfulShas.set(result.branch, matchingRef.newSha);
-							}
-							// If parsedRefs was empty (request parsing failed), we still
-							// have the branch name from the response — use HEAD as SHA
-						}
-					}
-
-					console.log(`Push result for ${repoName}: ${report.refResults.length} refs, ${successfulBranches.length} succeeded`);
-				} else if (parsedRefs.length > 0) {
-					// Couldn't parse response — fall back to assuming success for all refs
-					console.warn(`Could not parse report-status for ${repoName}, falling back to parsedRefs`);
-					for (const ref of parsedRefs) {
-						successfulBranches.push(ref.branch);
-						successfulShas.set(ref.branch, ref.newSha);
-					}
-				}
+				report = parseReceivePackResponse(responseBody);
 			} catch (parseErr: any) {
 				console.error('Failed to parse receive-pack response:', parseErr.message);
-				if (parsedRefs.length > 0) {
-					for (const ref of parsedRefs) {
-						successfulBranches.push(ref.branch);
-						successfulShas.set(ref.branch, ref.newSha);
-					}
-				}
 			}
 
-			// Last resort: if no successful branches were identified after all
-			// parsing attempts, but Artifacts returned 200, we know *something*
-			// was pushed. Assume "main" was updated.
-			if (successfulBranches.length === 0) {
-				console.warn(`No successful branches identified for ${repoName} (parsedRefs=${parsedRefs.length}) — falling back to main`);
-				successfulBranches.push('main');
-				successfulShas.set('main', 'HEAD');
+			const updates = selectSuccessfulUpdates(true, report, parsedRefs);
+			for (const update of updates) {
+				let sha = update.newSha;
+				if (!sha) {
+					try {
+						const artifactRepo = await REPOS.get(repoRecord.name);
+						const [head] = artifactRepo ? await artifactRepo.log({ ref: update.branch, limit: 1 }) : [];
+						sha = head?.hash ?? '';
+					} catch (err: any) {
+						console.error(`Failed to resolve ${repoName}@${update.branch}:`, err.message);
+					}
+				}
+				if (!sha) {
+					console.error(`Not triggering CI for ${repoName}@${update.branch}: commit SHA was not resolved`);
+					continue;
+				}
+				successfulBranches.push(update.branch);
+				successfulShas.set(update.branch, sha);
+			}
+			if (updates.length === 0) {
+				console.warn(`Push to ${repoName} did not report a successful ref (parsedRefs=${parsedRefs.length}). CI was not triggered.`);
 			}
 			console.log(`Post-push hooks for ${repoName}: branches=[${successfulBranches}] shas=[${Array.from(successfulShas.entries()).map(([k,v])=>`${k}:${v.slice(0,7)}`)}]`);
 		}
@@ -453,38 +437,45 @@ app.post('/:repo/git-receive-pack', async (c) => {
 			// Trigger CI for each successfully-pushed branch
 			c.executionCtx.waitUntil((async () => {
 				for (const branch of successfulBranches) {
-					const commitSha = successfulShas.get(branch) || 'unknown';
+					const commitSha = successfulShas.get(branch);
+					if (!commitSha) continue;
 
 					try {
-						let yamlContent = await c.env.CACHE.get(`ci-config:${repoRecord.name}`);
-
-						if (!yamlContent) {
-							yamlContent = `
-name: auto
-on:
-  push:
-    branches: [main]
-jobs:
-  deploy:
-    sandbox: standard-2
-    steps:
-      - name: Push received
-        run: echo "Deploying ${repoRecord.name}@${branch}"
-`;
+						const yamlFromRepo = await readRepoCiYaml(c.env, repoRecord.name, commitSha);
+						const { results: targets } = await DB.prepare(
+							'SELECT id FROM deploy_targets WHERE repo_id = ? AND is_active = 1',
+						).bind(repoRecord.id).all();
+						if (!yamlFromRepo && (!targets || targets.length === 0)) {
+							console.log(`No CI config and no deploy target for ${repoName}@${branch}; not queueing a run`);
+							continue;
 						}
-
-						const config = parseCIConfig(yamlContent);
+						const yamlContent = yamlFromRepo ?? deployOnlyConfig(branch);
+						let config;
+						try {
+							config = parseCIConfig(yamlContent);
+						} catch (parseError: any) {
+							const runId = crypto.randomUUID();
+							const now = new Date().toISOString();
+							await DB.prepare(
+								'INSERT INTO ci_runs (id, repo_id, branch, commit_sha, status, trigger, config_snapshot, started_at, finished_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+							).bind(runId, repoRecord.id, branch, commitSha, 'failed', 'push', yamlContent, now, now, now).run();
+							await DB.prepare(
+								'INSERT INTO ci_steps (id, run_id, job_name, step_index, name, command, status, exit_code, stderr_url, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+							).bind(crypto.randomUUID(), runId, 'config', 0, 'Read CI config', '.gitflare/ci.yml', 'failed', 1, parseError.message, now, now).run();
+							console.error(`Invalid CI config for ${repoName}@${branch}:`, parseError.message);
+							continue;
+						}
 
 						// Check if this branch should trigger CI based on config
 						const pushConfig = config.on?.push;
-						if (pushConfig?.branches && !pushConfig.branches.includes(branch)) {
+						if (yamlFromRepo && pushConfig?.branches && !pushConfig.branches.includes(branch)) {
 							console.log(`Skipping CI for ${repoName}@${branch} — not in trigger branches`);
 							continue;
 						}
 
 						const runId = crypto.randomUUID();
-						await DB.prepare('INSERT INTO ci_runs (id, repo_id, branch, commit_sha, status, trigger, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-							.bind(runId, repoRecord.id, branch, commitSha, 'queued', 'push', new Date().toISOString())
+						await DB.prepare('INSERT INTO ci_runs (id, repo_id, branch, commit_sha, status, trigger, config_snapshot, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+							.bind(runId, repoRecord.id, branch, commitSha, 'queued', 'push', yamlContent, new Date().toISOString())
 							.run();
 
 						await CI_QUEUE.send({

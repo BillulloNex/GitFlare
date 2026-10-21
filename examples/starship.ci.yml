@@ -26,7 +26,7 @@ jobs:
       - name: Check Node dependencies
         run: npm install
       - name: Typecheck frontend
-        run: npx tsc --noEmit || true
+        run: npx tsc --noEmit
 
   test:
     name: Run Tests
@@ -38,9 +38,9 @@ jobs:
           pip install -r OpenHands/requirements.txt 2>/dev/null || true
           npm install
       - name: Run Python tests
-        run: python -m pytest OpenHands/tests/ -x --timeout=120 2>/dev/null || echo "No pytest tests found"
+        run: python -m pytest OpenHands/tests/ -x --timeout=120
       - name: Run frontend tests
-        run: npm test 2>/dev/null || echo "No npm tests configured"
+        run: npm test
 
   build:
     name: Build Docker Image

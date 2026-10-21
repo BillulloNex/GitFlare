@@ -18,14 +18,23 @@ app.post('/internal/ci/callback', async (c) => {
     durationMs?: number;
   }>();
   
-  const ciStatus = body.status === 'success' ? 'passed' : 'failed';
-  const exitCode = body.status === 'success' ? 0 : 1;
   const now = new Date().toISOString();
+  const deployStatus = body.status === 'success' ? 'passed' : 'failed';
+  const exitCode = body.status === 'success' ? 0 : 1;
+  await c.env.DB.prepare(
+    "UPDATE ci_steps SET status = ?, finished_at = ?, exit_code = ? WHERE run_id = ? AND status = 'running'",
+  ).bind(deployStatus, now, exitCode, body.runId).run();
+  await c.env.DB.prepare(
+    "UPDATE deployments SET status = ?, finished_at = ?, coolify_deployment_id = COALESCE(?, coolify_deployment_id) WHERE ci_run_id = ? AND status = 'deploying'",
+  ).bind(body.status === 'success' ? 'success' : 'failed', now, body.deploymentUuid ?? null, body.runId).run();
+
+  const failedStep = await c.env.DB.prepare(
+    "SELECT id FROM ci_steps WHERE run_id = ? AND status = 'failed' LIMIT 1",
+  ).bind(body.runId).first();
+  const ciStatus = body.status === 'success' && !failedStep ? 'passed' : 'failed';
   await c.env.DB.prepare('UPDATE ci_runs SET status = ?, finished_at = ? WHERE id = ?')
     .bind(ciStatus, now, body.runId).run();
-  await c.env.DB.prepare('UPDATE ci_steps SET status = ?, finished_at = ?, exit_code = ? WHERE run_id = ?')
-    .bind(ciStatus, now, exitCode, body.runId).run();
-  
+
   return c.json({ ok: true });
 });
 

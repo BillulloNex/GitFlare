@@ -288,6 +288,38 @@ function encodePktLine(content: string): Uint8Array {
  * If the data already appears to be sideband-wrapped (first payload byte
  * is \x01, \x02, or \x03), it is returned unchanged.
  */
+/**
+ * Decide which ref updates actually landed.
+ * A push is not assumed to have updated main when the request and the
+ * report-status both fail to name a successful ref.
+ */
+export function selectSuccessfulUpdates(
+	httpOk: boolean,
+	report: ReportStatus | null,
+	requested: RefUpdate[],
+): RefUpdate[] {
+	if (!httpOk) return [];
+	const requestedLive = requested.filter((ref) => !ref.isDelete);
+	if (report && !report.unpackOk) return [];
+
+	const succeeded = report?.refResults.filter((ref) => ref.success) ?? [];
+	if (succeeded.length > 0) {
+		const byBranch = new Map(requestedLive.map((ref) => [ref.branch, ref]));
+		return succeeded.map((ref) => byBranch.get(ref.branch) ?? {
+			oldSha: '',
+			newSha: '',
+			refName: ref.refName,
+			branch: ref.branch,
+			isCreate: false,
+			isDelete: false,
+		});
+	}
+
+	if (report && report.refResults.length > 0) return [];
+	if (report?.unpackOk || !report) return requestedLive;
+	return [];
+}
+
 export function wrapInSideband(body: ArrayBuffer | Uint8Array): Uint8Array {
 	const buffer = body instanceof Uint8Array ? body : new Uint8Array(body);
 	
