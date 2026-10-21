@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import type { Env } from '../env.ts';
+import { getArtifactCommits } from '../lib/artifact-reader.ts';
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -81,15 +82,20 @@ app.post('/:repo/deploys/:id/run', async (c) => {
 	const repoName = c.req.param('repo');
 	const { DB, DEPLOY_QUEUE } = c.env;
 
-	const repoRecord = await DB.prepare('SELECT id, name FROM repositories WHERE name = ?').bind(repoName).first<{ id: string, name: string }>();
+	const repoRecord = await DB.prepare('SELECT id, name, default_branch FROM repositories WHERE name = ?').bind(repoName).first<{ id: string, name: string, default_branch: string }>();
 	if (!repoRecord) return c.json({ error: 'Repo not found' }, 404);
 
 	const target = await DB.prepare('SELECT * FROM deploy_targets WHERE id = ?').bind(targetId).first();
 	if (!target) return c.json({ error: 'Deploy target not found' }, 404);
 
+	const branch = repoRecord.default_branch || 'main';
+	const head = await getArtifactCommits(c.env, repoName, branch, 1);
+	const commitSha = head[0]?.sha;
+	if (!commitSha) return c.json({ error: `No commit found on ${branch}` }, 400);
+
 	const runId = crypto.randomUUID();
-	await DB.prepare('INSERT INTO deployments (id, repo_id, target_id, status, created_at) VALUES (?, ?, ?, ?, ?)')
-		.bind(runId, repoRecord.id, targetId, 'queued', new Date().toISOString()).run();
+	await DB.prepare('INSERT INTO deployments (id, repo_id, target_id, branch, commit_sha, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+		.bind(runId, repoRecord.id, targetId, branch, commitSha, 'queued', new Date().toISOString()).run();
 
 	const deployTarget = {
 		id: target.id as string,
@@ -104,8 +110,8 @@ app.post('/:repo/deploys/:id/run', async (c) => {
 		runId,
 		repoId: repoRecord.id,
 		repoName: repoRecord.name,
-		branch: 'main', 
-		commitSha: 'HEAD',
+		branch,
+		commitSha,
 		target: deployTarget
 	});
 

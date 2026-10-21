@@ -51,10 +51,42 @@ export class CoolifyClient {
 		return this.request(`/api/v1/applications/${appId}/deployments/${deploymentId}`);
 	}
 
+	async getDeployment(deploymentUuid: string): Promise<{ status?: string }> {
+		return this.request(`/api/v1/deployments/${deploymentUuid}`) as Promise<{ status?: string }>;
+	}
+
 	/**
 	 * Get application details
 	 */
 	async getApplication(appId: string): Promise<any> {
 		return this.request(`/api/v1/applications/${appId}`);
 	}
+}
+
+const COOLIFY_OK = new Set(['finished', 'success', 'succeeded']);
+const COOLIFY_PENDING = new Set(['in_progress', 'in-progress', 'queued', 'pending', 'running']);
+
+export function coolifyDeploymentId(payload: any): string | null {
+	const id = payload?.deployments?.[0]?.deployment_uuid
+		|| payload?.deployment_uuid
+		|| payload?.uuid
+		|| null;
+	return typeof id === 'string' && id ? id : null;
+}
+
+/** Poll until Coolify reports a terminal status. Never treats "accepted" as success. */
+export async function waitForCoolifyDeployment(
+	client: CoolifyClient,
+	deploymentUuid: string,
+	timeoutMs = 8 * 60 * 1000,
+): Promise<'success' | 'failed' | 'timeout'> {
+	const started = Date.now();
+	while (Date.now() - started < timeoutMs) {
+		const data = await client.getDeployment(deploymentUuid);
+		const status = String(data?.status || '').toLowerCase();
+		if (COOLIFY_OK.has(status)) return 'success';
+		if (status && !COOLIFY_PENDING.has(status)) return 'failed';
+		await new Promise((resolve) => setTimeout(resolve, 5000));
+	}
+	return 'timeout';
 }

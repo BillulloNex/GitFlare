@@ -1,4 +1,5 @@
 import type { ArtifactCommit, ArtifactRepo, Env } from '../env.ts';
+import { diffAgainstParent, type DiffSource } from './git-diff.ts';
 import type { BlobResult, CommitDetail, CommitSummary, TreeResult } from './repo-store.ts';
 
 const isoDate = (seconds: number) => new Date(seconds * 1000).toISOString();
@@ -23,6 +24,7 @@ function summary(commit: ArtifactCommit): CommitSummary {
     time_ago: timeAgo(commit.committedAt),
     ci_status: null,
     ci_run_id: null,
+    // Line stats are filled by getArtifactCommitDetail. The list does not walk trees.
     stats: { additions: 0, deletions: 0, total: 0, files_changed: 0 },
   };
 }
@@ -60,11 +62,35 @@ export async function getArtifactCommitDetail(env: Env, name: string, sha: strin
   }
   const commit = await repo.readCommit(fullSha);
   if (!commit) return null;
+  const parent = commit.parents[0] ? await repo.readCommit(commit.parents[0]) : null;
+  const diff = await diffAgainstParent(asDiffSource(repo), {
+    hash: commit.hash,
+    treeHash: commit.treeHash,
+  }, parent ? { hash: parent.hash, treeHash: parent.treeHash } : null);
+  const additions = diff.files.reduce((sum, file) => sum + file.additions, 0);
+  const deletions = diff.files.reduce((sum, file) => sum + file.deletions, 0);
   return {
     ...summary(commit),
-    parent_sha: commit.parents[0] ?? null,
-    parent_short_sha: commit.parents[0]?.slice(0, 7) ?? null,
-    files: [],
+    parent_sha: parent?.hash ?? commit.parents[0] ?? null,
+    parent_short_sha: (parent?.hash ?? commit.parents[0])?.slice(0, 7) ?? null,
+    stats: {
+      additions,
+      deletions,
+      total: additions + deletions,
+      files_changed: diff.files.length + diff.omitted,
+    },
+    files: diff.files,
+    omitted_files: diff.omitted,
+  };
+}
+
+function asDiffSource(repo: ArtifactRepo): DiffSource {
+  return {
+    readTree: (hash) => repo.readTree(hash),
+    readFile: async (ref, path) => {
+      const file = await repo.readFile({ ref, path });
+      return file ? new Uint8Array(await file.arrayBuffer()) : null;
+    },
   };
 }
 
