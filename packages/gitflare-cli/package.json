@@ -9,7 +9,7 @@
     "dev": "tsup --watch"
   },
   "dependencies": {
-    "@gitflare/client": "file:../gitflare-client",
+    "@gitflare/client": "^1.0.0",
     "commander": "^13.0.0",
     "chalk": "^5.4.0"
   },

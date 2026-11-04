@@ -1,8 +1,11 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
-import type { Env, CIJobMessage, DeployJobMessage } from './env.ts';
-import { auth } from './middleware/auth.ts';
+import { requestId, type RequestIdVariables } from 'hono/request-id';
+import { HTTPException } from 'hono/http-exception';
+import type { Env, CIJobMessage, DeployJobMessage, LegacyDeployJobMessage } from './env.ts';
+import { auth, appOrigin } from './middleware/auth.ts';
+import { repoAccess } from './middleware/repo-access.ts';
 import { validateSession } from './lib/session.ts';
 import reposApp from './api/repos.ts';
 import filesApp from './api/files.ts';
@@ -12,25 +15,53 @@ import commitsApp from './api/commits.ts';
 import deployApp from './api/deploy.ts';
 import mirrorsApp from './api/mirrors.ts';
 import bootstrapApp from './api/bootstrap.ts';
-import internal from './api/internal.ts';
+import internalCi, { deployCallbackApp } from './api/internal-ci.ts';
+import internalMerge from './api/internal-merge.ts';
 import ticketsApp from './api/tickets.ts';
 import authApp from './api/auth.ts';
 import keysApp from './api/keys.ts';
-import mcpApp from './api/mcp.ts';
+import { createMcpApp } from './api/mcp.ts';
 import { handleCIJob, handleDeployJob } from './queue/ci-consumer.ts';
+import { handleMirrorSyncBatch } from './lib/github-mirror.ts';
+import type { MirrorSyncMessage } from './env.ts';
+import { runScheduledMaintenance } from './lib/maintenance.ts';
 import dashboardHtml from './dashboard/index.html';
 import logoPng from '../assets/octopus-on-fire.png';
 
 // ─── Re-export Durable Objects ──────────────────────────────────
 export { RepoCoordinator } from './do/repo-coordinator.ts';
-export { CISession } from './do/ci-session.ts';
 export { TicketQueue } from './do/ticket-queue.ts';
 
 // ─── Hono App ───────────────────────────────────────────────────
-const app = new Hono<{ Bindings: Env }>();
+const app = new Hono<{ Bindings: Env; Variables: RequestIdVariables }>();
 
 // ─── Global Middleware ──────────────────────────────────────────
-app.use('*', cors());
+// Request ID: honours an incoming X-Request-Id, otherwise generates one, and
+// echoes it on the response so client reports can be matched to logs.
+app.use('*', requestId());
+
+// Errors: sub-apps define no onError of their own, so every uncaught throw
+// lands here. Log the full error with the request ID; never send internal
+// messages to the client.
+app.onError((err, c) => {
+	const id = c.get('requestId');
+	if (err instanceof HTTPException) {
+		if (err.status >= 500) console.error(`[${id}] ${c.req.method} ${c.req.path} → ${err.status}:`, err);
+		return c.json({ error: err.status >= 500 ? 'Internal Server Error' : err.message || 'Request failed', request_id: id }, err.status);
+	}
+	console.error(`[${id}] ${c.req.method} ${c.req.path} unhandled error:`, err);
+	return c.json({ error: 'Internal Server Error', request_id: id }, 500);
+});
+
+// CORS: only the app's own origin (APP_URL) may make credentialed
+// cross-origin requests. Agents/CLIs call server-to-server and don't need CORS.
+app.use('*', async (c, next) => {
+	const allowed = appOrigin(c.env);
+	return cors({
+		origin: (origin) => (allowed && origin === allowed ? origin : null),
+		credentials: true,
+	})(c, next);
+});
 app.use('/api/*', logger());
 
 // ─── Public Routes (no auth required) ───────────────────────────
@@ -76,8 +107,12 @@ app.route('/api/auth', authApp);
 // Bootstrap uses its own ADMIN_API_KEY check
 app.route('/api/bootstrap', bootstrapApp);
 
-// Internal runner callbacks (authenticated by RUNNER_SECRET, not user auth)
-app.route('/api', internal);
+// Internal runner callbacks (authenticated by RUNNER_SECRET, not user auth).
+// Mounted on their own prefixes so each sub-app's RUNNER_SECRET middleware
+// only applies to /api/internal/{ci,deploy,merge}/* — never to the rest of /api.
+app.route('/api/internal/ci', internalCi);
+app.route('/api/internal/deploy', deployCallbackApp);
+app.route('/api/internal/merge', internalMerge);
 
 // ─── Auth Gate ──────────────────────────────────────────────────
 // Everything below this line requires authentication
@@ -86,10 +121,18 @@ app.use('/api/*', auth);
 app.use('/mcp/*', auth);
 app.use('/mcp', auth);
 
+// Per-repo access control: resolves the repo, enforces is_private /
+// repo_members / key scope, and attaches `repoRecord` + `principal`.
+// GET/HEAD need read; every other method needs write. Admin-only routes add
+// requireRepoLevel('admin'). (GET/POST /api/repos — list/create — don't match.)
+app.use('/api/repos/:repo', repoAccess);
+app.use('/api/repos/:repo/*', repoAccess);
+
 // ─── Authenticated API Routes ───────────────────────────────────
 
-// MCP endpoint: /mcp (Streamable HTTP for AI agents)
-app.route('/mcp', mcpApp);
+// MCP endpoint: /mcp (Streamable HTTP for AI agents). Tools call the REST API
+// in-process through this same app, with the caller's credentials.
+app.route('/mcp', createMcpApp((request, env, ctx) => app.fetch(request, env, ctx)));
 
 // API key management: /api/keys
 app.route('/api/keys', keysApp);
@@ -128,21 +171,34 @@ app.all('*', (c) => {
 export default {
 	fetch: app.fetch,
 
-	async queue(batch: MessageBatch<CIJobMessage | DeployJobMessage>, env: Env, ctx: ExecutionContext) {
+	async queue(batch: MessageBatch<CIJobMessage | DeployJobMessage | LegacyDeployJobMessage>, env: Env, ctx: ExecutionContext) {
+		// GitHub mirror: batch-level handler (merges jobs per repo, acks/retries itself).
+		if (batch.queue === 'gitflare-mirror-sync') {
+			await handleMirrorSyncBatch(batch as unknown as MessageBatch<MirrorSyncMessage>, env);
+			return;
+		}
 		for (const message of batch.messages) {
 			try {
+				const delivery = { attempts: message.attempts };
 				if (batch.queue === 'gitflare-ci-jobs') {
-					await handleCIJob(message.body as CIJobMessage, env);
+					await handleCIJob(message.body as CIJobMessage, env, delivery);
 				} else if (batch.queue === 'gitflare-deploy-jobs') {
-					await handleDeployJob(message.body as DeployJobMessage, env);
+					await handleDeployJob(message.body as DeployJobMessage | LegacyDeployJobMessage, env, delivery);
 				} else {
 					console.warn(`Unknown queue: ${batch.queue}`);
 				}
 				message.ack();
 			} catch (err) {
-				console.error(`Error processing message ${message.id}:`, err);
-				message.retry();
+				// Handlers throw only when a retry is warranted; after max_retries
+				// the message lands in the queue's DLQ.
+				console.error(`Error processing message ${message.id} (attempt ${message.attempts}):`, err);
+				message.retry({ delaySeconds: Math.min(300, 15 * 2 ** (message.attempts - 1)) });
 			}
 		}
+	},
+
+	/** Cron (wrangler.jsonc triggers.crons): fail stuck runs/deployments, purge expired sessions. */
+	async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext) {
+		ctx.waitUntil(runScheduledMaintenance(env));
 	},
 };

@@ -4,6 +4,67 @@ import { createSession, validateSession, deleteSession } from '../lib/session.ts
 
 const app = new Hono<{ Bindings: Env }>();
 
+type UserRole = UserRecord['role'];
+
+const ROLE_RANK: Record<UserRole, number> = { viewer: 1, user: 2, admin: 3 };
+
+/** Parse a comma-separated env list into lowercase, trimmed, non-empty entries. */
+function parseList(value: string | undefined): string[] {
+    return (value ?? '')
+        .split(',')
+        .map((v) => v.trim().toLowerCase())
+        .filter(Boolean);
+}
+
+/** Lowercased domain part of an email (after the last '@'), or '' if malformed. */
+function emailDomain(email: string): string {
+    const at = email.lastIndexOf('@');
+    return at > 0 ? email.slice(at + 1).toLowerCase() : '';
+}
+
+type LoginDecision = { allowed: false; error: string } | { allowed: true; role: UserRole };
+
+/**
+ * Login policy. Runs on EVERY login, for existing and new users alike,
+ * BEFORE the user row is created or updated. Order matters:
+ *
+ *   1. verified email  — unverified emails are rejected outright, so an
+ *                        unverified address can never match ADMIN_EMAILS
+ *                        or ALLOWED_DOMAINS.
+ *   2. ALLOWED_DOMAINS — when set, non-matching domains are rejected.
+ *   3. ADMIN_EMAILS    — matching emails get `admin`.
+ *   4. otherwise       — `user` if ALLOWED_DOMAINS is set (and matched),
+ *                        `viewer` (read-only) if it is unset.
+ */
+function decideLogin(env: Env, email: string, verified: boolean): LoginDecision {
+    if (!verified || !email) {
+        return { allowed: false, error: 'email_not_verified' };
+    }
+
+    const normalized = email.trim().toLowerCase();
+    const allowedDomains = parseList(env.ALLOWED_DOMAINS);
+    if (allowedDomains.length > 0 && !allowedDomains.includes(emailDomain(normalized))) {
+        return { allowed: false, error: 'domain_not_allowed' };
+    }
+
+    if (parseList(env.ADMIN_EMAILS).includes(normalized)) {
+        return { allowed: true, role: 'admin' };
+    }
+
+    return { allowed: true, role: allowedDomains.length > 0 ? 'user' : 'viewer' };
+}
+
+/**
+ * Login never demotes: an existing user keeps a higher role (e.g. one granted
+ * manually), but is promoted if policy now grants more (ADMIN_EMAILS, or a
+ * domain newly added to ALLOWED_DOMAINS). Bulk downgrades are done in SQL —
+ * see scripts/1h-downgrade.sql. Unknown stored roles are replaced.
+ */
+function effectiveRole(existing: string | null | undefined, granted: UserRole): UserRole {
+    const current = existing && Object.hasOwn(ROLE_RANK, existing) ? (existing as UserRole) : null;
+    return current && ROLE_RANK[current] > ROLE_RANK[granted] ? current : granted;
+}
+
 // ─── Google OAuth: Start ────────────────────────────────────────
 app.get('/login', (c) => {
     const state = crypto.randomUUID();
@@ -85,9 +146,17 @@ app.get('/callback', async (c) => {
     const googleUser = await userInfoRes.json<{
         id: string;
         email: string;
+        verified_email?: boolean;
         name: string;
         picture?: string;
     }>();
+
+    // ── Login policy: runs before ANY user write, for existing and new users ──
+    const decision = decideLogin(c.env, googleUser.email ?? '', googleUser.verified_email === true);
+    if (!decision.allowed) {
+        console.warn(`Login rejected (${decision.error}) for ${googleUser.email}`);
+        return c.redirect(`${c.env.APP_URL}/?error=${decision.error}`);
+    }
 
     // Upsert user
     let user = await c.env.DB.prepare(
@@ -95,17 +164,20 @@ app.get('/callback', async (c) => {
     ).bind(googleUser.id).first<UserRecord>();
 
     if (user) {
-        // Update profile info on each login
+        const role = effectiveRole(user.role, decision.role);
+        // Update profile info (and role, if policy changed it) on each login
         await c.env.DB.prepare(
-            `UPDATE users SET name = ?, avatar_url = ?, email = ?, updated_at = datetime('now') WHERE id = ?`
-        ).bind(googleUser.name, googleUser.picture ?? null, googleUser.email, user.id).run();
+            `UPDATE users SET name = ?, avatar_url = ?, email = ?, role = ?, updated_at = datetime('now') WHERE id = ?`
+        ).bind(googleUser.name, googleUser.picture ?? null, googleUser.email, role, user.id).run();
+        user = { ...user, role };
     } else {
         // Create new user
         const userId = crypto.randomUUID();
+        const role = decision.role;
         await c.env.DB.prepare(
             `INSERT INTO users (id, google_id, email, name, avatar_url, role)
-             VALUES (?, ?, ?, ?, ?, 'user')`
-        ).bind(userId, googleUser.id, googleUser.email, googleUser.name, googleUser.picture ?? null).run();
+             VALUES (?, ?, ?, ?, ?, ?)`
+        ).bind(userId, googleUser.id, googleUser.email, googleUser.name, googleUser.picture ?? null, role).run();
 
         user = {
             id: userId,
@@ -113,7 +185,7 @@ app.get('/callback', async (c) => {
             email: googleUser.email,
             name: googleUser.name,
             avatar_url: googleUser.picture ?? null,
-            role: 'user',
+            role,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
         };

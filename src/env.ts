@@ -51,34 +51,6 @@ export interface ArtifactNamespace {
 	delete(name: string): Promise<void>;
 }
 
-// ─── Sandbox Binding Types ──────────────────────────────────────
-// Cloudflare Sandboxes: Isolated container execution
-
-export type SandboxTier =
-	| "lite"
-	| "basic"
-	| "standard-1"
-	| "standard-2"
-	| "standard-3"
-	| "standard-4";
-
-export interface ExecResult {
-	exitCode: number;
-	stdout: string;
-	stderr: string;
-}
-
-export interface SandboxInstance {
-	/** Execute a command in the sandbox */
-	exec(command: string, options?: { timeout?: number; env?: Record<string, string>; cwd?: string }): Promise<ExecResult>;
-	/** Get a WebSocket connection to the sandbox terminal */
-	terminal(): WebSocket;
-	/** Mount an Artifacts repo into the sandbox filesystem */
-	mount(artifact: ArtifactRepo, path: string): Promise<void>;
-	/** Destroy the sandbox instance */
-	destroy(): Promise<void>;
-}
-
 // ─── Worker Environment ─────────────────────────────────────────
 
 export interface Env {
@@ -97,31 +69,53 @@ export interface Env {
 	// ── Job Queues ──
 	CI_QUEUE: Queue<CIJobMessage>;
 	DEPLOY_QUEUE: Queue<DeployJobMessage>;
+	// Consumers may still receive LegacyDeployJobMessage bodies (see below).
+	/** GitHub mirror jobs (lib/github-mirror.ts). Runtime-guarded: falls back to inline sync if absent. */
+	MIRROR_QUEUE: Queue<MirrorSyncMessage>;
 
 	// ── Durable Objects ──
+	/** Per-repo push locks (src/do/repo-coordinator.ts). */
 	REPO_COORDINATOR: DurableObjectNamespace;
-	CI_SESSION: DurableObjectNamespace;
+	/** Per-repo merge queue state machine (src/do/ticket-queue.ts). */
 	TICKET_QUEUE: DurableObjectNamespace;
 
-	// ── AI ──
-	AI: Ai;
-
 	// ── Secrets (set via `wrangler secret put`) ──
-	JWT_SECRET: string;
-	COOLIFY_API_KEY: string;
-	COOLIFY_BASE_URL: string;
+	/** Fallback Coolify credentials for deploy targets without their own (optional). */
+	COOLIFY_API_KEY?: string;
+	COOLIFY_BASE_URL?: string;
+	/** Guards /api/bootstrap. */
 	ADMIN_API_KEY: string;
 	GOOGLE_CLIENT_ID: string;
 	GOOGLE_CLIENT_SECRET: string;
+	/** Session signing + legacy (pre-v1) secret decryption. Keep until every stored secret is `v1:`. */
 	SESSION_SECRET: string;
+	/** Key material for encryptSecret/decryptSecret (HKDF → AES-256-GCM, `v1:` format). */
+	ENCRYPTION_KEY: string;
 
 	// ── Vars (from wrangler.jsonc) ──
 	GITFLARE_VERSION: string;
-	DEFAULT_SANDBOX_TIER: string;
+	/** Hard cap on a CI run before maintenance fails it (ms, as a string). */
 	MAX_CI_DURATION_MS: string;
+	/** Public origin of this Worker, e.g. https://git.example.com — CORS, OAuth redirect, runner callbacks. */
+	APP_URL: string;
+	/** Used to build Artifacts remote URLs (lib/artifacts-url.ts). */
+	CLOUDFLARE_ACCOUNT_ID: string;
+
+	// ── Runner (secrets) ──
+	/** Base URL of the external runner service (packages/runner). */
 	RUNNER_URL: string;
+	/** Shared bearer secret between Worker and runner (both directions). */
 	RUNNER_SECRET: string;
-	APP_URL: string; // e.g., https://git.beenex.company
+
+	// ── Login policy (optional) ──
+	/** Comma-separated email domains allowed to sign in (e.g. "example.com,example.org"). Unset → anyone, as `viewer`. */
+	ALLOWED_DOMAINS?: string;
+	/** Comma-separated emails granted the `admin` role on login (verified emails only). */
+	ADMIN_EMAILS?: string;
+
+	// ── Diagnostics (optional) ──
+	/** "1"/"true" → hex-dump git receive-pack request headers and Artifacts responses to the log (src/api/git.ts). */
+	GIT_PROTOCOL_DEBUG?: string;
 }
 
 // ─── Queue Message Types ────────────────────────────────────────
@@ -133,10 +127,33 @@ export interface CIJobMessage {
 	branch: string;
 	commitSha: string;
 	config: CIPipelineConfig;
-	trigger: "push" | "pull_request" | "manual" | "schedule";
+	/** `merge_queue`: CI gate on a merge-queue result branch (B4.3) — never deploys the result branch itself. */
+	trigger: "push" | "pull_request" | "manual" | "schedule" | "merge_queue";
 }
 
+/**
+ * Deploy queue message (B1.2). Carries ids only — never credentials. The
+ * consumer loads the target from D1 and decrypts its Coolify key on use.
+ */
 export interface DeployJobMessage {
+	/** deployments.id */
+	deploymentId: string;
+	/** deploy_targets.id */
+	targetId: string;
+	/** ci_runs.id that triggered this deploy (null for manual deploys) */
+	ciRunId: string | null;
+	repoId: string;
+	repoName: string;
+	branch: string;
+	commitSha: string;
+}
+
+/**
+ * Pre-B1 deploy message shape. Messages already sitting in the queue at
+ * cutover look like this: `runId` is the deployments.id and `target` may hold
+ * a PLAINTEXT Coolify key (which the consumer ignores — it re-reads from D1).
+ */
+export interface LegacyDeployJobMessage {
 	runId: string;
 	repoId: string;
 	repoName: string;
@@ -149,7 +166,8 @@ export interface DeployJobMessage {
 
 export interface CIPipelineConfig {
 	name: string;
-	on: CITriggerConfig;
+	/** Optional — omitted means "run on every push" (lib/ci-parser.ts shouldTrigger). */
+	on?: CITriggerConfig;
 	env?: Record<string, string>;
 	jobs: Record<string, CIJobConfig>;
 }
@@ -163,15 +181,11 @@ export interface CITriggerConfig {
 
 export interface CIJobConfig {
 	name?: string;
-	sandbox?: SandboxTier;
 	needs?: string[];
 	env?: Record<string, string>;
 	steps: CIStepConfig[];
-	deploy?: {
-		target: "coolify" | "cloudflare";
-		app_id?: string;
-		branch_filter?: string[];
-	};
+	// Deploys are not configured here: a passing run fans out to the repo's
+	// deploy targets whose branch_filter matches (lib/deploy-targets.ts).
 }
 
 export interface CIStepConfig {
@@ -205,19 +219,7 @@ export interface RepoRecord {
 	updated_at: string;
 }
 
-export interface CIRunRecord {
-	id: string;
-	repo_id: string;
-	branch: string;
-	commit_sha: string;
-	status: "queued" | "running" | "passed" | "failed" | "cancelled";
-	trigger: string;
-	started_at: string | null;
-	finished_at: string | null;
-	created_at: string;
-}
-
-export interface APIKeyRecord {
+export interface ApiKey {
 	id: string;
 	name: string;
 	repo_id: string | null; // null = all repos
@@ -227,10 +229,7 @@ export interface APIKeyRecord {
 	expires_at: string | null;
 }
 
-/** Alias for downstream modules that import as ApiKey */
-export type ApiKey = APIKeyRecord;
-
-// ─── User & Session Types ───────────────────────────────────────
+// ─── User Types ─────────────────────────────────────────────────
 
 export interface UserRecord {
     id: string;
@@ -238,46 +237,26 @@ export interface UserRecord {
     email: string;
     name: string;
     avatar_url: string | null;
-    role: 'user' | 'admin';
+    /** viewer → read, user → write, admin → admin */
+    role: 'viewer' | 'user' | 'admin';
     created_at: string;
     updated_at: string;
-}
-
-export interface SessionRecord {
-    id: string;
-    user_id: string;
-    expires_at: string;
-    created_at: string;
-}
-
-export interface RepoMemberRecord {
-    repo_id: string;
-    user_id: string;
-    role: 'read' | 'write' | 'admin';
-    created_at: string;
 }
 
 // ─── GitHub Mirror Types ────────────────────────────────────────
 
-export interface GitHubMirrorRecord {
-    id: string;
-    repo_id: string;
-    github_url: string;
-    is_enabled: boolean;
-    branch_filter: string[] | null;
-    last_sync_at: string | null;
-    last_sync_status: 'success' | 'failed' | 'pending' | null;
-    last_sync_error: string | null;
-    created_at: string;
-    updated_at: string;
-}
-
+/**
+ * `gitflare-mirror-sync` queue message (B3.6). Carries ids and ref names only —
+ * never the GitHub URL or token (the consumer re-reads and decrypts the
+ * current mirror config from D1) and never SHAs (resolved from Artifacts at
+ * run time, so a delayed job mirrors the latest state).
+ */
 export interface MirrorSyncMessage {
-    mirrorId: string;
     repoId: string;
     repoName: string;
-    branches: string[];
-    commitShas: Record<string, string>;
-    githubUrl: string;
-    githubToken: string;
+    /** Bare branch names (`main`, as git.ts sends) or full refs (`refs/tags/v1`). */
+    refs: string[];
+    trigger: 'push' | 'manual';
+    /** ISO timestamp of when the sync was requested. */
+    requestedAt: string;
 }

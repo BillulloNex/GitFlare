@@ -1,28 +1,27 @@
 import { Hono } from 'hono';
 import type { Env } from '../env.ts';
-import { requirePermission, type AuthVariables } from '../middleware/auth.ts';
+import { requireRepoLevel, type RepoVariables } from '../middleware/repo-access.ts';
 import { audit } from '../lib/audit.ts';
+import { isOptionalBoolean, readJsonObject } from '../lib/request.ts';
 import {
-	encryptToken,
-	decryptToken,
+	encryptMirrorToken,
+	parseGitHubUrl,
+	requestManualMirrorSync,
 	testGitHubConnection,
-	triggerGitHubMirror,
 } from '../lib/github-mirror.ts';
 
-const app = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
+// All routes run behind repoAccess (src/index.ts): `repoRecord` is set, GET
+// needs read, other methods need write; config changes additionally need admin.
+const app = new Hono<{ Bindings: Env; Variables: RepoVariables }>();
 
 /**
  * GET /api/repos/:repo/mirror
  * Get mirror configuration for a repository.
  */
 app.get('/:repo/mirror', async (c) => {
-	const repoName = c.req.param('repo');
 	const { DB } = c.env;
 
-	const repo = await DB.prepare('SELECT id FROM repositories WHERE name = ?')
-		.bind(repoName)
-		.first<{ id: string }>();
-	if (!repo) return c.json({ error: 'Repository not found' }, 404);
+	const repo = c.get('repoRecord');
 
 	const mirror = await DB.prepare(
 		'SELECT id, repo_id, github_url, is_enabled, branch_filter, last_sync_at, last_sync_status, last_sync_error, created_at, updated_at FROM github_mirrors WHERE repo_id = ?'
@@ -47,37 +46,46 @@ app.get('/:repo/mirror', async (c) => {
  * Create or update mirror configuration.
  * Requires admin permission on the repo.
  */
-app.post('/:repo/mirror', requirePermission('admin'), async (c) => {
-	const repoName = c.req.param('repo');
-	const body = await c.req.json<{
+app.post('/:repo/mirror', requireRepoLevel('admin'), async (c) => {
+	const body = await readJsonObject<{
 		github_url: string;
 		github_token: string;
 		is_enabled?: boolean;
 		branch_filter?: string[] | null;
-	}>();
+	}>(c);
 	const { DB } = c.env;
 
 	// Validate input
-	if (!body.github_url) {
+	if (!body) return c.json({ error: 'Invalid JSON body' }, 400);
+	if (typeof body.github_url !== 'string' || !body.github_url) {
 		return c.json({ error: 'github_url is required' }, 400);
 	}
-	if (!body.github_token) {
+	if (typeof body.github_token !== 'string' || !body.github_token) {
 		return c.json({ error: 'github_token is required' }, 400);
 	}
-
-	// Validate URL format
-	const urlPattern = /github\.com[/:]([^/]+)\/([^/.]+)/;
-	if (!urlPattern.test(body.github_url)) {
-		return c.json({ error: 'Invalid GitHub URL. Expected format: https://github.com/owner/repo.git' }, 400);
+	if (!isOptionalBoolean(body.is_enabled)) {
+		return c.json({ error: 'is_enabled must be a boolean' }, 400);
+	}
+	if (
+		body.branch_filter !== undefined &&
+		body.branch_filter !== null &&
+		!(Array.isArray(body.branch_filter) && body.branch_filter.every((p) => typeof p === 'string'))
+	) {
+		return c.json({ error: 'branch_filter must be an array of strings or null' }, 400);
 	}
 
-	const repo = await DB.prepare('SELECT id FROM repositories WHERE name = ?')
-		.bind(repoName)
-		.first<{ id: string }>();
-	if (!repo) return c.json({ error: 'Repository not found' }, 404);
+	// Validate URL format (anchored) and keep only the canonical form built from
+	// the parsed parts — the stored URL is later fetched with the token attached.
+	const parsedUrl = typeof body.github_url === 'string' ? parseGitHubUrl(body.github_url) : null;
+	if (!parsedUrl) {
+		return c.json({ error: 'Invalid GitHub URL. Expected format: https://github.com/owner/repo.git' }, 400);
+	}
+	const githubUrl = parsedUrl.canonicalUrl;
+
+	const repo = c.get('repoRecord');
 
 	// Test the connection before saving
-	const connectionTest = await testGitHubConnection(body.github_url, body.github_token);
+	const connectionTest = await testGitHubConnection(githubUrl, body.github_token);
 	if (!connectionTest.ok) {
 		return c.json({
 			error: 'GitHub connection test failed',
@@ -86,7 +94,7 @@ app.post('/:repo/mirror', requirePermission('admin'), async (c) => {
 	}
 
 	// Encrypt the token
-	const encryptedToken = await encryptToken(body.github_token, c.env.SESSION_SECRET);
+	const encryptedToken = await encryptMirrorToken(c.env, body.github_token);
 
 	// Check if mirror already exists (upsert)
 	const existing = await DB.prepare('SELECT id FROM github_mirrors WHERE repo_id = ?')
@@ -103,7 +111,7 @@ app.post('/:repo/mirror', requirePermission('admin'), async (c) => {
 			 WHERE id = ?`
 		)
 			.bind(
-				body.github_url,
+				githubUrl,
 				encryptedToken,
 				body.is_enabled !== false ? 1 : 0,
 				body.branch_filter ? JSON.stringify(body.branch_filter) : null,
@@ -119,7 +127,7 @@ app.post('/:repo/mirror', requirePermission('admin'), async (c) => {
 			actor: user?.id ?? apiKey?.id ?? 'system',
 			action: 'mirror.update',
 			details: {
-				github_url: body.github_url,
+				github_url: githubUrl,
 				github_repo: connectionTest.repoFullName,
 			},
 			ipAddress: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || undefined,
@@ -127,7 +135,7 @@ app.post('/:repo/mirror', requirePermission('admin'), async (c) => {
 
 		return c.json({
 			id: existing.id,
-			github_url: body.github_url,
+			github_url: githubUrl,
 			github_repo: connectionTest.repoFullName,
 			message: 'Mirror configuration updated',
 		});
@@ -141,7 +149,7 @@ app.post('/:repo/mirror', requirePermission('admin'), async (c) => {
 			.bind(
 				id,
 				repo.id,
-				body.github_url,
+				githubUrl,
 				encryptedToken,
 				body.is_enabled !== false ? 1 : 0,
 				body.branch_filter ? JSON.stringify(body.branch_filter) : null,
@@ -157,7 +165,7 @@ app.post('/:repo/mirror', requirePermission('admin'), async (c) => {
 			actor: user?.id ?? apiKey?.id ?? 'system',
 			action: 'mirror.create',
 			details: {
-				github_url: body.github_url,
+				github_url: githubUrl,
 				github_repo: connectionTest.repoFullName,
 			},
 			ipAddress: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || undefined,
@@ -166,7 +174,7 @@ app.post('/:repo/mirror', requirePermission('admin'), async (c) => {
 		return c.json(
 			{
 				id,
-				github_url: body.github_url,
+				github_url: githubUrl,
 				github_repo: connectionTest.repoFullName,
 				message: 'Mirror configuration created',
 			},
@@ -179,14 +187,10 @@ app.post('/:repo/mirror', requirePermission('admin'), async (c) => {
  * DELETE /api/repos/:repo/mirror
  * Remove mirror configuration.
  */
-app.delete('/:repo/mirror', requirePermission('admin'), async (c) => {
-	const repoName = c.req.param('repo');
+app.delete('/:repo/mirror', requireRepoLevel('admin'), async (c) => {
 	const { DB } = c.env;
 
-	const repo = await DB.prepare('SELECT id FROM repositories WHERE name = ?')
-		.bind(repoName)
-		.first<{ id: string }>();
-	if (!repo) return c.json({ error: 'Repository not found' }, 404);
+	const repo = c.get('repoRecord');
 
 	const mirror = await DB.prepare('SELECT id FROM github_mirrors WHERE repo_id = ?')
 		.bind(repo.id)
@@ -203,7 +207,7 @@ app.delete('/:repo/mirror', requirePermission('admin'), async (c) => {
 		repoId: repo.id,
 		actor: user?.id ?? apiKey?.id ?? 'system',
 		action: 'mirror.delete',
-		details: { repo: repoName },
+		details: { repo: repo.name },
 		ipAddress: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || undefined,
 	});
 
@@ -212,44 +216,15 @@ app.delete('/:repo/mirror', requirePermission('admin'), async (c) => {
 
 /**
  * POST /api/repos/:repo/mirror/sync
- * Manually trigger a full mirror sync.
+ * Manually trigger a full mirror sync: every branch passing the mirror's
+ * branch filter plus every tag, at the SHAs Artifacts advertises right now.
+ * Runs on the mirror queue; returns 202 with the ref → SHA map being synced.
  */
-app.post('/:repo/mirror/sync', requirePermission('write'), async (c) => {
-	const repoName = c.req.param('repo');
-	const { DB } = c.env;
+app.post('/:repo/mirror/sync', requireRepoLevel('write'), async (c) => {
+	const repo = c.get('repoRecord');
 
-	const repo = await DB.prepare('SELECT id, name FROM repositories WHERE name = ?')
-		.bind(repoName)
-		.first<{ id: string; name: string }>();
-	if (!repo) return c.json({ error: 'Repository not found' }, 404);
-
-	const mirror = await DB.prepare(
-		'SELECT id, github_url, github_token_encrypted, branch_filter FROM github_mirrors WHERE repo_id = ? AND is_enabled = 1'
-	)
-		.bind(repo.id)
-		.first<{
-			id: string;
-			github_url: string;
-			github_token_encrypted: string;
-			branch_filter: string | null;
-		}>();
-	if (!mirror) return c.json({ error: 'No active mirror configured' }, 404);
-
-	// Get the default branch to sync
-	const defaultBranch = (
-		await DB.prepare('SELECT default_branch FROM repositories WHERE id = ?')
-			.bind(repo.id)
-			.first<{ default_branch: string }>()
-	)?.default_branch || 'main';
-
-	// Trigger async mirror
-	const branches = [defaultBranch];
-	const commitShas = new Map<string, string>();
-	commitShas.set(defaultBranch, 'HEAD');
-
-	c.executionCtx.waitUntil(
-		triggerGitHubMirror(c.env, repo.id, repo.name, branches, commitShas)
-	);
+	const result = await requestManualMirrorSync(c.env, repo, (p) => c.executionCtx.waitUntil(p));
+	if (!result.ok) return c.json({ error: result.error }, result.status);
 
 	const user = c.get('user');
 	const apiKey = c.get('apiKey');
@@ -257,11 +232,11 @@ app.post('/:repo/mirror/sync', requirePermission('write'), async (c) => {
 		repoId: repo.id,
 		actor: user?.id ?? apiKey?.id ?? 'system',
 		action: 'mirror.sync.manual',
-		details: { branches },
+		details: { refs: result.refs, queued: result.queued },
 		ipAddress: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || undefined,
 	});
 
-	return c.json({ message: 'Mirror sync triggered', branches }, 202);
+	return c.json({ message: 'Mirror sync triggered', queued: result.queued, refs: result.refs }, 202);
 });
 
 /**
@@ -269,15 +244,11 @@ app.post('/:repo/mirror/sync', requirePermission('write'), async (c) => {
  * Get mirror sync history.
  */
 app.get('/:repo/mirror/log', async (c) => {
-	const repoName = c.req.param('repo');
 	const limit = Math.min(Number(c.req.query('limit')) || 20, 100);
 	const offset = Number(c.req.query('offset')) || 0;
 	const { DB } = c.env;
 
-	const repo = await DB.prepare('SELECT id FROM repositories WHERE name = ?')
-		.bind(repoName)
-		.first<{ id: string }>();
-	if (!repo) return c.json({ error: 'Repository not found' }, 404);
+	const repo = c.get('repoRecord');
 
 	const mirror = await DB.prepare('SELECT id FROM github_mirrors WHERE repo_id = ?')
 		.bind(repo.id)
@@ -303,10 +274,10 @@ app.get('/:repo/mirror/log', async (c) => {
  * POST /api/repos/:repo/mirror/test
  * Test GitHub connection without saving.
  */
-app.post('/:repo/mirror/test', requirePermission('admin'), async (c) => {
-	const body = await c.req.json<{ github_url: string; github_token: string }>();
+app.post('/:repo/mirror/test', requireRepoLevel('admin'), async (c) => {
+	const body = await readJsonObject<{ github_url: string; github_token: string }>(c);
 
-	if (!body.github_url || !body.github_token) {
+	if (!body || typeof body.github_url !== 'string' || !body.github_url || typeof body.github_token !== 'string' || !body.github_token) {
 		return c.json({ error: 'github_url and github_token are required' }, 400);
 	}
 

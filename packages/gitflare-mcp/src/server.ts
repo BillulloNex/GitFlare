@@ -1,319 +1,264 @@
+/**
+ * GitFlare MCP tool definitions — the ONLY MCP server implementation.
+ *
+ * Every tool is a thin wrapper over the REST API via `@gitflare/client`, so
+ * authorization is enforced by the REST layer using whatever credentials the
+ * injected client carries. Used by:
+ *   - `index.ts`  (stdio, key from GITFLARE_API_KEY)
+ *   - `http.ts`   (Streamable HTTP, caller's Bearer key per request)
+ *   - the Worker's `/mcp` route (src/api/mcp.ts, caller's credentials, in-process)
+ *
+ * Must stay runtime-neutral (no `process`, no Node built-ins) — it is bundled
+ * into the Cloudflare Worker.
+ */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { GitFlareClient, GitFlareError } from '@gitflare/client';
 
-export function createServer(options?: { apiKey?: string; baseUrl?: string }) {
-  const GITFLARE_URL = options?.baseUrl || process.env.GITFLARE_URL || 'https://git.beenex.company';
-  const GITFLARE_API_KEY = options?.apiKey || process.env.GITFLARE_API_KEY;
+type ToolResult = { content: { type: 'text'; text: string }[]; isError?: boolean };
 
-  if (!GITFLARE_API_KEY) {
-    throw new Error('GITFLARE_API_KEY environment variable is required');
-  }
+function ok(value: unknown): ToolResult {
+  return { content: [{ type: 'text', text: JSON.stringify(value, null, 2) }] };
+}
 
-  const client = new GitFlareClient({ baseUrl: GITFLARE_URL, apiKey: GITFLARE_API_KEY });
+function fail(err: unknown): ToolResult {
+  const msg = err instanceof GitFlareError || err instanceof Error ? err.message : String(err);
+  return { content: [{ type: 'text', text: `Error: ${msg}` }], isError: true };
+}
 
-  const server = new McpServer({
-    name: 'gitflare',
-    version: '1.0.0',
-  });
-
-  function handleError(err: unknown) {
-    const msg = err instanceof GitFlareError ? err.message : String(err);
-    return { content: [{ type: 'text' as const, text: `Error: ${msg}` }], isError: true };
-  }
-
-  server.tool(
-    'gitflare_health',
-    'Check GitFlare health',
-    {},
-    async () => {
-      try {
-        const result = await client.health();
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      } catch (err) {
-        return handleError(err);
-      }
+/** Wrap a client call: JSON-encode the result, turn any throw into an MCP error result. */
+function run<A>(fn: (args: A) => Promise<unknown> | unknown) {
+  return async (args: A): Promise<ToolResult> => {
+    try {
+      return ok(await fn(args));
+    } catch (err) {
+      return fail(err);
     }
-  );
+  };
+}
 
+const refDescription = "Branch, tag or SHA (default: the repo's default branch)";
+
+export function createServer(client: GitFlareClient): McpServer {
+  const server = new McpServer({ name: 'gitflare', version: '1.0.0' });
+
+  // ── Health ──
+  server.tool('gitflare_health', 'Check GitFlare health', {}, run(() => client.health()));
+
+  // ── Repos ──
   server.tool(
     'gitflare_repo_list',
-    'List repositories',
-    { limit: z.number().optional(), offset: z.number().optional() },
-    async ({ limit, offset }) => {
-      try {
-        const result = await client.repos.list(limit, offset);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      } catch (err) {
-        return handleError(err);
-      }
-    }
+    'List repositories you can read',
+    {
+      limit: z.number().int().min(1).max(100).optional().describe('Max results (default 50, max 100)'),
+      offset: z.number().int().min(0).optional().describe('Pagination offset'),
+    },
+    run(async ({ limit, offset }) => {
+      const l = limit ?? 50;
+      const o = offset ?? 0;
+      return { repos: await client.repos.list(l, o), limit: l, offset: o };
+    }),
   );
 
   server.tool(
     'gitflare_repo_create',
-    'Create a repository',
-    { name: z.string(), description: z.string().optional(), is_private: z.boolean().optional(), default_branch: z.string().optional() },
-    async ({ name, description, is_private, default_branch }) => {
-      try {
-        const result = await client.repos.create({ name, description, is_private, default_branch });
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      } catch (err) {
-        return handleError(err);
-      }
-    }
+    'Create a repository (private by default)',
+    {
+      name: z.string(),
+      description: z.string().optional(),
+      is_private: z.boolean().optional().describe('Default: true'),
+      default_branch: z.string().optional().describe('Default: main'),
+    },
+    run(({ name, description, is_private, default_branch }) =>
+      client.repos.create({ name, description, is_private: is_private ?? true, default_branch }),
+    ),
   );
 
   server.tool(
     'gitflare_repo_info',
     'Get repository info',
     { name: z.string() },
-    async ({ name }) => {
-      try {
-        const result = await client.repos.get(name);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      } catch (err) {
-        return handleError(err);
-      }
-    }
+    run(({ name }) => client.repos.get(name)),
   );
 
   server.tool(
     'gitflare_repo_delete',
-    'Delete a repository',
+    'Delete a repository (requires admin on the repo)',
     { name: z.string() },
-    async ({ name }) => {
-      try {
-        const result = await client.repos.delete(name);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      } catch (err) {
-        return handleError(err);
-      }
-    }
+    run(({ name }) => client.repos.delete(name)),
   );
 
-  server.tool(
-    'gitflare_key_list',
-    'List API keys',
-    {},
-    async () => {
-      try {
-        const result = await client.keys.list();
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      } catch (err) {
-        return handleError(err);
-      }
-    }
-  );
+  // ── API Keys ──
+  server.tool('gitflare_key_list', 'List API keys', {}, run(async () => ({ keys: await client.keys.list() })));
 
   server.tool(
     'gitflare_key_create',
-    'Create an API key',
-    { name: z.string(), permissions: z.enum(['read', 'write', 'admin']).optional(), repo_id: z.string().optional(), expires_in_days: z.number().optional() },
-    async ({ name, permissions, repo_id, expires_in_days }) => {
-      try {
-        const result = await client.keys.create({ name, permissions, repo_id, expires_in_days });
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      } catch (err) {
-        return handleError(err);
-      }
-    }
+    'Create an API key (cannot exceed your own permission level)',
+    {
+      name: z.string(),
+      permissions: z.enum(['read', 'write', 'admin']).optional().describe('Default: read'),
+      repo_id: z.string().optional().describe('Scope the key to one repository'),
+      expires_in_days: z.number().int().positive().optional(),
+    },
+    run(({ name, permissions, repo_id, expires_in_days }) =>
+      client.keys.create({ name, permissions, repo_id, expires_in_days }),
+    ),
   );
 
   server.tool(
     'gitflare_key_revoke',
     'Revoke an API key',
     { id: z.string() },
-    async ({ id }) => {
-      try {
-        const result = await client.keys.revoke(id);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      } catch (err) {
-        return handleError(err);
-      }
-    }
+    run(({ id }) => client.keys.revoke(id)),
   );
 
+  // ── CI ──
   server.tool(
     'gitflare_ci_runs',
-    'Get CI runs for a repository',
-    { repo: z.string() },
-    async ({ repo }) => {
-      try {
-        const result = await client.ci.runs(repo);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      } catch (err) {
-        return handleError(err);
-      }
-    }
+    'List CI runs for a repository (newest first)',
+    {
+      repo: z.string(),
+      limit: z.number().int().min(1).max(100).optional().describe('Default 25'),
+      status: z.enum(['queued', 'running', 'passed', 'failed', 'cancelled']).optional(),
+    },
+    run(async ({ repo, limit, status }) => ({ runs: await client.ci.runs(repo, { limit, status }) })),
   );
 
   server.tool(
     'gitflare_ci_trigger',
-    'Trigger a CI run',
-    { repo: z.string(), branch: z.string().optional() },
-    async ({ repo, branch }) => {
-      try {
-        const result = await client.ci.trigger(repo, { branch });
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      } catch (err) {
-        return handleError(err);
-      }
-    }
+    'Trigger a CI run on a branch tip (or a specific commit)',
+    {
+      repo: z.string(),
+      branch: z.string().optional().describe("Default: the repo's default branch"),
+      commit_sha: z.string().optional(),
+    },
+    run(({ repo, branch, commit_sha }) => client.ci.trigger(repo, { branch, commit_sha })),
   );
 
   server.tool(
     'gitflare_ci_status',
-    'Get status of a CI run',
+    'Get a CI run with its jobs and steps',
     { repo: z.string(), run_id: z.string() },
-    async ({ repo, run_id }) => {
-      try {
-        const result = await client.ci.status(repo, run_id);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      } catch (err) {
-        return handleError(err);
-      }
-    }
+    run(async ({ repo, run_id }) => {
+      // raw_steps duplicates jobs[].steps — drop it to keep tool output compact.
+      const { raw_steps: _raw, ...detail } = await client.ci.status(repo, run_id);
+      return detail;
+    }),
   );
 
   server.tool(
     'gitflare_ci_logs',
-    'Get logs for a CI job',
-    { repo: z.string(), run_id: z.string(), job_id: z.string() },
-    async ({ repo, run_id, job_id }) => {
-      try {
-        const result = await client.ci.logs(repo, run_id, job_id);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      } catch (err) {
-        return handleError(err);
-      }
-    }
+    'Get CI logs. Without step_index: the last ~50 lines of every step (quick view). ' +
+      'With step_index: the full log of that step.',
+    {
+      repo: z.string(),
+      run_id: z.string(),
+      step_index: z.number().int().min(0).optional().describe('Run-wide step index (the `index` field from the quick view)'),
+    },
+    run(async ({ repo, run_id, step_index }) =>
+      step_index === undefined
+        ? { steps: await client.ci.logs(repo, run_id) }
+        : client.ci.stepLog(repo, run_id, step_index),
+    ),
   );
 
   server.tool(
+    'gitflare_ci_cancel',
+    'Cancel a queued or running CI run',
+    { repo: z.string(), run_id: z.string() },
+    run(({ repo, run_id }) => client.ci.cancel(repo, run_id)),
+  );
+
+  // ── Files ──
+  server.tool(
     'gitflare_files_tree',
     'Get a file tree of a repository',
-    { repo: z.string(), ref: z.string().optional().default('main'), path: z.string().optional().default('/') },
-    async ({ repo, ref, path }) => {
-      try {
-        const result = await client.files.tree(repo, ref, path);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      } catch (err) {
-        return handleError(err);
-      }
-    }
+    {
+      repo: z.string(),
+      ref: z.string().optional().describe(refDescription),
+      path: z.string().optional().describe('Directory path (default: repo root)'),
+    },
+    run(({ repo, ref, path }) => client.files.tree(repo, ref, path)),
   );
 
   server.tool(
     'gitflare_files_read',
-    'Read a file blob',
-    { repo: z.string(), path: z.string(), ref: z.string().optional().default('main') },
-    async ({ repo, path, ref }) => {
-      try {
-        const result = await client.files.blob(repo, ref, path);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      } catch (err) {
-        return handleError(err);
-      }
-    }
+    'Read a file',
+    { repo: z.string(), path: z.string(), ref: z.string().optional().describe(refDescription) },
+    run(({ repo, path, ref }) => client.files.blob(repo, ref, path)),
   );
 
+  // ── Commits ──
   server.tool(
     'gitflare_commits_list',
-    'List commits',
-    { repo: z.string(), ref: z.string().optional().default('main'), limit: z.number().optional().default(20) },
-    async ({ repo, ref, limit }) => {
-      try {
-        const result = await client.commits.list(repo, ref, limit);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      } catch (err) {
-        return handleError(err);
-      }
-    }
+    'List commits on a branch (newest first)',
+    {
+      repo: z.string(),
+      branch: z.string().optional().describe("Default: the repo's default branch"),
+      ref: z.string().optional().describe('Deprecated alias for branch'),
+      limit: z.number().int().min(1).max(100).optional().describe('Default 20'),
+    },
+    run(async ({ repo, branch, ref, limit }) => ({ commits: await client.commits.list(repo, branch ?? ref, limit ?? 20) })),
   );
 
+  // ── Deploys ──
   server.tool(
     'gitflare_deploy_list',
-    'List deployments',
+    'List deployment targets',
     { repo: z.string() },
-    async ({ repo }) => {
-      try {
-        const result = await client.deploys.list(repo);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      } catch (err) {
-        return handleError(err);
-      }
-    }
+    run(async ({ repo }) => ({ targets: await client.deploys.list(repo) })),
   );
 
   server.tool(
     'gitflare_deploy_add',
-    'Add a deployment configuration',
-    { repo: z.string(), name: z.string(), type: z.enum(['coolify', 'cloudflare']), coolify_app_id: z.string().optional(), coolify_base_url: z.string().optional(), coolify_api_key: z.string().optional(), branch_filter: z.array(z.string()).optional() },
-    async ({ repo, name, type, coolify_app_id, coolify_base_url, coolify_api_key, branch_filter }) => {
-      try {
-        const result = await client.deploys.create(repo, { name, type, coolify_app_id, coolify_base_url, coolify_api_key, branch_filter });
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      } catch (err) {
-        return handleError(err);
-      }
-    }
+    'Add a deployment target (requires admin on the repo)',
+    {
+      repo: z.string(),
+      name: z.string(),
+      type: z.enum(['coolify', 'cloudflare']),
+      coolify_app_id: z.string().optional(),
+      coolify_base_url: z.string().optional(),
+      coolify_api_key: z.string().optional(),
+      branch_filter: z.array(z.string()).optional(),
+    },
+    run(({ repo, ...input }) => client.deploys.create(repo, input)),
   );
 
+  // ── Mirrors ──
   server.tool(
     'gitflare_mirror_get',
-    'Get mirror configuration',
+    'Get GitHub mirror configuration',
     { repo: z.string() },
-    async ({ repo }) => {
-      try {
-        const result = await client.mirrors.get(repo);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      } catch (err) {
-        return handleError(err);
-      }
-    }
+    run(async ({ repo }) => ({ mirror: await client.mirrors.get(repo) })),
   );
 
   server.tool(
     'gitflare_mirror_setup',
-    'Setup a mirror',
-    { repo: z.string(), github_url: z.string(), github_token: z.string().optional(), branch_filter: z.array(z.string()).optional() },
-    async ({ repo, github_url, github_token, branch_filter }) => {
-      try {
-        const result = await client.mirrors.setup(repo, { github_url, github_token, branch_filter });
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      } catch (err) {
-        return handleError(err);
-      }
-    }
+    'Create or update a GitHub mirror (requires admin on the repo)',
+    {
+      repo: z.string(),
+      github_url: z.string(),
+      github_token: z.string().describe('GitHub token with push access to the target repo'),
+      branch_filter: z.array(z.string()).optional(),
+    },
+    run(({ repo, github_url, github_token, branch_filter }) =>
+      client.mirrors.setup(repo, { github_url, github_token, branch_filter }),
+    ),
   );
 
   server.tool(
     'gitflare_mirror_sync',
-    'Sync a mirror',
+    'Trigger a full mirror sync (all filtered branches + tags, at current SHAs)',
     { repo: z.string() },
-    async ({ repo }) => {
-      try {
-        const result = await client.mirrors.sync(repo);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      } catch (err) {
-        return handleError(err);
-      }
-    }
+    run(({ repo }) => client.mirrors.sync(repo)),
   );
 
+  // ── Git Remote URL ──
   server.tool(
     'gitflare_git_remote_url',
-    'Get git remote URL for a repository',
+    'Get the git remote URL for a repository (authenticate with any username and an API key as password)',
     { repo: z.string() },
-    async ({ repo }) => {
-      try {
-        const result = client.gitRemoteUrl(repo);
-        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
-      } catch (err) {
-        return handleError(err);
-      }
-    }
+    run(({ repo }) => ({ url: client.gitRemoteUrl(repo) })),
   );
 
   return server;

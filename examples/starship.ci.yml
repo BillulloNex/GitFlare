@@ -17,7 +17,6 @@ env:
 jobs:
   lint:
     name: Lint & Typecheck
-    sandbox: standard-1
     steps:
       - name: Install Python dependencies
         run: pip install ruff mypy
@@ -30,7 +29,6 @@ jobs:
 
   test:
     name: Run Tests
-    sandbox: standard-2
     needs: [lint]
     steps:
       - name: Install dependencies
@@ -44,20 +42,12 @@ jobs:
 
   build:
     name: Build Docker Image
-    sandbox: standard-3
     needs: [test]
     steps:
       - name: Build Docker image
         run: docker build -t starship:latest .
         timeout: 600
 
-  deploy:
-    name: Deploy to Coolify
-    sandbox: basic
-    needs: [build]
-    deploy:
-      target: coolify
-      branch_filter: [main]
-    steps:
-      - name: Trigger Coolify deployment
-        run: echo "Deployment triggered via GitFlare → Coolify webhook"
+# Deploys are not a CI job: when this pipeline passes on a branch, GitFlare
+# deploys every active deploy target whose branch_filter matches (configure
+# them with POST /api/repos/starship/deploys).

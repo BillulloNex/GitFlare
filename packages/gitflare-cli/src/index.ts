@@ -1,9 +1,12 @@
 import { Command } from 'commander';
 import chalk from 'chalk';
 import * as readline from 'node:readline';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { loadConfig, saveConfig, getClient, getConfigOrEnv } from './config.js';
-import { GitFlareError } from '@gitflare/client';
+import { saveConfig, getClient, getConfigOrEnv } from './config.js';
+import { GitFlareClient, GitFlareError, type DeployTarget } from '@gitflare/client';
 
 const program = new Command();
 
@@ -33,6 +36,32 @@ function prompt(question: string): Promise<string> {
   }));
 }
 
+function formatBranchFilter(target: DeployTarget): string {
+  if (!target.branch_filter) return 'All';
+  try {
+    const patterns = JSON.parse(target.branch_filter);
+    return Array.isArray(patterns) && patterns.length ? patterns.join(', ') : 'All';
+  } catch {
+    return target.branch_filter;
+  }
+}
+
+/**
+ * Write a throwaway GIT_ASKPASS helper that prints the key from the
+ * GITFLARE_ASKPASS_TOKEN env var (the key itself is never written to disk).
+ * The directory is created 0700 by mkdtemp.
+ */
+function createAskPass(): { script: string; cleanup: () => void } {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gitflare-askpass-'));
+  const isWindows = process.platform === 'win32';
+  const script = path.join(dir, isWindows ? 'askpass.cmd' : 'askpass.sh');
+  const content = isWindows
+    ? '@echo off\r\necho %GITFLARE_ASKPASS_TOKEN%\r\n'
+    : '#!/bin/sh\nprintf \'%s\\n\' "$GITFLARE_ASKPASS_TOKEN"\n';
+  fs.writeFileSync(script, content, { mode: 0o700 });
+  return { script, cleanup: () => fs.rmSync(dir, { recursive: true, force: true }) };
+}
+
 // --- Auth Commands ---
 const auth = program.command('auth').description('Manage authentication');
 
@@ -40,7 +69,7 @@ auth.command('login')
   .description('Login to a GitFlare instance')
   .action(async () => {
     try {
-      const url = await prompt('GitFlare URL (e.g., https://git.beenex.company): ');
+      const url = await prompt('GitFlare URL (e.g., https://git.example.com): ');
       if (!url) {
         console.error(chalk.red('URL is required'));
         return;
@@ -51,12 +80,14 @@ auth.command('login')
         return;
       }
 
-      saveConfig({ url, apiKey });
-      console.log(chalk.cyan('Config saved, verifying connection...'));
+      console.log(chalk.cyan('Verifying credentials...'));
+      const client = new GitFlareClient({ baseUrl: url, apiKey });
+      // /health is public — verify against a protected endpoint before saving.
+      await client.verifyAuth();
+      const health = await client.health().catch(() => null);
 
-      const client = getClient();
-      const health = await client.health();
-      console.log(chalk.green(`Successfully authenticated! GitFlare v${health.version}`));
+      saveConfig({ url, apiKey });
+      console.log(chalk.green(`Successfully authenticated!${health ? ` GitFlare v${health.version}` : ''}`));
     } catch (err) {
       handleError(err);
     }
@@ -76,8 +107,17 @@ auth.command('whoami')
       console.log(chalk.cyan(`API Key: ${prefix}${'*'.repeat(24)}`));
 
       const client = getClient();
-      const health = await client.health();
-      console.log(chalk.green(`Connection verified: GitFlare v${health.version}`));
+      await client.verifyAuth();
+      // Best effort: show this key's permission level. Non-admin keys only see
+      // themselves; admins see all keys, so match on the key prefix.
+      const keys = await client.keys.list().catch(() => []);
+      const self = keys.filter(k => k.key_prefix === prefix);
+      if (self.length === 1) {
+        const k = self[0];
+        console.log(chalk.cyan(`Key name: ${k.name}`));
+        console.log(chalk.cyan(`Permissions: ${k.permissions}${k.repo_id ? ` (scoped to repo ${k.repo_id})` : ''}`));
+      }
+      console.log(chalk.green('Credentials verified.'));
     } catch (err) {
       handleError(err);
     }
@@ -91,7 +131,7 @@ repo.command('list')
   .action(async () => {
     try {
       const client = getClient();
-      const { repos } = await client.repos.list();
+      const repos = await client.repos.list();
       if (repos.length === 0) {
         console.log(chalk.yellow('No repositories found.'));
         return;
@@ -112,16 +152,21 @@ repo.command('create')
   .argument('<name>', 'Repository name')
   .description('Create a new repository')
   .option('-d, --description <desc>', 'Repository description')
-  .option('-p, --private', 'Make repository private', false)
-  .action(async (name: string, options: { description?: string; private: boolean }) => {
+  .option('-p, --private', 'Make repository private (default)')
+  .option('--public', 'Make repository public')
+  .action(async (name: string, options: { description?: string; private?: boolean; public?: boolean }) => {
     try {
+      if (options.private && options.public) {
+        console.error(chalk.red('Use either --private or --public, not both.'));
+        process.exit(1);
+      }
       const client = getClient();
       const result = await client.repos.create({
         name,
         description: options.description,
-        is_private: options.private,
+        is_private: !options.public,
       });
-      console.log(chalk.green(`✓ Repository "${result.name}" created (ID: ${result.id})`));
+      console.log(chalk.green(`✓ ${options.public ? 'Public' : 'Private'} repository "${result.name}" created (ID: ${result.id})`));
       console.log(chalk.cyan(`  Git remote: ${client.gitRemoteUrl(name)}`));
     } catch (err) {
       handleError(err);
@@ -175,7 +220,7 @@ key.command('list')
   .action(async () => {
     try {
       const client = getClient();
-      const { keys } = await client.keys.list();
+      const keys = await client.keys.list();
       if (keys.length === 0) {
         console.log(chalk.yellow('No keys found.'));
         return;
@@ -208,7 +253,7 @@ key.command('create')
         repo_id: options.repo,
         expires_in_days: options.expiresInDays ? parseInt(options.expiresInDays, 10) : undefined,
       });
-      console.log(chalk.green(`✓ Key "${result.name}" created!`));
+      console.log(chalk.green(`✓ Key "${name}" created (${result.permissions})!`));
       console.log(chalk.yellow('\n⚠️  Save this key now — it will NOT be shown again:\n'));
       console.log(chalk.bgBlack.white(`  ${result.key}  `));
       console.log('');
@@ -239,7 +284,7 @@ ci.command('runs')
   .action(async (repoName: string) => {
     try {
       const client = getClient();
-      const { runs } = await client.ci.runs(repoName);
+      const runs = await client.ci.runs(repoName);
       if (runs.length === 0) {
         console.log(chalk.yellow('No CI runs found.'));
         return;
@@ -248,7 +293,8 @@ ci.command('runs')
         ID: r.id.substring(0, 8) + '...',
         Status: r.status,
         Branch: r.branch,
-        Commit: r.commit_sha.substring(0, 7),
+        Commit: r.short_sha,
+        Message: r.commit_message,
         Trigger: r.trigger,
         Created: r.created_at,
       })));
@@ -260,12 +306,13 @@ ci.command('runs')
 ci.command('trigger')
   .argument('<repo>', 'Repository name')
   .description('Trigger a CI run')
-  .option('-b, --branch <branch>', 'Branch to trigger on', 'main')
-  .action(async (repoName: string, options: { branch: string }) => {
+  .option('-b, --branch <branch>', "Branch to trigger on (default: the repo's default branch)")
+  .option('--commit <sha>', 'Commit SHA (default: branch tip)')
+  .action(async (repoName: string, options: { branch?: string; commit?: string }) => {
     try {
       const client = getClient();
-      const result = await client.ci.trigger(repoName, { branch: options.branch });
-      console.log(chalk.green(`✓ CI run triggered (ID: ${result.run_id})`));
+      const result = await client.ci.trigger(repoName, { branch: options.branch, commit_sha: options.commit });
+      console.log(chalk.green(`✓ CI run triggered on ${result.branch} (ID: ${result.id})`));
     } catch (err) {
       handleError(err);
     }
@@ -278,18 +325,19 @@ ci.command('status')
   .action(async (repoName: string, runId: string) => {
     try {
       const client = getClient();
-      const { run, jobs } = await client.ci.status(repoName, runId);
-      console.log(chalk.cyan(`Run ID:  ${run.id}`));
-      console.log(chalk.cyan(`Status:  ${run.status}`));
-      console.log(chalk.cyan(`Branch:  ${run.branch}`));
-      console.log(chalk.cyan(`Commit:  ${run.commit_sha}`));
-      if (jobs.length > 0) {
-        console.log(chalk.cyan('\nJobs:'));
-        console.table(jobs.map(j => ({
-          ID: j.id.substring(0, 8) + '...',
-          Name: j.name,
-          Status: j.status,
-          Exit: j.exit_code ?? '-',
+      const run = await client.ci.status(repoName, runId);
+      console.log(chalk.cyan(`Run ID:   ${run.id}`));
+      console.log(chalk.cyan(`Status:   ${run.status}`));
+      console.log(chalk.cyan(`Branch:   ${run.branch}`));
+      console.log(chalk.cyan(`Commit:   ${run.short_sha} ${run.commit_message}`));
+      console.log(chalk.cyan(`Duration: ${run.duration_text}`));
+      for (const job of run.jobs) {
+        console.log(chalk.cyan(`\nJob ${job.name} — ${job.status} (${job.duration})`));
+        console.table(job.steps.map(s => ({
+          Name: s.name,
+          Status: s.status,
+          Exit: s.exit_code ?? '-',
+          Duration: s.duration,
         })));
       }
     } catch (err) {
@@ -300,16 +348,37 @@ ci.command('status')
 ci.command('logs')
   .argument('<repo>', 'Repository name')
   .argument('<run-id>', 'CI run ID')
-  .argument('<job-id>', 'Job ID')
-  .description('Show CI job logs')
-  .action(async (repoName: string, runId: string, jobId: string) => {
+  .argument('[step-index]', 'Show the full log of this step (default: last lines of every step)')
+  .description('Show CI logs')
+  .action(async (repoName: string, runId: string, stepIndex?: string) => {
     try {
       const client = getClient();
-      const { logs } = await client.ci.logs(repoName, runId, jobId);
-      for (const log of logs) {
-        console.log(chalk.cyan(`── ${log.step_name} (exit: ${log.exit_code}, ${log.duration_ms}ms) ──`));
-        console.log(log.output);
+      const printLine = (l: { stream: string; line: string }) =>
+        console.log(l.stream === 'stderr' ? chalk.red(l.line) : l.line);
+
+      if (stepIndex !== undefined) {
+        const index = Number(stepIndex);
+        if (!Number.isInteger(index) || index < 0) {
+          console.error(chalk.red('step-index must be a non-negative integer'));
+          process.exit(1);
+        }
+        const log = await client.ci.stepLog(repoName, runId, index);
+        console.log(chalk.cyan(`── [${log.step_index}] ${log.job_name} / ${log.name} (${log.status}) ──`));
+        log.logs.forEach(printLine);
+        if (!log.complete) console.log(chalk.yellow('(full log not available yet — showing the stored tail)'));
+        return;
       }
+
+      const steps = await client.ci.logs(repoName, runId);
+      if (steps.length === 0) {
+        console.log(chalk.yellow('No steps recorded for this run yet.'));
+        return;
+      }
+      for (const step of steps) {
+        console.log(chalk.cyan(`── [${step.index}] ${step.job_name} / ${step.name} (${step.status}${step.exit_code != null ? `, exit ${step.exit_code}` : ''}) ──`));
+        step.logs.forEach(printLine);
+      }
+      console.log(chalk.gray(`\nShowing the last lines of each step. Full log: gitflare ci logs ${repoName} ${runId} <step-index>`));
     } catch (err) {
       handleError(err);
     }
@@ -320,13 +389,13 @@ const files = program.command('files').description('Browse repository files');
 
 files.command('tree')
   .argument('<repo>', 'Repository name')
-  .argument('[ref]', 'Git reference', 'main')
-  .argument('[path]', 'Path in the repo', '/')
+  .argument('[ref]', "Git reference (default: the repo's default branch)")
+  .argument('[path]', 'Path in the repo', '')
   .description('Browse file tree')
-  .action(async (repoName: string, ref: string, path: string) => {
+  .action(async (repoName: string, ref: string | undefined, dirPath: string) => {
     try {
       const client = getClient();
-      const { entries } = await client.files.tree(repoName, ref, path);
+      const { entries } = await client.files.tree(repoName, ref, dirPath);
       if (entries.length === 0) {
         console.log(chalk.yellow('Directory is empty.'));
         return;
@@ -346,11 +415,11 @@ files.command('cat')
   .argument('<repo>', 'Repository name')
   .argument('<path>', 'File path')
   .description('Read file content')
-  .option('--ref <ref>', 'Git reference', 'main')
-  .action(async (repoName: string, path: string, options: { ref: string }) => {
+  .option('--ref <ref>', "Git reference (default: the repo's default branch)")
+  .action(async (repoName: string, filePath: string, options: { ref?: string }) => {
     try {
       const client = getClient();
-      const blob = await client.files.blob(repoName, options.ref, path);
+      const blob = await client.files.blob(repoName, options.ref, filePath);
       console.log(blob.content);
     } catch (err) {
       handleError(err);
@@ -366,7 +435,7 @@ deploy.command('list')
   .action(async (repoName: string) => {
     try {
       const client = getClient();
-      const { targets } = await client.deploys.list(repoName);
+      const targets = await client.deploys.list(repoName);
       if (targets.length === 0) {
         console.log(chalk.yellow('No deploy targets found.'));
         return;
@@ -375,7 +444,7 @@ deploy.command('list')
         ID: t.id.substring(0, 8) + '...',
         Name: t.name,
         Type: t.type,
-        Branches: t.branch_filter?.join(', ') || 'All',
+        Branches: formatBranchFilter(t),
       })));
     } catch (err) {
       handleError(err);
@@ -413,15 +482,22 @@ mirror.command('setup')
   .argument('<repo>', 'Repository name')
   .description('Set up GitHub mirror')
   .requiredOption('--github-url <url>', 'GitHub repository URL')
+  .option('--github-token <token>', 'GitHub token with push access (default: $GITHUB_TOKEN)')
   .option('--branch-filter <branches>', 'Comma-separated list of branches')
-  .action(async (repoName: string, options: any) => {
+  .action(async (repoName: string, options: { githubUrl: string; githubToken?: string; branchFilter?: string }) => {
     try {
+      const githubToken = options.githubToken || process.env.GITHUB_TOKEN;
+      if (!githubToken) {
+        console.error(chalk.red('A GitHub token is required: pass --github-token or set GITHUB_TOKEN.'));
+        process.exit(1);
+      }
       const client = getClient();
       const result = await client.mirrors.setup(repoName, {
         github_url: options.githubUrl,
-        branch_filter: options.branchFilter?.split(',').map((b: string) => b.trim()),
+        github_token: githubToken,
+        branch_filter: options.branchFilter?.split(',').map((b: string) => b.trim()).filter(Boolean),
       });
-      console.log(chalk.green(`✓ Mirror for "${repoName}" set up (ID: ${result.id})`));
+      console.log(chalk.green(`✓ ${result.message} for "${repoName}" → ${result.github_repo} (ID: ${result.id})`));
     } catch (err) {
       handleError(err);
     }
@@ -433,8 +509,10 @@ mirror.command('sync')
   .action(async (repoName: string) => {
     try {
       const client = getClient();
-      await client.mirrors.sync(repoName);
-      console.log(chalk.green(`✓ Mirror sync triggered for "${repoName}".`));
+      const result = await client.mirrors.sync(repoName);
+      const refs = Object.entries(result.refs);
+      console.log(chalk.green(`✓ Mirror sync ${result.queued ? 'queued' : 'started'} for "${repoName}" (${refs.length} ref${refs.length === 1 ? '' : 's'}).`));
+      for (const [ref, sha] of refs) console.log(chalk.cyan(`  ${sha.substring(0, 7)}  ${ref}`));
     } catch (err) {
       handleError(err);
     }
@@ -454,19 +532,34 @@ program.command('clone')
       }
 
       const client = getClient();
-      const cloneUrl = client.gitRemoteUrl(repoName);
-      // Embed credentials in URL for git clone
-      const url = new URL(cloneUrl);
+      // Username only in the URL (git.ts ignores it); the API key is supplied
+      // via GIT_ASKPASS so it never appears in argv, the remote URL, or .git/config.
+      const url = new URL(client.gitRemoteUrl(repoName));
       url.username = 'x-api-key';
-      url.password = config.apiKey;
 
-      const args = ['clone', url.toString()];
+      // `-c credential.helper=` clears configured helpers for this command so
+      // the key isn't persisted to the keychain / credential store.
+      const args = ['-c', 'credential.helper=', 'clone', url.toString()];
       if (directory) args.push(directory);
 
       console.log(chalk.cyan(`Cloning ${repoName}...`));
 
-      const child = spawn('git', args, { stdio: 'inherit' });
+      const askPass = createAskPass();
+      const child = spawn('git', args, {
+        stdio: 'inherit',
+        env: {
+          ...process.env,
+          GIT_ASKPASS: askPass.script,
+          GITFLARE_ASKPASS_TOKEN: config.apiKey,
+          GIT_TERMINAL_PROMPT: '0',
+        },
+      });
+      child.on('error', (err) => {
+        askPass.cleanup();
+        handleError(err);
+      });
       child.on('close', (code) => {
+        askPass.cleanup();
         if (code === 0) {
           console.log(chalk.green(`✓ Successfully cloned ${repoName}`));
         } else {

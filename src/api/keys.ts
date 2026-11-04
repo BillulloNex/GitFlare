@@ -1,20 +1,12 @@
 import { Hono } from 'hono';
 import type { Env } from '../env.ts';
 import type { AuthVariables } from '../middleware/auth.ts';
-import { requirePermission } from '../middleware/auth.ts';
+import { principalFrom } from '../middleware/auth.ts';
+import { hashKey } from '../lib/crypto.ts';
+import { isValidPermission, meetsLevel, VALID_PERMISSIONS } from '../lib/access.ts';
+import { isOptionalString, readJsonObject } from '../lib/request.ts';
 
 const app = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
-
-/**
- * Hash a raw API key for storage.
- */
-async function hashKey(key: string): Promise<string> {
-	const encoder = new TextEncoder();
-	const hashBuffer = await crypto.subtle.digest('SHA-256', encoder.encode(key));
-	return Array.from(new Uint8Array(hashBuffer))
-		.map(b => b.toString(16).padStart(2, '0'))
-		.join('');
-}
 
 /**
  * GET /api/keys
@@ -66,36 +58,47 @@ app.post('/', async (c) => {
 	const user = c.get('user');
 	const existingKey = c.get('apiKey');
 
-	const body = await c.req.json<{
+	const body = await readJsonObject<{
 		name: string;
-		permissions?: 'read' | 'write' | 'admin';
+		permissions?: string;
 		repo_id?: string;
 		expires_in_days?: number;
-	}>();
+	}>(c);
 
-	if (!body.name) {
+	if (!body) return c.json({ error: 'Invalid JSON body' }, 400);
+	if (typeof body.name !== 'string' || !body.name.trim()) {
 		return c.json({ error: 'name is required' }, 400);
 	}
-
-	const requestedPermissions = body.permissions || 'read';
-
-	// Only admin users/keys can create admin keys
-	if (requestedPermissions === 'admin') {
-		const isAdmin = user?.role === 'admin' || existingKey?.permissions === 'admin';
-		if (!isAdmin) {
-			return c.json({ error: 'Only admins can create admin API keys' }, 403);
-		}
+	if (!isOptionalString(body.permissions) || (body.repo_id !== undefined && body.repo_id !== null && typeof body.repo_id !== 'string')) {
+		return c.json({ error: 'permissions and repo_id must be strings' }, 400);
+	}
+	if (
+		body.expires_in_days !== undefined &&
+		body.expires_in_days !== null &&
+		!(typeof body.expires_in_days === 'number' && Number.isFinite(body.expires_in_days) && body.expires_in_days > 0 && body.expires_in_days <= 3650)
+	) {
+		return c.json({ error: 'expires_in_days must be a number between 1 and 3650' }, 400);
 	}
 
-	// Session users can create up to write-level keys
-	// API keys can only create keys with equal or lower permissions
-	if (existingKey) {
-		const levels = { read: 0, write: 1, admin: 2 };
-		const callerLevel = levels[existingKey.permissions as keyof typeof levels] ?? 0;
-		const requestedLevel = levels[requestedPermissions];
-		if (requestedLevel > callerLevel) {
-			return c.json({ error: `Cannot create key with higher permissions than your own (${existingKey.permissions})` }, 403);
-		}
+	const requestedPermissions = body.permissions ?? 'read';
+	if (!isValidPermission(requestedPermissions)) {
+		return c.json({ error: `permissions must be one of: ${VALID_PERMISSIONS.join(', ')}` }, 400);
+	}
+
+	// Cap at the caller's own level:
+	//   session viewer → read, user → write, admin → admin
+	//   API key        → its own permissions
+	const caller = principalFrom(user, existingKey);
+	if (!caller) {
+		return c.json({ error: 'Forbidden: unrecognised role or permission level' }, 403);
+	}
+	if (!meetsLevel(caller.permissions, requestedPermissions)) {
+		return c.json({ error: `Cannot create a ${requestedPermissions} key — your access level is ${caller.permissions}` }, 403);
+	}
+
+	// A repo-scoped key may only mint keys scoped to that same repo.
+	if (caller.repoScope && body.repo_id !== caller.repoScope) {
+		return c.json({ error: 'A repo-scoped API key can only create keys for its own repository (set repo_id)' }, 403);
 	}
 
 	const rawKey = `gf_${crypto.randomUUID().replace(/-/g, '')}`;
@@ -107,8 +110,9 @@ app.post('/', async (c) => {
 		? new Date(Date.now() + body.expires_in_days * 24 * 60 * 60 * 1000).toISOString()
 		: null;
 
-	// Link to user if authenticated via session
-	const userId = user?.id ?? null;
+	// Link to the owning user: the session user, or the calling key's owner.
+	// (A key with no user_id has global access — don't let user keys mint those.)
+	const userId = caller.userId ?? null;
 
 	await c.env.DB.prepare(
 		`INSERT INTO api_keys (id, name, key_hash, key_prefix, repo_id, user_id, permissions, created_at, expires_at)

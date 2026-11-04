@@ -1,15 +1,10 @@
 import type { ArtifactCommit, ArtifactRepo, Env } from '../env.ts';
-import type { BlobResult, CommitDetail, CommitSummary, TreeResult } from './repo-store.ts';
+import type { BlobResult, CommitDetail, CommitSummary, TreeResult } from '../types.ts';
+import { getArtifactsRemoteUrl } from './artifacts-url.ts';
+import { parseInfoRefs } from './git-protocol.ts';
+import { timeAgo } from './time.ts';
 
 const isoDate = (seconds: number) => new Date(seconds * 1000).toISOString();
-
-function timeAgo(seconds: number): string {
-  const elapsed = Math.max(0, Math.floor(Date.now() / 1000) - seconds);
-  if (elapsed < 60) return 'just now';
-  if (elapsed < 3600) return `${Math.floor(elapsed / 60)} minutes ago`;
-  if (elapsed < 86400) return `${Math.floor(elapsed / 3600)} hours ago`;
-  return `${Math.floor(elapsed / 86400)} days ago`;
-}
 
 function summary(commit: ArtifactCommit): CommitSummary {
   const [message, ...description] = commit.message.trimEnd().split('\n');
@@ -68,9 +63,27 @@ export async function getArtifactCommitDetail(env: Env, name: string, sha: strin
   };
 }
 
-export async function getArtifactBranches(env: Env, name: string, defaultBranch: string): Promise<{ name: string; is_default: boolean; commit_sha: string }[]> {
-  const commits = await getArtifactCommits(env, name, defaultBranch, 1);
-  return commits.length ? [{ name: defaultBranch, is_default: true, commit_sha: commits[0].sha }] : [];
+/**
+ * Read the live ref advertisement for an Artifacts repo.
+ * Returns a map of full ref name (`refs/heads/main`, `refs/tags/v1`) → SHA.
+ * Returns an empty map if the repo doesn't exist or is empty.
+ */
+export async function getArtifactRefs(env: Env, repoName: string): Promise<Map<string, string>> {
+  const repo = await artifactRepo(env, repoName);
+  if (!repo) return new Map();
+
+  const tokenResult: unknown = await repo.createToken('read', 60);
+  const token = typeof tokenResult === 'string'
+    ? tokenResult
+    : (tokenResult as { plaintext?: string } | null)?.plaintext ?? String(tokenResult);
+
+  const res = await fetch(`${getArtifactsRemoteUrl(env, repoName)}/info/refs?service=git-upload-pack`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to read refs for ${repoName}: ${res.status}`);
+  }
+  return parseInfoRefs(await res.arrayBuffer()).refs;
 }
 
 export async function getArtifactTree(env: Env, name: string, subPath = '', ref = 'main'): Promise<TreeResult | null> {

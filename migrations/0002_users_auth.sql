@@ -39,6 +39,9 @@ CREATE TABLE IF NOT EXISTS repo_members (
 CREATE INDEX IF NOT EXISTS idx_repo_members_user ON repo_members(user_id);
 
 -- ─── Link API keys to users ────────────────────────────────────
--- user_id column already exists (added prior to migration tracking)
--- ALTER TABLE api_keys ADD COLUMN user_id TEXT REFERENCES users(id) ON DELETE SET NULL;
+-- In production this column was added by hand before migration tracking
+-- existed. That is safe: scripts/2c-seed-migrations.sql records this file as
+-- already applied there, so Wrangler never replays it. Fresh/local databases
+-- need the ALTER because 0001_initial.sql does not create the column.
+ALTER TABLE api_keys ADD COLUMN user_id TEXT REFERENCES users(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id);

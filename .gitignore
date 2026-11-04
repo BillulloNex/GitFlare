@@ -4,3 +4,6 @@ dist/
 .dev.vars
 *.log
 .DS_Store
+# D1 exports contain user data and secrets — never commit
+*-backup.sql
+d1-backup-*.sql

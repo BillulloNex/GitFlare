@@ -4,10 +4,21 @@ on:
   push:
     branches: [main]
 
+# Never run two deploys (and therefore two migration runs) at once.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
     name: Deploy GitFlare Worker
+    env:
+      # Token needs: Workers Scripts edit, D1 edit, R2 edit (for backups).
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      D1_DATABASE: gitflare-db
+      BACKUP_BUCKET: gitflare-storage
     steps:
       - uses: actions/checkout@v4
 
@@ -19,8 +30,72 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npx vitest run
+
+      - name: Verify required secrets are set
+        # The Worker can't decrypt stored secrets without these. Fail before
+        # touching the database rather than shipping a Worker that can't run.
+        run: |
+          set -euo pipefail
+          names=$(npx wrangler secret list --format json | jq -r '.[].name')
+          missing=0
+          for s in ENCRYPTION_KEY SESSION_SECRET; do
+            if ! grep -qx "$s" <<<"$names"; then
+              echo "::error::Worker secret $s is not set (wrangler secret put $s)"
+              missing=1
+            fi
+          done
+          exit $missing
+
+      - name: Guard against untracked production schema
+        # Production predates Wrangler migration tracking. If the schema exists
+        # but d1_migrations doesn't, `migrations apply` would replay 0001+.
+        # scripts/2c-seed-migrations.sql must be run once first.
+        run: |
+          set -euo pipefail
+          out=$(npx wrangler d1 execute "$D1_DATABASE" --remote --json --command \
+            "SELECT (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='repositories') AS has_schema,
+                    (SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='d1_migrations') AS tracked")
+          has_schema=$(jq -r '.[0].results[0].has_schema' <<<"$out")
+          tracked=$(jq -r '.[0].results[0].tracked' <<<"$out")
+          if [ "$has_schema" = "1" ] && [ "$tracked" = "0" ]; then
+            echo "::error::d1_migrations is missing on an existing database. Run scripts/2c-seed-migrations.sql first."
+            exit 1
+          fi
+
+      - name: Check for pending migrations
+        id: pending
+        run: |
+          set -euo pipefail
+          out=$(npx wrangler d1 migrations list "$D1_DATABASE" --remote 2>&1)
+          echo "$out"
+          if grep -q "No migrations to apply" <<<"$out"; then
+            echo "pending=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "pending=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Back up D1 to R2
+        # Rollback safety. Stored in R2 (not as a workflow artifact) because the
+        # dump contains sessions, key hashes and encrypted tokens.
+        if: steps.pending.outputs.pending == 'true'
+        run: |
+          set -euo pipefail
+          file="d1-backup-$(date -u +%Y%m%dT%H%M%SZ)-${GITHUB_SHA::12}.sql"
+          npx wrangler d1 export "$D1_DATABASE" --remote --output="$file"
+          npx wrangler r2 object put "$BACKUP_BUCKET/d1-backups/$file" --file="$file" --content-type=application/sql --remote
+          rm -f "$file"
+          echo "Backup: r2://$BACKUP_BUCKET/d1-backups/$file"
+
+      - name: Apply D1 migrations
+        # Runs before the deploy: migrations must stay compatible with the
+        # Worker version that is currently live.
+        if: steps.pending.outputs.pending == 'true'
+        run: npx wrangler d1 migrations apply "$D1_DATABASE" --remote
+
       - name: Deploy to Cloudflare Workers
         run: npx wrangler deploy
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

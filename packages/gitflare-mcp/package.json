@@ -12,7 +12,7 @@
     "start:http": "node dist/http.js"
   },
   "dependencies": {
-    "@gitflare/client": "file:../gitflare-client",
+    "@gitflare/client": "^1.0.0",
     "@modelcontextprotocol/sdk": "^1.12.0",
     "zod": "^3.24.0"
   },

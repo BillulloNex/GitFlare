@@ -1,4 +1,4 @@
-import type { Env, UserRecord, SessionRecord } from '../env.ts';
+import type { UserRecord } from '../env.ts';
 
 const SESSION_COOKIE = 'gf_session';
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days

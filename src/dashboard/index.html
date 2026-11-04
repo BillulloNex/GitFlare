@@ -1036,6 +1036,67 @@
             flex: 1;
             outline: none;
         }
+
+        /* Branch picker */
+        .branch-picker {
+            position: relative;
+        }
+
+        .branch-menu {
+            left: 0;
+            right: auto;
+            width: 280px;
+            padding: 6px 0;
+            max-height: 320px;
+            overflow-y: auto;
+        }
+
+        .branch-menu-header {
+            padding: 4px 12px 8px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--border-default);
+            margin-bottom: 4px;
+        }
+
+        .branch-option {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 6px 12px;
+            font-size: 13px;
+            cursor: pointer;
+            color: var(--text-primary);
+        }
+
+        .branch-option:hover {
+            background: var(--bg-muted);
+        }
+
+        .branch-option.current {
+            font-weight: 600;
+        }
+
+        .branch-option .branch-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-family: var(--font-mono);
+        }
+
+        .branch-menu-empty {
+            padding: 8px 12px;
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .empty-state {
+            padding: 24px;
+            text-align: center;
+            color: var(--text-muted);
+        }
     </style>
 </head>
 <body>
@@ -1055,7 +1116,7 @@
             </div>
         </div>
         <div class="header-right">
-            <button class="btn btn-sm" onclick="showKeyModal()">🔑 API Key</button>
+            <button class="btn btn-sm" onclick="logout()">Sign out</button>
             <button class="btn btn-sm btn-primary" onclick="showNewRepoModal()">+ New Repo</button>
             <span class="badge badge-queued" style="font-family:var(--font-mono)">v1.0.0</span>
         </div>
@@ -1071,8 +1132,8 @@
                 <div class="repo-title-row">
                     <div class="repo-breadcrumbs">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/></svg>
-                        <a href="javascript:void(0)" onclick="switchMainTab('code')" id="currentRepoNameDisplay">starship</a>
-                        <span class="badge badge-public" id="repoVisibilityBadge">Public</span>
+                        <a href="javascript:void(0)" onclick="switchMainTab('code')" id="currentRepoNameDisplay"></a>
+                        <span class="badge badge-public" id="repoVisibilityBadge" style="display:none;"></span>
                     </div>
                     <div class="repo-actions-top" style="position:relative;">
                         <button class="btn btn-sm" onclick="triggerManualWorkflow()">▶ Run Workflow</button>
@@ -1105,12 +1166,12 @@
                     <div class="nav-tab" id="tab-btn-commits" onclick="switchMainTab('commits')">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><line x1="1.05" y1="12" x2="7" y2="12"/><line x1="17.01" y1="12" x2="22.96" y2="12"/></svg>
                         Commits
-                        <span class="tab-badge" id="commitsCountBadge">7</span>
+                        <span class="tab-badge" id="commitsCountBadge" style="display:none;"></span>
                     </div>
                     <div class="nav-tab" id="tab-btn-ci" onclick="switchMainTab('ci')">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                         Actions (CI/CD)
-                        <span class="tab-badge" id="runsCountBadge">4</span>
+                        <span class="tab-badge" id="runsCountBadge" style="display:none;"></span>
                     </div>
                     <div class="nav-tab" id="tab-btn-deploys" onclick="switchMainTab('deploys')">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/></svg>
@@ -1125,11 +1186,17 @@
                 <div id="view-code" style="display:block;">
                     <div class="codebase-toolbar">
                         <div class="toolbar-left">
-                            <button class="branch-btn" onclick="alert('Branches: main (default)')">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
-                                <span id="currentBranchName">main</span>
-                                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
-                            </button>
+                            <div class="branch-picker">
+                                <button class="branch-btn" onclick="toggleBranchMenu()" aria-haspopup="listbox" aria-expanded="false" id="branchMenuButton">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+                                    <span id="currentBranchName"></span>
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                                </button>
+                                <div class="dropdown-menu branch-menu" id="branchMenu" role="listbox">
+                                    <div class="branch-menu-header">Switch branch</div>
+                                    <div id="branchMenuList"><div class="branch-menu-empty">Loading branches...</div></div>
+                                </div>
+                            </div>
                             <div class="path-crumbs" id="pathBreadcrumbs">
                                 <!-- Populated dynamically -->
                             </div>
@@ -1141,15 +1208,15 @@
 
                     <!-- File Explorer Tree Box -->
                     <div class="file-box" id="fileTreeBox">
-                        <div class="latest-commit-strip" id="latestCommitStrip">
+                        <div class="latest-commit-strip" id="latestCommitStrip" style="display:none;">
                             <div class="commit-strip-left">
-                                <div class="avatar-circle" id="latestCommitAvatar">TN</div>
-                                <span style="font-weight:600;" id="latestCommitAuthor">Thomas Nguyen</span>
-                                <span class="commit-strip-message" id="latestCommitMessage">Loading latest commit...</span>
+                                <div class="avatar-circle" id="latestCommitAvatar"></div>
+                                <span style="font-weight:600;" id="latestCommitAuthor"></span>
+                                <span class="commit-strip-message" id="latestCommitMessage"></span>
                             </div>
                             <div class="commit-strip-right">
-                                <span class="sha-pill" id="latestCommitSha" onclick="copyText(this.dataset.fullSha)">240fb22</span>
-                                <span id="latestCommitTime">3 hours ago</span>
+                                <span class="sha-pill" id="latestCommitSha" onclick="copyText(this.dataset.fullSha)"></span>
+                                <span id="latestCommitTime"></span>
                                 <button class="btn btn-sm" onclick="switchMainTab('commits')">History</button>
                             </div>
                         </div>
@@ -1292,21 +1359,6 @@
     </div>
 
     <!-- ─── Modals ─────────────────────────────────────────────── -->
-    <!-- API Key Modal -->
-    <dialog id="keyModal">
-        <h3 style="margin-bottom:12px; font-size:16px;">🔑 GitFlare API Key</h3>
-        <p style="color:var(--text-secondary); font-size:13px; margin-bottom:16px;">
-            Set your GitFlare API key to interact with repositories, trigger CI runs, and deploy.
-        </p>
-        <div class="form-group">
-            <label>API Key (gf_...)</label>
-            <input type="password" id="modalKeyInput" class="form-control" placeholder="gf_7e18f...">
-        </div>
-        <div style="display:flex; justify-content:flex-end; gap:8px;">
-            <button class="btn" onclick="document.getElementById('keyModal').close()">Cancel</button>
-            <button class="btn btn-primary" onclick="saveApiKey()">Save Key</button>
-        </div>
-    </dialog>
 
     <!-- New Repo Modal -->
     <dialog id="newRepoModal">
@@ -1331,10 +1383,10 @@
     <script>
         // ─── Application State ──────────────────────────────────────────
         let repos = [];
-        let activeRepo = 'starship';
+        let activeRepo = null;
         let currentPath = '';
-        let currentBranch = 'main';
-        let apiKey = localStorage.getItem('gf_api_key') || 'gf_2d61a2e4d93146d685637f55e8b691ac';
+        let currentBranch = '';
+        let branches = [];
         let currentTab = 'code';
         let activeViewerFile = null;
         let activeViewerContent = '';
@@ -1342,50 +1394,115 @@
 
         const API_BASE = '/api';
 
+        // Auth is cookie-only: the HttpOnly session cookie set by Google OAuth
+        // is sent automatically on same-origin requests. No API keys in JS.
         function authHeaders() {
-            const h = { 'Content-Type': 'application/json' };
-            if (apiKey) h['Authorization'] = `Bearer ${apiKey}`;
-            return h;
+            return { 'Content-Type': 'application/json' };
+        }
+
+        const LOGIN_URL = '/api/auth/login';
+
+        /** Same-origin fetch that sends the session cookie and bounces to login on 401. */
+        async function apiFetch(url, options = {}) {
+            const res = await fetch(url, { ...options, credentials: 'same-origin' });
+            if (res.status === 401) {
+                window.location.href = LOGIN_URL;
+                // Never resolve — the page is navigating away.
+                return new Promise(() => {});
+            }
+            return res;
+        }
+
+        async function logout() {
+            try {
+                await fetch(`${API_BASE}/auth/logout`, { method: 'POST', credentials: 'same-origin' });
+            } finally {
+                window.location.href = LOGIN_URL;
+            }
         }
 
         // ─── Init ───────────────────────────────────────────────────────
         async function init() {
-            if (apiKey) localStorage.setItem('gf_api_key', apiKey);
+            // Purge any API key an older dashboard build persisted to storage.
+            try { localStorage.removeItem('gf_api_key'); } catch (e) {}
             await loadRepos();
         }
 
         // ─── Repositories ───────────────────────────────────────────────
-        async function loadRepos() {
+        /** Load the repos the user can read. Selects `preferred` if given and present, else keeps the current one, else the first. */
+        async function loadRepos(preferred) {
+            let loadFailed = false;
             try {
-                const res = await fetch(`${API_BASE}/repos`, { headers: authHeaders() });
+                const res = await apiFetch(`${API_BASE}/repos`, { headers: authHeaders() });
                 if (res.ok) {
                     const data = await res.json();
                     repos = data.repos || [];
+                } else {
+                    loadFailed = true;
                 }
             } catch (e) {
                 console.error("Failed to load repos from API", e);
+                loadFailed = true;
             }
 
-            // Ensure 'starship' is present
-            if (!repos.find(r => r.name === 'starship')) {
-                repos.unshift({
-                    id: '9234778a-dcdb-4984-96b1-4e475d742ff8',
-                    name: 'starship',
-                    description: 'Autonomous agentic coding platform (OpenHands fork)',
-                    default_branch: 'main',
-                    is_private: 0
-                });
-            }
+            const names = repos.map(r => r.name);
+            const next = [preferred, activeRepo].find(n => n && names.includes(n)) || names[0] || null;
 
             renderRepoSelect();
-            selectRepo(activeRepo);
+            if (next) {
+                selectRepo(next);
+            } else {
+                showNoRepos(loadFailed);
+            }
+        }
+
+        /** Empty state when the user has no readable repos (or the list failed to load). */
+        function showNoRepos(loadFailed) {
+            activeRepo = null;
+            document.getElementById('currentRepoNameDisplay').textContent = '';
+            document.getElementById('repoVisibilityBadge').style.display = 'none';
+            document.getElementById('latestCommitStrip').style.display = 'none';
+            document.getElementById('readmeCard').style.display = 'none';
+            document.getElementById('pathBreadcrumbs').replaceChildren();
+            document.getElementById('treeStats').textContent = '';
+            document.getElementById('currentBranchName').textContent = '';
+            branches = [];
+            renderBranchMenu();
+            setCountBadge('commitsCountBadge', null);
+            setCountBadge('runsCountBadge', null);
+            document.getElementById('fileTableBody').innerHTML = loadFailed
+                ? '<tr><td colspan="4" class="empty-state" style="color:var(--danger-fg)">Failed to load repositories.</td></tr>'
+                : '<tr><td colspan="4" class="empty-state">No repositories yet. Click "+ New Repo" to create one.</td></tr>';
+        }
+
+        /** Show a tab count badge, or hide it when the count is unknown. */
+        function setCountBadge(id, count) {
+            const el = document.getElementById(id);
+            if (count === null || count === undefined) {
+                el.textContent = '';
+                el.style.display = 'none';
+            } else {
+                el.textContent = String(count);
+                el.style.display = '';
+            }
         }
 
         function renderRepoSelect() {
             const select = document.getElementById('repoSelect');
-            select.innerHTML = repos.map(r => 
-                `<option value="${r.name}" ${r.name === activeRepo ? 'selected' : ''}>${r.name}</option>`
-            ).join('');
+            if (!repos.length) {
+                const opt = document.createElement('option');
+                opt.value = '';
+                opt.textContent = 'No repositories';
+                select.replaceChildren(opt);
+                return;
+            }
+            select.replaceChildren(...repos.map(r => {
+                const opt = document.createElement('option');
+                opt.value = r.name;
+                opt.textContent = r.name;
+                opt.selected = r.name === activeRepo;
+                return opt;
+            }));
         }
 
 
@@ -1394,25 +1511,104 @@
         }
 
         function selectRepo(name) {
+            const repo = repos.find(r => r.name === name);
+            if (!repo) return;
             activeRepo = name;
             currentPath = '';
+            currentBranch = repo.default_branch || 'main';
+            document.getElementById('currentBranchName').textContent = currentBranch;
+            setCountBadge('commitsCountBadge', null);
+            setCountBadge('runsCountBadge', null);
+            exitCommitDetail();
+            exitRunDetail();
+
             document.getElementById('currentRepoNameDisplay').textContent = name;
             const visibilityBadge = document.getElementById('repoVisibilityBadge');
-            const isPrivate = Boolean(repos.find(repo => repo.name === name)?.is_private);
+            const isPrivate = Boolean(repo.is_private);
             visibilityBadge.textContent = isPrivate ? 'Private' : 'Public';
             visibilityBadge.classList.toggle('badge-private', isPrivate);
             visibilityBadge.classList.toggle('badge-public', !isPrivate);
+            visibilityBadge.style.display = '';
             renderRepoSelect();
 
             // Set clone URL
-            const cloneUrl = `${window.location.origin}/git/${name}.git`;
+            const cloneUrl = `${window.location.origin}/git/${encodeURIComponent(name)}.git`;
             document.getElementById('cloneUrlInput').value = cloneUrl;
 
-            // Load view based on current active tab
-            if (currentTab === 'code') loadTree();
+            loadBranches();
+            reloadCurrentTab();
+        }
+
+        /** Re-fetch whatever the active tab shows (after a repo or branch change). */
+        function reloadCurrentTab() {
+            if (!activeRepo) return;
+            if (currentTab === 'code') loadTree('');
             else if (currentTab === 'commits') fetchCommits();
             else if (currentTab === 'ci') fetchCIRuns();
             else if (currentTab === 'deploys') fetchDeployTargets();
+        }
+
+        // ─── Branch Picker ──────────────────────────────────────────────
+        async function loadBranches() {
+            const repoAtRequest = activeRepo;
+            branches = [];
+            renderBranchMenu('Loading branches...');
+            try {
+                const res = await apiFetch(`${repoApi()}/branches`, { headers: authHeaders() });
+                if (repoAtRequest !== activeRepo) return; // user switched repos meanwhile
+                if (!res.ok) {
+                    renderBranchMenu('Failed to load branches.');
+                    return;
+                }
+                const { data } = await res.json();
+                branches = Array.isArray(data) ? data : [];
+                renderBranchMenu();
+            } catch (e) {
+                if (repoAtRequest === activeRepo) renderBranchMenu('Failed to load branches.');
+            }
+        }
+
+        function renderBranchMenu(message) {
+            const list = document.getElementById('branchMenuList');
+            if (message || !branches.length) {
+                const div = document.createElement('div');
+                div.className = 'branch-menu-empty';
+                div.textContent = message || (activeRepo ? 'No branches yet. Push to create one.' : 'No repository selected.');
+                list.replaceChildren(div);
+                return;
+            }
+            list.innerHTML = branches.map(b => `
+                <div class="branch-option${b.name === currentBranch ? ' current' : ''}" role="option"
+                     aria-selected="${b.name === currentBranch}" data-action="select-branch" data-branch="${esc(b.name)}">
+                    <span class="branch-name">${b.name === currentBranch ? '✓ ' : ''}${esc(b.name)}</span>
+                    ${b.is_default ? '<span class="badge badge-queued">default</span>' : ''}
+                </div>
+            `).join('');
+        }
+
+        function toggleBranchMenu() {
+            const menu = document.getElementById('branchMenu');
+            const open = !menu.classList.contains('show');
+            menu.classList.toggle('show', open);
+            document.getElementById('branchMenuButton').setAttribute('aria-expanded', String(open));
+            if (open && activeRepo && !branches.length) loadBranches();
+        }
+
+        function closeBranchMenu() {
+            document.getElementById('branchMenu').classList.remove('show');
+            document.getElementById('branchMenuButton').setAttribute('aria-expanded', 'false');
+        }
+
+        function selectBranch(name) {
+            closeBranchMenu();
+            if (!name || name === currentBranch) return;
+            currentBranch = name;
+            currentPath = '';
+            document.getElementById('currentBranchName').textContent = name;
+            setCountBadge('commitsCountBadge', null);
+            renderBranchMenu();
+            exitCommitDetail();
+            reloadCurrentTab();
         }
 
         // ─── Tabs Switching ─────────────────────────────────────────────
@@ -1425,6 +1621,7 @@
                 if (view) view.style.display = (t === tab) ? 'block' : 'none';
             });
 
+            if (!activeRepo) return;
             if (tab === 'code') loadTree();
             else if (tab === 'commits') fetchCommits();
             else if (tab === 'ci') fetchCIRuns();
@@ -1440,25 +1637,39 @@
             tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:20px; color:var(--text-muted)">Loading files...</td></tr>';
 
             try {
-                const res = await fetch(`${API_BASE}/repos/${activeRepo}/tree?path=${encodeURIComponent(path)}&ref=${currentBranch}`, {
+                const res = await apiFetch(`${repoApi()}/tree?path=${encodeURIComponent(path)}&ref=${encodeURIComponent(currentBranch)}`, {
                     headers: authHeaders()
                 });
+                const strip = document.getElementById('latestCommitStrip');
                 const { data } = await res.json();
-                if (!data) return;
+                if (!res.ok || !data) {
+                    strip.style.display = 'none';
+                    document.getElementById('readmeCard').style.display = 'none';
+                    document.getElementById('pathBreadcrumbs').replaceChildren();
+                    document.getElementById('treeStats').textContent = '';
+                    tbody.innerHTML = res.status === 404
+                        ? '<tr><td colspan="4" class="empty-state">Nothing here yet. Push a commit to this branch to see its files.</td></tr>'
+                        : '<tr><td colspan="4" class="empty-state" style="color:var(--danger-fg)">Failed to load directory files.</td></tr>';
+                    return;
+                }
 
                 // Render Breadcrumbs
-                renderBreadcrumbs(data.breadcrumbs);
+                renderBreadcrumbs(data.breadcrumbs || []);
 
-                // Render Latest Commit
-                if (data.latest_commit) {
-                    const lc = data.latest_commit;
-                    document.getElementById('latestCommitAvatar').textContent = lc.author.avatar || lc.author.name.slice(0, 2).toUpperCase();
-                    document.getElementById('latestCommitAuthor').textContent = lc.author.name;
-                    document.getElementById('latestCommitMessage').textContent = lc.message;
+                // Render Latest Commit (hidden when the API has none — never show placeholder data)
+                const lc = data.latest_commit;
+                if (lc) {
+                    const authorName = lc.author?.name || 'Unknown';
+                    document.getElementById('latestCommitAvatar').textContent = lc.author?.avatar || authorName.slice(0, 2).toUpperCase();
+                    document.getElementById('latestCommitAuthor').textContent = authorName;
+                    document.getElementById('latestCommitMessage').textContent = lc.message || '';
                     const shaEl = document.getElementById('latestCommitSha');
-                    shaEl.textContent = lc.short_sha;
-                    shaEl.dataset.fullSha = lc.sha;
-                    document.getElementById('latestCommitTime').textContent = lc.time_ago;
+                    shaEl.textContent = lc.short_sha || '';
+                    shaEl.dataset.fullSha = lc.sha || '';
+                    document.getElementById('latestCommitTime').textContent = lc.time_ago || '';
+                    strip.style.display = '';
+                } else {
+                    strip.style.display = 'none';
                 }
 
                 // Render Files Table
@@ -1468,7 +1679,7 @@
                     rowsHtml += `
                         <tr>
                             <td class="col-icon">📁</td>
-                            <td class="col-name"><a class="file-link" onclick="loadTree('${parentPath}')">..</a></td>
+                            <td class="col-name"><a class="file-link" data-action="load-tree" data-path="${esc(parentPath)}">..</a></td>
                             <td class="col-commit"></td>
                             <td class="col-time"></td>
                         </tr>
@@ -1477,13 +1688,13 @@
 
                 data.entries.forEach(entry => {
                     const icon = getFileIcon(entry.name, entry.type);
-                    const clickAction = entry.type === 'tree' ? `loadTree('${entry.path}')` : `openFileViewer('${entry.path}')`;
+                    const action = entry.type === 'tree' ? 'load-tree' : 'open-file';
                     rowsHtml += `
                         <tr>
                             <td class="col-icon">${icon}</td>
-                            <td class="col-name"><a class="file-link" onclick="${clickAction}">${entry.name}</a></td>
-                            <td class="col-commit">${entry.message}</td>
-                            <td class="col-time">${entry.size ? formatBytes(entry.size) : entry.updated_at}</td>
+                            <td class="col-name"><a class="file-link" data-action="${action}" data-path="${esc(entry.path)}">${esc(entry.name)}</a></td>
+                            <td class="col-commit">${esc(entry.message)}</td>
+                            <td class="col-time">${esc(entry.size ? formatBytes(entry.size) : entry.updated_at)}</td>
                         </tr>
                     `;
                 });
@@ -1511,9 +1722,9 @@
             container.innerHTML = crumbs.map((c, i) => {
                 const isLast = i === crumbs.length - 1;
                 if (isLast && crumbs.length > 1) {
-                    return `<span class="path-crumb-current">${c.name}</span>`;
+                    return `<span class="path-crumb-current">${esc(c.name)}</span>`;
                 }
-                return `<a class="path-crumb-item" onclick="loadTree('${c.path}')">${c.name}</a> <span style="color:var(--text-muted)">/</span>`;
+                return `<a class="path-crumb-item" data-action="load-tree" data-path="${esc(c.path)}">${esc(c.name)}</a> <span style="color:var(--text-muted)">/</span>`;
             }).join(' ');
         }
 
@@ -1529,7 +1740,7 @@
         // ─── File Viewer ────────────────────────────────────────────────
         async function openFileViewer(filePath) {
             try {
-                const res = await fetch(`${API_BASE}/repos/${activeRepo}/blob?path=${encodeURIComponent(filePath)}&ref=${currentBranch}`, {
+                const res = await apiFetch(`${repoApi()}/blob?path=${encodeURIComponent(filePath)}&ref=${encodeURIComponent(currentBranch)}`, {
                     headers: authHeaders()
                 });
                 const { data } = await res.json();
@@ -1600,7 +1811,7 @@
 
         function openRawFile() {
             if (activeViewerFile) {
-                window.open(`${API_BASE}/repos/${activeRepo}/raw?path=${encodeURIComponent(activeViewerFile.path)}&ref=${currentBranch}`, '_blank');
+                window.open(`${repoApi()}/raw?path=${encodeURIComponent(activeViewerFile.path)}&ref=${encodeURIComponent(currentBranch)}`, '_blank', 'noopener');
             }
         }
 
@@ -1610,43 +1821,45 @@
             container.innerHTML = '<div style="padding:24px; text-align:center; color:var(--text-muted)">Loading commit history...</div>';
 
             try {
-                const res = await fetch(`${API_BASE}/repos/${activeRepo}/commits?branch=${currentBranch}`, { headers: authHeaders() });
+                const res = await apiFetch(`${repoApi()}/commits?branch=${encodeURIComponent(currentBranch)}`, { headers: authHeaders() });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const { data } = await res.json();
-                if (!data || !data.length) {
-                    container.innerHTML = '<div style="padding:24px; text-align:center; color:var(--text-muted)">No commits recorded yet.</div>';
+                const list = Array.isArray(data) ? data : [];
+                // The API returns at most one page, so show "N+" when the page is full.
+                setCountBadge('commitsCountBadge', list.length >= 20 ? `${list.length}+` : list.length);
+                if (!list.length) {
+                    container.innerHTML = '<div class="empty-state">No commits on this branch yet.</div>';
                     return;
                 }
 
-                document.getElementById('commitsCountBadge').textContent = data.length;
-
                 // Render commits list grouped by date
                 let html = '<div class="commit-timeline-list">';
-                data.forEach(c => {
+                list.forEach(c => {
                     const statusBadge = c.ci_status ? `
                         <span class="badge badge-${c.ci_status === 'passed' ? 'success' : (c.ci_status === 'failed' ? 'danger' : 'running')}" 
                               style="cursor:pointer;" 
-                              onclick="event.stopPropagation(); jumpToCIRun('${c.ci_run_id}')">
-                            ${c.ci_status === 'passed' ? '✔' : (c.ci_status === 'failed' ? '✖' : '●')} ${c.ci_status}
+                              data-action="jump-ci-run" data-run-id="${esc(c.ci_run_id)}">
+                            ${c.ci_status === 'passed' ? '✔' : (c.ci_status === 'failed' ? '✖' : '●')} ${esc(c.ci_status)}
                         </span>
                     ` : '';
 
                     html += `
-                        <div class="commit-row" onclick="openCommitDetail('${c.sha}')">
+                        <div class="commit-row" data-action="open-commit" data-sha="${esc(c.sha)}">
                             <div class="commit-row-left">
-                                <div class="avatar-circle">${c.author.avatar || c.author.name.slice(0, 2).toUpperCase()}</div>
+                                <div class="avatar-circle">${esc(c.author.avatar || c.author.name.slice(0, 2).toUpperCase())}</div>
                                 <div class="commit-row-content">
-                                    <div class="commit-title">${c.message}</div>
-                                    ${c.description ? `<div class="commit-desc">${c.description}</div>` : ''}
+                                    <div class="commit-title">${esc(c.message)}</div>
+                                    ${c.description ? `<div class="commit-desc">${esc(c.description)}</div>` : ''}
                                     <div class="commit-meta">
-                                        <strong style="color:var(--text-primary);">${c.author.name}</strong>
-                                        <span>committed ${c.time_ago}</span>
+                                        <strong style="color:var(--text-primary);">${esc(c.author.name)}</strong>
+                                        <span>committed ${esc(c.time_ago)}</span>
                                     </div>
                                 </div>
                             </div>
                             <div class="commit-row-right">
                                 ${statusBadge}
-                                <span class="sha-pill" onclick="event.stopPropagation(); copyText('${c.sha}')">${c.short_sha}</span>
-                                <button class="btn btn-sm" onclick="event.stopPropagation(); openCommitDetail('${c.sha}')">&lt;&gt;</button>
+                                <span class="sha-pill" data-action="copy" data-text="${esc(c.sha)}">${esc(c.short_sha)}</span>
+                                <button class="btn btn-sm" data-action="open-commit" data-sha="${esc(c.sha)}">&lt;&gt;</button>
                             </div>
                         </div>
                     `;
@@ -1655,13 +1868,14 @@
 
                 container.innerHTML = html;
             } catch (e) {
+                setCountBadge('commitsCountBadge', null);
                 container.innerHTML = '<div style="padding:24px; text-align:center; color:var(--danger-fg)">Failed to load commits.</div>';
             }
         }
 
         async function openCommitDetail(sha) {
             try {
-                const res = await fetch(`${API_BASE}/repos/${activeRepo}/commits/${sha}`, { headers: authHeaders() });
+                const res = await apiFetch(`${repoApi()}/commits/${encodeURIComponent(sha)}`, { headers: authHeaders() });
                 const { data } = await res.json();
                 if (!data) return;
 
@@ -1671,16 +1885,16 @@
 
                 // Header
                 document.getElementById('commitDetailHeader').innerHTML = `
-                    <div style="font-size:18px; font-weight:600; margin-bottom:6px;">${data.message}</div>
-                    ${data.description ? `<p style="color:var(--text-secondary); margin-bottom:12px;">${data.description}</p>` : ''}
+                    <div style="font-size:18px; font-weight:600; margin-bottom:6px;">${esc(data.message)}</div>
+                    ${data.description ? `<p style="color:var(--text-secondary); margin-bottom:12px;">${esc(data.description)}</p>` : ''}
                     <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; font-size:13px;">
                         <div style="display:flex; align-items:center; gap:8px;">
-                            <div class="avatar-circle">${data.author.avatar || data.author.name.slice(0, 2).toUpperCase()}</div>
-                            <span><strong>${data.author.name}</strong> committed on ${new Date(data.date).toLocaleString()}</span>
+                            <div class="avatar-circle">${esc(data.author.avatar || data.author.name.slice(0, 2).toUpperCase())}</div>
+                            <span><strong>${esc(data.author.name)}</strong> committed on ${esc(new Date(data.date).toLocaleString())}</span>
                         </div>
                         <div style="display:flex; align-items:center; gap:10px;">
-                            <span class="sha-pill" onclick="copyText('${data.sha}')">commit ${data.short_sha}</span>
-                            <span style="color:var(--text-muted);">Showing ${data.stats.files_changed} changed file(s) with <span style="color:var(--success-fg)">+${data.stats.additions}</span> and <span style="color:var(--danger-fg)">-${data.stats.deletions}</span></span>
+                            <span class="sha-pill" data-action="copy" data-text="${esc(data.sha)}">commit ${esc(data.short_sha)}</span>
+                            <span style="color:var(--text-muted);">Showing ${esc(data.stats.files_changed)} changed file(s) with <span style="color:var(--success-fg)">+${esc(data.stats.additions)}</span> and <span style="color:var(--danger-fg)">-${esc(data.stats.deletions)}</span></span>
                         </div>
                     </div>
                 `;
@@ -1692,16 +1906,16 @@
                         <div class="diff-file-card">
                             <div class="diff-file-header">
                                 <div style="display:flex; align-items:center; gap:8px;">
-                                    <span class="badge ${f.status === 'added' ? 'badge-success' : 'badge-queued'}">${f.status.toUpperCase()}</span>
-                                    <strong style="font-family:var(--font-mono);">${f.filename}</strong>
+                                    <span class="badge ${f.status === 'added' ? 'badge-success' : 'badge-queued'}">${esc(String(f.status).toUpperCase())}</span>
+                                    <strong style="font-family:var(--font-mono);">${esc(f.filename)}</strong>
                                 </div>
                                 <div>
-                                    <span style="color:var(--success-fg); font-weight:600;">+${f.additions}</span>
-                                    <span style="color:var(--danger-fg); font-weight:600; margin-left:4px;">-${f.deletions}</span>
+                                    <span style="color:var(--success-fg); font-weight:600;">+${esc(f.additions)}</span>
+                                    <span style="color:var(--danger-fg); font-weight:600; margin-left:4px;">-${esc(f.deletions)}</span>
                                 </div>
                             </div>
                             <div class="diff-content">
-                                ${renderPatchHtml(f.patch)}
+                                ${renderPatchHtml(f.patch || '')}
                             </div>
                         </div>
                     `;
@@ -1749,13 +1963,17 @@
             table.innerHTML = '<div style="padding:24px; text-align:center; color:var(--text-muted)">Loading pipeline runs...</div>';
 
             try {
-                let url = `${API_BASE}/repos/${activeRepo}/ci/runs`;
-                if (statusFilter && statusFilter !== 'all') url += `?status=${statusFilter}`;
-                const res = await fetch(url, { headers: authHeaders() });
+                let url = `${repoApi()}/ci/runs`;
+                if (statusFilter && statusFilter !== 'all') url += `?status=${encodeURIComponent(statusFilter)}`;
+                const res = await apiFetch(url, { headers: authHeaders() });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const { data } = await res.json();
-                ciRunsData = data || [];
+                ciRunsData = Array.isArray(data) ? data : [];
 
-                document.getElementById('runsCountBadge').textContent = ciRunsData.length;
+                // Only an unfiltered list is a meaningful tab count. The API pages at 25.
+                if (!statusFilter || statusFilter === 'all') {
+                    setCountBadge('runsCountBadge', ciRunsData.length >= 25 ? `${ciRunsData.length}+` : ciRunsData.length);
+                }
 
                 if (!ciRunsData.length) {
                     table.innerHTML = '<div style="padding:32px; text-align:center; color:var(--text-muted)">No CI runs found. Push code or click "Run workflow"!</div>';
@@ -1765,31 +1983,32 @@
                 table.innerHTML = ciRunsData.map(run => {
                     const icon = run.status === 'passed' ? '✔' : (run.status === 'failed' ? '✖' : '●');
                     return `
-                        <div class="ci-run-row" onclick="openRunDetail('${run.id}')">
+                        <div class="ci-run-row" data-action="open-run" data-run-id="${esc(run.id)}">
                             <div class="ci-run-left">
-                                <div class="ci-status-icon ${run.status}">${icon}</div>
+                                <div class="ci-status-icon ${statusClass(run.status)}">${icon}</div>
                                 <div class="ci-run-info">
-                                    <div class="ci-run-title">${run.commit_message}</div>
+                                    <div class="ci-run-title">${esc(run.commit_message)}</div>
                                     <div class="ci-run-subtext">
-                                        <span style="font-weight:600; color:var(--text-primary);">${activeRepo}</span>
+                                        <span style="font-weight:600; color:var(--text-primary);">${esc(activeRepo)}</span>
                                         <span>·</span>
-                                        <span class="badge badge-queued">${run.trigger}</span>
+                                        <span class="badge badge-queued">${esc(run.trigger)}</span>
                                         <span>·</span>
-                                        <span style="font-family:var(--font-mono); color:var(--accent-blue);">${run.short_sha}</span>
+                                        <span style="font-family:var(--font-mono); color:var(--accent-blue);">${esc(run.short_sha)}</span>
                                         <span>·</span>
-                                        <span>branch: <code style="color:var(--text-primary);">${run.branch}</code></span>
+                                        <span>branch: <code style="color:var(--text-primary);">${esc(run.branch)}</code></span>
                                     </div>
                                 </div>
                             </div>
                             <div class="ci-run-right">
-                                <span style="font-weight:600; color:var(--text-primary);">${run.duration_text || '14s'}</span>
-                                <span>${run.time_ago}</span>
+                                <span style="font-weight:600; color:var(--text-primary);">${esc(run.duration_text || '-')}</span>
+                                <span>${esc(run.time_ago)}</span>
                             </div>
                         </div>
                     `;
                 }).join('');
 
             } catch (e) {
+                ciRunsData = [];
                 table.innerHTML = '<div style="padding:24px; text-align:center; color:var(--danger-fg)">Failed to load CI runs.</div>';
             }
         }
@@ -1800,7 +2019,7 @@
 
         async function openRunDetail(runId) {
             try {
-                const res = await fetch(`${API_BASE}/repos/${activeRepo}/ci/runs/${runId}`, { headers: authHeaders() });
+                const res = await apiFetch(`${repoApi()}/ci/runs/${encodeURIComponent(runId)}`, { headers: authHeaders() });
                 const { data } = await res.json();
                 if (!data) return;
 
@@ -1814,31 +2033,38 @@
                 const statusBadge = data.status === 'passed' ? 'badge-success' : (data.status === 'failed' ? 'badge-danger' : 'badge-running');
                 document.getElementById('ciRunBanner').innerHTML = `
                     <div class="ci-detail-title-group">
-                        <div class="ci-status-icon ${data.status}" style="width:32px; height:32px; font-size:16px;">
+                        <div class="ci-status-icon ${statusClass(data.status)}" style="width:32px; height:32px; font-size:16px;">
                             ${data.status === 'passed' ? '✔' : (data.status === 'failed' ? '✖' : '●')}
                         </div>
                         <div>
-                            <div style="font-size:18px; font-weight:600;">${data.commit_message}</div>
+                            <div style="font-size:18px; font-weight:600;">${esc(data.commit_message)}</div>
                             <div style="font-size:13px; color:var(--text-secondary); margin-top:3px;">
-                                Run on <strong>${data.branch}</strong> commit <span class="sha-pill" onclick="copyText('${data.commit_sha}')">${data.short_sha}</span>
-                                · Triggered by <strong>${data.trigger}</strong> · Total duration <strong>${data.duration_text}</strong>
+                                Run on <strong>${esc(data.branch)}</strong> commit <span class="sha-pill" data-action="copy" data-text="${esc(data.commit_sha)}">${esc(data.short_sha)}</span>
+                                · Triggered by <strong>${esc(data.trigger)}</strong> · Total duration <strong>${esc(data.duration_text)}</strong>
                             </div>
                         </div>
                     </div>
                     <div style="display:flex; gap:8px;">
-                        <button class="btn btn-sm btn-primary" onclick="rerunWorkflow('${data.id}')">Re-run jobs</button>
-                        ${data.status === 'running' ? `<button class="btn btn-sm" onclick="cancelWorkflow('${data.id}')">Cancel run</button>` : ''}
+                        <button class="btn btn-sm btn-primary" data-action="rerun" data-run-id="${esc(data.id)}">Re-run jobs</button>
+                        ${(data.status === 'running' || data.status === 'queued') ? `<button class="btn btn-sm" data-action="cancel-run" data-run-id="${esc(data.id)}">Cancel run</button>` : ''}
                     </div>
                 `;
 
                 // Render Jobs & Steps
                 renderJobsTree(data.jobs || []);
 
-                // Select first step with logs or deploy step
-                if (data.jobs && data.jobs.length) {
-                    const lastJob = data.jobs[data.jobs.length - 1];
-                    const targetStep = lastJob.steps[0] || data.jobs[0].steps[0];
+                // Show the first step of the last job; clear the terminal if no steps are recorded yet.
+                const lastJob = data.jobs?.[data.jobs.length - 1];
+                const targetStep = lastJob?.steps?.[0] || data.jobs?.[0]?.steps?.[0];
+                if (targetStep) {
                     selectStepLog(targetStep);
+                } else {
+                    document.getElementById('termStepTitle').textContent = 'Terminal';
+                    const badge = document.getElementById('termStepBadge');
+                    badge.textContent = data.status;
+                    badge.className = 'badge badge-queued';
+                    document.getElementById('terminalLogBody').innerHTML =
+                        '<div class="term-line"><span class="term-text stdout" style="color:var(--text-muted);">No steps have been recorded for this run yet.</span></div>';
                 }
 
             } catch (e) {
@@ -1854,12 +2080,12 @@
                     const stepStatusIcon = step.status === 'passed' ? '✔' : (step.status === 'failed' ? '✖' : (step.status === 'running' ? '●' : '○'));
                     const statusColor = step.status === 'passed' ? 'var(--success-fg)' : (step.status === 'failed' ? 'var(--danger-fg)' : 'var(--text-secondary)');
                     return `
-                        <div class="ci-step-item" id="step-node-${jIdx}-${sIdx}" onclick='selectStepLog(${JSON.stringify(step)}, "step-node-${jIdx}-${sIdx}")'>
+                        <div class="ci-step-item" id="step-node-${jIdx}-${sIdx}" data-action="select-step" data-job="${jIdx}" data-step="${sIdx}">
                             <div class="ci-step-left" style="min-width:0; flex:1;">
                                 <span style="color:${statusColor}; font-weight:bold; font-size:12px; flex-shrink:0;">${stepStatusIcon}</span>
-                                <span style="font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${step.name}</span>
+                                <span style="font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(step.name)}</span>
                             </div>
-                            <span style="font-size:11px; color:var(--text-muted); white-space:nowrap; flex-shrink:0; margin-left:8px;">${step.duration || ''}</span>
+                            <span style="font-size:11px; color:var(--text-muted); white-space:nowrap; flex-shrink:0; margin-left:8px;">${esc(step.duration || '')}</span>
                         </div>
                     `;
                 }).join('');
@@ -1867,8 +2093,8 @@
                 return `
                     <div style="margin-bottom:8px;">
                         <div class="ci-job-header">
-                            <span>${job.name}</span>
-                            <span class="badge ${job.status === 'passed' ? 'badge-success' : 'badge-queued'}">${job.status}</span>
+                            <span>${esc(job.name)}</span>
+                            <span class="badge ${job.status === 'passed' ? 'badge-success' : 'badge-queued'}">${esc(job.status)}</span>
                         </div>
                         ${stepsHtml}
                     </div>
@@ -1890,13 +2116,12 @@
 
             const term = document.getElementById('terminalLogBody');
             if (step.logs && step.logs.length) {
-                term.innerHTML = step.logs.map(l => `<div class="term-line"><span class="term-time">[${l.timestamp}]</span><span class="term-text ${l.stream || 'stdout'}">${escapeHtml(l.line)}</span></div>`).join('');
+                term.innerHTML = step.logs.map(l => `<div class="term-line"><span class="term-time">[${esc(l.timestamp)}]</span><span class="term-text ${l.stream === 'stderr' ? 'stderr' : 'stdout'}">${esc(l.line)}</span></div>`).join('');
             } else {
-                term.innerHTML = [
-                    `<div class="term-line"><span class="term-time">[00:00:01]</span><span class="term-text stdout">Step: ${escapeHtml(step.name)}</span></div>`,
-                    `<div class="term-line"><span class="term-time">[00:00:02]</span><span class="term-text stdout">Command: ${escapeHtml(step.command || '')}</span></div>`,
-                    `<div class="term-line"><span class="term-time">[00:00:03]</span><span class="term-text highlight">Status: ${escapeHtml(step.status)}</span></div>`
-                ].join('');
+                const message = (step.status === 'pending' || step.status === 'queued' || step.status === 'running')
+                    ? 'Waiting for log output...'
+                    : 'No log output was recorded for this step.';
+                term.innerHTML = `<div class="term-line"><span class="term-text stdout" style="color:var(--text-muted);">${escapeHtml(message)}</span></div>`;
             }
         }
 
@@ -1908,7 +2133,7 @@
 
         async function rerunWorkflow(runId) {
             try {
-                const res = await fetch(`${API_BASE}/repos/${activeRepo}/ci/runs/${runId}/rerun`, {
+                const res = await apiFetch(`${repoApi()}/ci/runs/${encodeURIComponent(runId)}/rerun`, {
                     method: 'POST',
                     headers: authHeaders()
                 });
@@ -1924,11 +2149,33 @@
             }
         }
 
+        async function cancelWorkflow(runId) {
+            if (!runId) return;
+            if (!confirm('Cancel this workflow run?')) return;
+            try {
+                const res = await apiFetch(`${repoApi()}/ci/runs/${encodeURIComponent(runId)}/cancel`, {
+                    method: 'POST',
+                    headers: authHeaders()
+                });
+                const body = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    alert(`Failed to cancel run: ${body.error || res.statusText}`);
+                } else if (body.data?.runner && body.data.runner.notified === false && body.data.runner.error) {
+                    alert('Run cancelled. The runner could not be reached right now; it will stop the job on its next check-in.');
+                }
+                // Refresh both views so the new status shows whichever the user returns to.
+                fetchCIRuns();
+                if (activeRunDetail?.id === runId) openRunDetail(runId);
+            } catch (e) {
+                alert("Error: " + e.message);
+            }
+        }
+
         async function triggerManualWorkflow() {
             const branch = prompt("Enter branch to run workflow on:", currentBranch);
             if (!branch) return;
             try {
-                const res = await fetch(`${API_BASE}/repos/${activeRepo}/ci/trigger`, {
+                const res = await apiFetch(`${repoApi()}/ci/trigger`, {
                     method: 'POST',
                     headers: authHeaders(),
                     body: JSON.stringify({ branch })
@@ -1957,56 +2204,49 @@
             container.innerHTML = '<div style="padding:24px; text-align:center; color:var(--text-muted)">Loading deploy targets...</div>';
 
             try {
-                const res = await fetch(`${API_BASE}/repos/${activeRepo}/deploys`, { headers: authHeaders() });
+                const res = await apiFetch(`${repoApi()}/deploys`, { headers: authHeaders() });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const { data } = await res.json();
-                if (!data || !data.length) {
-                    container.innerHTML = `
-                        <div class="deploy-card">
-                            <div>
-                                <div style="font-weight:600; font-size:15px; margin-bottom:4px;">Mac Mini / Lenovo Bare Metal Production</div>
-                                <div style="font-size:12px; color:var(--text-secondary);">Coolify App UUID: <code>b13aardv73k5fyl01a80ggzc</code> · http://grok.beenex.org</div>
-                            </div>
-                            <span class="badge badge-success">ACTIVE (COOLIFY)</span>
-                        </div>
-                    `;
+                if (!Array.isArray(data) || !data.length) {
+                    container.innerHTML = '<div class="empty-state">No deploy targets configured for this repository.</div>';
                     return;
                 }
 
-                container.innerHTML = data.map(t => `
-                    <div class="deploy-card">
-                        <div>
-                            <div style="font-weight:600; font-size:15px; margin-bottom:4px;">${t.name}</div>
-                            <div style="font-size:12px; color:var(--text-secondary);">
-                                App UUID: <code>${t.coolify_app_id || 'N/A'}</code> · Branches: <code>${t.branch_filter || 'all'}</code>
+                container.innerHTML = data.map(t => {
+                    const active = Number(t.is_active) !== 0;
+                    const details = [];
+                    if (t.coolify_app_id) details.push(`App UUID: <code>${esc(t.coolify_app_id)}</code>`);
+                    details.push(`Branches: <code>${esc(formatBranchFilter(t.branch_filter))}</code>`);
+                    return `
+                        <div class="deploy-card">
+                            <div>
+                                <div style="font-weight:600; font-size:15px; margin-bottom:4px;">${esc(t.name)}</div>
+                                <div style="font-size:12px; color:var(--text-secondary);">${details.join(' · ')}</div>
+                            </div>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <span class="badge badge-queued">${esc(String(t.type || '').toUpperCase())}</span>
+                                <span class="badge ${active ? 'badge-success' : 'badge-queued'}">${active ? 'ACTIVE' : 'INACTIVE'}</span>
                             </div>
                         </div>
-                        <div style="display:flex; align-items:center; gap:8px;">
-                            <span class="badge badge-success">${t.type.toUpperCase()}</span>
-                            <a href="http://grok.beenex.org" target="_blank" class="btn btn-sm">Open App ↗</a>
-                        </div>
-                    </div>
-                `).join('');
+                    `;
+                }).join('');
 
             } catch (e) {
                 container.innerHTML = '<div style="padding:24px; text-align:center; color:var(--danger-fg)">Failed to load deploy targets.</div>';
             }
         }
 
+        /** deploy_targets.branch_filter is a JSON array of patterns; NULL means every branch. */
+        function formatBranchFilter(raw) {
+            if (raw === null || raw === undefined || raw === '') return 'all';
+            try {
+                const patterns = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                if (Array.isArray(patterns)) return patterns.length ? patterns.join(', ') : 'none';
+            } catch (e) { /* fall through to raw text */ }
+            return String(raw);
+        }
+
         // ─── Modal Helpers ──────────────────────────────────────────────
-        function showKeyModal() {
-            document.getElementById('modalKeyInput').value = apiKey;
-            document.getElementById('keyModal').showModal();
-        }
-
-        function saveApiKey() {
-            const key = document.getElementById('modalKeyInput').value.trim();
-            apiKey = key;
-            localStorage.setItem('gf_api_key', apiKey);
-            document.getElementById('keyModal').close();
-            alert("API key saved!");
-            loadRepos();
-        }
-
         function showNewRepoModal() {
             document.getElementById('newRepoNameInput').value = '';
             document.getElementById('newRepoDescInput').value = '';
@@ -2019,7 +2259,7 @@
             if (!name) return;
 
             try {
-                const res = await fetch(`${API_BASE}/repos`, {
+                const res = await apiFetch(`${API_BASE}/repos`, {
                     method: 'POST',
                     headers: authHeaders(),
                     body: JSON.stringify({ name, description, is_private: false })
@@ -2027,8 +2267,7 @@
                 if (res.ok) {
                     document.getElementById('newRepoModal').close();
                     alert(`Repository '${name}' created!`);
-                    await loadRepos();
-                    selectRepo(name);
+                    await loadRepos(name);
                 } else {
                     const err = await res.json();
                     alert(`Error: ${err.error || 'Failed to create repo'}`);
@@ -2045,6 +2284,9 @@
         window.onclick = function(e) {
             if (!e.target.closest('.repo-actions-top')) {
                 document.getElementById('cloneDropdown')?.classList.remove('show');
+            }
+            if (!e.target.closest('.branch-picker')) {
+                closeBranchMenu();
             }
         };
 
@@ -2074,10 +2316,79 @@
             return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
         }
 
-        function escapeHtml(str) {
-            if (!str) return '';
-            return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        /** Escape any value for use in HTML text or a quoted attribute. */
+        function escapeHtml(value) {
+            if (value === null || value === undefined) return '';
+            return String(value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
         }
+        const esc = escapeHtml;
+
+        /** Base URL for the active repo's API, with the name safely encoded. */
+        function repoApi() {
+            return `${API_BASE}/repos/${encodeURIComponent(activeRepo)}`;
+        }
+
+        /** Only known statuses become CSS class names. */
+        function statusClass(status) {
+            return ['passed', 'failed', 'running', 'queued', 'cancelled'].includes(status) ? status : 'queued';
+        }
+
+        /** Markdown link targets: absolute http(s) only. Input is already HTML-escaped. */
+        function safeLinkHref(escapedUrl) {
+            return /^https?:\/\/[^\s]+$/i.test(escapedUrl) ? escapedUrl : null;
+        }
+
+        // ─── Event delegation for dynamic content ───────────────────────
+        // Rendered HTML never carries inline handlers with interpolated data;
+        // rows carry data-* attributes and this single listener dispatches.
+        document.addEventListener('click', (e) => {
+            const el = e.target.closest('[data-action]');
+            if (!el) return;
+            const d = el.dataset;
+            switch (d.action) {
+                case 'load-tree':
+                    loadTree(d.path || '');
+                    break;
+                case 'open-file':
+                    openFileViewer(d.path || '');
+                    break;
+                case 'open-commit':
+                    e.stopPropagation();
+                    openCommitDetail(d.sha);
+                    break;
+                case 'copy':
+                    e.stopPropagation();
+                    copyText(d.text);
+                    break;
+                case 'jump-ci-run':
+                    e.stopPropagation();
+                    jumpToCIRun(d.runId);
+                    break;
+                case 'open-run':
+                    openRunDetail(d.runId);
+                    break;
+                case 'rerun':
+                    rerunWorkflow(d.runId);
+                    break;
+                case 'cancel-run':
+                    cancelWorkflow(d.runId);
+                    break;
+                case 'select-branch':
+                    selectBranch(d.branch);
+                    break;
+                case 'select-step': {
+                    const job = activeRunDetail?.jobs?.[Number(d.job)];
+                    const step = job?.steps?.[Number(d.step)];
+                    if (step) selectStepLog(step, el.id);
+                    break;
+                }
+            }
+        });
 
         function renderSimpleMarkdown(md) {
             if (!md) return '';
@@ -2094,8 +2405,13 @@
             html = html.replace(/`([^`]+)`/gim, '<code>$1</code>');
             // Lists
             html = html.replace(/^\- (.*$)/gim, '<li>$1</li>');
-            // Links
-            html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/gim, '<a href="$2" target="_blank" style="color:var(--accent-blue);">$1</a>');
+            // Links — http(s) only; anything else (javascript:, data:, relative) renders as plain text
+            html = html.replace(/\[([^\]]+)\]\(([^)\s]+)\)/gim, (match, text, url) => {
+                const href = safeLinkHref(url);
+                return href
+                    ? `<a href="${href}" target="_blank" rel="noopener noreferrer nofollow" style="color:var(--accent-blue);">${text}</a>`
+                    : text;
+            });
             // Paragraph breaks
             html = html.replace(/\n\n/gim, '<p></p>');
             return html;

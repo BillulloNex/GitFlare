@@ -1,257 +1,254 @@
 import {
   type GitFlareConfig,
+  type FetchLike,
   type Repo,
   type CreateRepoInput,
+  type CreatedRepo,
   type ApiKey,
   type CreateKeyInput,
   type CreatedKey,
   type CIRun,
-  type CIJob,
-  type CIJobLog,
+  type CIRunDetail,
+  type CIStepLog,
+  type CIStepLogTail,
   type TriggerCIInput,
-  type TreeEntry,
+  type TriggeredRun,
+  type CancelledRun,
+  type Tree,
   type BlobContent,
   type DeployTarget,
   type CreateDeployInput,
   type Mirror,
   type SetupMirrorInput,
+  type MirrorSetupResult,
+  type MirrorSyncResult,
   type Commit,
   type HealthResponse,
   GitFlareError,
 } from './types.js';
 
-// ─── HTTP Helper ────────────────────────────────────────────────
+// ─── HTTP Transport ─────────────────────────────────────────────
 
-async function request<T>(
-  baseUrl: string,
-  apiKey: string,
-  method: string,
-  path: string,
-  body?: unknown,
-): Promise<T> {
-  const url = `${baseUrl.replace(/\/$/, '')}${path}`;
-  const headers: Record<string, string> = {
-    'Authorization': `Bearer ${apiKey}`,
-    'Accept': 'application/json',
-  };
-  if (body !== undefined) {
-    headers['Content-Type'] = 'application/json';
+class Http {
+  private readonly base: string;
+  private readonly fetchImpl: FetchLike;
+
+  constructor(private readonly config: GitFlareConfig) {
+    this.base = config.baseUrl.replace(/\/$/, '');
+    this.fetchImpl = config.fetch ?? ((input, init) => fetch(input, init));
   }
 
-  const res = await fetch(url, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-
-  if (!res.ok) {
-    const resBody = await res.json().catch(() => res.statusText);
-    throw new GitFlareError(res.status, res.statusText, resBody);
+  get baseUrl(): string {
+    return this.base;
   }
 
-  return (await res.json()) as T;
+  private headers(extra?: Record<string, string>): Record<string, string> {
+    const headers: Record<string, string> = { Accept: 'application/json' };
+    if (this.config.apiKey) headers['Authorization'] = `Bearer ${this.config.apiKey}`;
+    return { ...headers, ...this.config.headers, ...extra };
+  }
+
+  async raw(method: string, path: string, body?: unknown, authenticated = true): Promise<Response> {
+    const extra: Record<string, string> = body !== undefined ? { 'Content-Type': 'application/json' } : {};
+    const headers = authenticated ? this.headers(extra) : { Accept: 'application/json', ...extra };
+    const res = await this.fetchImpl(`${this.base}${path}`, {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      let parsed: unknown = text || res.statusText;
+      try { parsed = JSON.parse(text); } catch { /* keep text */ }
+      throw new GitFlareError(res.status, res.statusText, parsed);
+    }
+    return res;
+  }
+
+  /** JSON body as-is (endpoints that don't use an envelope). */
+  async json<T>(method: string, path: string, body?: unknown): Promise<T> {
+    const res = await this.raw(method, path, body);
+    return (await res.json()) as T;
+  }
+
+  /** Strip a single-key envelope such as `{ data: ... }`, `{ repos: [...] }`, `{ mirror: ... }`. */
+  async unwrap<T>(key: string, method: string, path: string, body?: unknown): Promise<T> {
+    const res = await this.raw(method, path, body);
+    const payload = (await res.json()) as Record<string, unknown> | null;
+    if (!payload || typeof payload !== 'object' || !(key in payload)) {
+      throw new GitFlareError(res.status, `Unexpected response shape (missing "${key}")`, payload);
+    }
+    return payload[key] as T;
+  }
+
+  /** Shorthand for the `{ data: ... }` envelope used by most repo-scoped endpoints. */
+  data<T>(method: string, path: string, body?: unknown): Promise<T> {
+    return this.unwrap<T>('data', method, path, body);
+  }
+}
+
+const seg = encodeURIComponent;
+
+function query(params: Record<string, string | number | undefined>): string {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== '') qs.set(k, String(v));
+  }
+  const s = qs.toString();
+  return s ? `?${s}` : '';
 }
 
 // ─── Sub-clients ────────────────────────────────────────────────
 
 class ReposClient {
-  constructor(private baseUrl: string, private apiKey: string) {}
+  constructor(private http: Http) {}
 
-  async list(limit = 50, offset = 0) {
-    return request<{ repos: Repo[]; limit: number; offset: number }>(
-      this.baseUrl, this.apiKey, 'GET',
-      `/api/repos?limit=${limit}&offset=${offset}`,
-    );
+  /** `GET /api/repos` — repositories the caller can read. */
+  list(limit = 50, offset = 0): Promise<Repo[]> {
+    return this.http.unwrap('repos', 'GET', `/api/repos${query({ limit, offset })}`);
   }
 
-  async create(input: CreateRepoInput) {
-    return request<{ id: string; name: string }>(
-      this.baseUrl, this.apiKey, 'POST', '/api/repos', input,
-    );
+  create(input: CreateRepoInput): Promise<CreatedRepo> {
+    return this.http.json('POST', '/api/repos', input);
   }
 
-  async get(name: string) {
-    return request<Repo>(
-      this.baseUrl, this.apiKey, 'GET', `/api/repos/${encodeURIComponent(name)}`,
-    );
+  get(name: string): Promise<Repo> {
+    return this.http.json('GET', `/api/repos/${seg(name)}`);
   }
 
-  async delete(name: string) {
-    return request<{ success: boolean }>(
-      this.baseUrl, this.apiKey, 'DELETE', `/api/repos/${encodeURIComponent(name)}`,
-    );
+  delete(name: string): Promise<{ success: boolean }> {
+    return this.http.json('DELETE', `/api/repos/${seg(name)}`);
   }
 }
 
 class KeysClient {
-  constructor(private baseUrl: string, private apiKey: string) {}
+  constructor(private http: Http) {}
 
-  async list() {
-    return request<{ keys: ApiKey[] }>(
-      this.baseUrl, this.apiKey, 'GET', '/api/keys',
-    );
+  /** Admins see all keys; users see their own; a non-admin API key sees only itself. */
+  list(): Promise<ApiKey[]> {
+    return this.http.unwrap('keys', 'GET', '/api/keys');
   }
 
-  async create(input: CreateKeyInput) {
-    return request<CreatedKey>(
-      this.baseUrl, this.apiKey, 'POST', '/api/keys', input,
-    );
+  create(input: CreateKeyInput): Promise<CreatedKey> {
+    return this.http.json('POST', '/api/keys', input);
   }
 
-  async revoke(id: string) {
-    return request<{ success: boolean; revoked: string }>(
-      this.baseUrl, this.apiKey, 'DELETE', `/api/keys/${encodeURIComponent(id)}`,
-    );
-  }
-
-  /** Bootstrap the first admin key using the ADMIN_API_KEY secret */
-  async bootstrap(adminApiKey: string, name = 'admin-bootstrap') {
-    return request<CreatedKey>(
-      this.baseUrl, adminApiKey, 'POST', '/api/bootstrap', { name },
-    );
+  revoke(id: string): Promise<{ success: boolean; revoked: string }> {
+    return this.http.json('DELETE', `/api/keys/${seg(id)}`);
   }
 }
 
 class CIClient {
-  constructor(private baseUrl: string, private apiKey: string) {}
+  constructor(private http: Http) {}
 
-  async runs(repo: string) {
-    return request<{ runs: CIRun[] }>(
-      this.baseUrl, this.apiKey, 'GET',
-      `/api/repos/${encodeURIComponent(repo)}/ci/runs`,
+  runs(repo: string, opts: { limit?: number; offset?: number; status?: string } = {}): Promise<CIRun[]> {
+    return this.http.data('GET', `/api/repos/${seg(repo)}/ci/runs${query(opts)}`);
+  }
+
+  /** Run detail with jobs → steps (each step carries a log tail). */
+  status(repo: string, runId: string): Promise<CIRunDetail> {
+    return this.http.data('GET', `/api/repos/${seg(repo)}/ci/runs/${seg(runId)}`);
+  }
+
+  /**
+   * Quick view: the truncated log tail of every step in the run, flattened
+   * across jobs. Each entry's `index` can be passed to `stepLog` for the full log.
+   */
+  async logs(repo: string, runId: string): Promise<CIStepLogTail[]> {
+    const run = await this.status(repo, runId);
+    const ordinals = new Map(run.raw_steps.map(s => [s.id, s.global_ordinal ?? s.step_index]));
+    return run.jobs.flatMap(job =>
+      job.steps.map(step => ({
+        index: ordinals.get(step.id) ?? -1,
+        job_name: job.name,
+        name: step.name,
+        status: step.status,
+        exit_code: step.exit_code,
+        logs: step.logs,
+      })),
     );
   }
 
-  async status(repo: string, runId: string) {
-    return request<{ run: CIRun; jobs: CIJob[] }>(
-      this.baseUrl, this.apiKey, 'GET',
-      `/api/repos/${encodeURIComponent(repo)}/ci/runs/${encodeURIComponent(runId)}`,
-    );
+  /** Full log for one step (from R2; falls back to the tail with `complete: false`). */
+  stepLog(repo: string, runId: string, stepIndex: number): Promise<CIStepLog> {
+    return this.http.data('GET', `/api/repos/${seg(repo)}/ci/runs/${seg(runId)}/logs/${stepIndex}`);
   }
 
-  async logs(repo: string, runId: string, jobId: string) {
-    return request<{ logs: CIJobLog[] }>(
-      this.baseUrl, this.apiKey, 'GET',
-      `/api/repos/${encodeURIComponent(repo)}/ci/runs/${encodeURIComponent(runId)}/jobs/${encodeURIComponent(jobId)}/logs`,
-    );
+  trigger(repo: string, input: TriggerCIInput = {}): Promise<TriggeredRun> {
+    return this.http.data('POST', `/api/repos/${seg(repo)}/ci/trigger`, input);
   }
 
-  async trigger(repo: string, input?: TriggerCIInput) {
-    return request<{ run_id: string; status: string }>(
-      this.baseUrl, this.apiKey, 'POST',
-      `/api/repos/${encodeURIComponent(repo)}/ci/trigger`,
-      input ?? {},
-    );
+  rerun(repo: string, runId: string): Promise<{ id: string; status: 'queued' }> {
+    return this.http.data('POST', `/api/repos/${seg(repo)}/ci/runs/${seg(runId)}/rerun`, {});
   }
 
-  async cancel(repo: string, runId: string) {
-    return request<{ success: boolean }>(
-      this.baseUrl, this.apiKey, 'POST',
-      `/api/repos/${encodeURIComponent(repo)}/ci/runs/${encodeURIComponent(runId)}/cancel`,
-    );
+  cancel(repo: string, runId: string): Promise<CancelledRun> {
+    return this.http.data('POST', `/api/repos/${seg(repo)}/ci/runs/${seg(runId)}/cancel`, {});
   }
 }
 
 class FilesClient {
-  constructor(private baseUrl: string, private apiKey: string) {}
+  constructor(private http: Http) {}
 
-  async tree(repo: string, ref: string, path = '/') {
-    const params = new URLSearchParams({ ref, path });
-    return request<{ entries: TreeEntry[] }>(
-      this.baseUrl, this.apiKey, 'GET',
-      `/api/repos/${encodeURIComponent(repo)}/tree?${params}`,
-    );
+  /** `ref` defaults to the repo's default branch on the server. */
+  tree(repo: string, ref?: string, path = ''): Promise<Tree> {
+    return this.http.data('GET', `/api/repos/${seg(repo)}/tree${query({ ref, path: path === '/' ? '' : path })}`);
   }
 
-  async blob(repo: string, ref: string, path: string) {
-    const params = new URLSearchParams({ ref, path });
-    return request<BlobContent>(
-      this.baseUrl, this.apiKey, 'GET',
-      `/api/repos/${encodeURIComponent(repo)}/blob?${params}`,
-    );
+  /** `ref` defaults to the repo's default branch on the server. */
+  blob(repo: string, ref: string | undefined, path: string): Promise<BlobContent> {
+    return this.http.data('GET', `/api/repos/${seg(repo)}/blob${query({ ref, path })}`);
   }
 
-  async raw(repo: string, ref: string, path: string): Promise<string> {
-    const params = new URLSearchParams({ ref, path });
-    const url = `${this.baseUrl.replace(/\/$/, '')}/api/repos/${encodeURIComponent(repo)}/raw?${params}`;
-    const res = await fetch(url, {
-      headers: { 'Authorization': `Bearer ${this.apiKey}` },
-    });
-    if (!res.ok) {
-      throw new GitFlareError(res.status, res.statusText, await res.text());
-    }
+  async raw(repo: string, ref: string | undefined, path: string): Promise<string> {
+    const res = await this.http.raw('GET', `/api/repos/${seg(repo)}/raw${query({ ref, path })}`);
     return res.text();
   }
 }
 
 class CommitsClient {
-  constructor(private baseUrl: string, private apiKey: string) {}
+  constructor(private http: Http) {}
 
-  async list(repo: string, ref = 'main', limit = 20) {
-    const params = new URLSearchParams({ ref, limit: String(limit) });
-    return request<{ commits: Commit[] }>(
-      this.baseUrl, this.apiKey, 'GET',
-      `/api/repos/${encodeURIComponent(repo)}/commits?${params}`,
-    );
+  /** `branch` defaults to the repo's default branch; `limit` is clamped to 1-100 by the server. */
+  list(repo: string, branch?: string, limit = 20): Promise<Commit[]> {
+    return this.http.data('GET', `/api/repos/${seg(repo)}/commits${query({ branch, limit })}`);
   }
 }
 
 class DeployClient {
-  constructor(private baseUrl: string, private apiKey: string) {}
+  constructor(private http: Http) {}
 
-  async list(repo: string) {
-    return request<{ targets: DeployTarget[] }>(
-      this.baseUrl, this.apiKey, 'GET',
-      `/api/repos/${encodeURIComponent(repo)}/deploys`,
-    );
+  list(repo: string): Promise<DeployTarget[]> {
+    return this.http.data('GET', `/api/repos/${seg(repo)}/deploys`);
   }
 
-  async create(repo: string, input: CreateDeployInput) {
-    return request<{ id: string }>(
-      this.baseUrl, this.apiKey, 'POST',
-      `/api/repos/${encodeURIComponent(repo)}/deploys`,
-      input,
-    );
+  create(repo: string, input: CreateDeployInput): Promise<{ id: string }> {
+    return this.http.data('POST', `/api/repos/${seg(repo)}/deploys`, input);
   }
 
-  async remove(repo: string, targetId: string) {
-    return request<{ success: boolean }>(
-      this.baseUrl, this.apiKey, 'DELETE',
-      `/api/repos/${encodeURIComponent(repo)}/deploys/${encodeURIComponent(targetId)}`,
-    );
+  remove(repo: string, targetId: string): Promise<{ success: boolean }> {
+    return this.http.json('DELETE', `/api/repos/${seg(repo)}/deploys/${seg(targetId)}`);
   }
 }
 
 class MirrorsClient {
-  constructor(private baseUrl: string, private apiKey: string) {}
+  constructor(private http: Http) {}
 
-  async get(repo: string) {
-    return request<{ mirror: Mirror }>(
-      this.baseUrl, this.apiKey, 'GET',
-      `/api/repos/${encodeURIComponent(repo)}/mirror`,
-    );
+  /** null when no mirror is configured. */
+  get(repo: string): Promise<Mirror | null> {
+    return this.http.unwrap('mirror', 'GET', `/api/repos/${seg(repo)}/mirror`);
   }
 
-  async setup(repo: string, input: SetupMirrorInput) {
-    return request<{ id: string }>(
-      this.baseUrl, this.apiKey, 'POST',
-      `/api/repos/${encodeURIComponent(repo)}/mirror`,
-      input,
-    );
+  setup(repo: string, input: SetupMirrorInput): Promise<MirrorSetupResult> {
+    return this.http.json('POST', `/api/repos/${seg(repo)}/mirror`, input);
   }
 
-  async sync(repo: string) {
-    return request<{ status: string }>(
-      this.baseUrl, this.apiKey, 'POST',
-      `/api/repos/${encodeURIComponent(repo)}/mirror/sync`,
-    );
+  sync(repo: string): Promise<MirrorSyncResult> {
+    return this.http.json('POST', `/api/repos/${seg(repo)}/mirror/sync`, {});
   }
 
-  async disable(repo: string) {
-    return request<{ success: boolean }>(
-      this.baseUrl, this.apiKey, 'DELETE',
-      `/api/repos/${encodeURIComponent(repo)}/mirror`,
-    );
+  disable(repo: string): Promise<{ success: boolean; message: string }> {
+    return this.http.json('DELETE', `/api/repos/${seg(repo)}/mirror`);
   }
 }
 
@@ -265,33 +262,39 @@ export class GitFlareClient {
   public readonly commits: CommitsClient;
   public readonly deploys: DeployClient;
   public readonly mirrors: MirrorsClient;
+  private readonly http: Http;
 
-  constructor(private config: GitFlareConfig) {
-    const { baseUrl, apiKey } = config;
-    this.repos = new ReposClient(baseUrl, apiKey);
-    this.keys = new KeysClient(baseUrl, apiKey);
-    this.ci = new CIClient(baseUrl, apiKey);
-    this.files = new FilesClient(baseUrl, apiKey);
-    this.commits = new CommitsClient(baseUrl, apiKey);
-    this.deploys = new DeployClient(baseUrl, apiKey);
-    this.mirrors = new MirrorsClient(baseUrl, apiKey);
+  constructor(config: GitFlareConfig) {
+    this.http = new Http(config);
+    this.repos = new ReposClient(this.http);
+    this.keys = new KeysClient(this.http);
+    this.ci = new CIClient(this.http);
+    this.files = new FilesClient(this.http);
+    this.commits = new CommitsClient(this.http);
+    this.deploys = new DeployClient(this.http);
+    this.mirrors = new MirrorsClient(this.http);
   }
 
-  /** Check GitFlare instance health */
-  async health() {
-    // Health endpoint is public, no auth needed
-    const url = `${this.config.baseUrl.replace(/\/$/, '')}/health`;
-    const res = await fetch(url);
+  /** Public health check — does NOT verify credentials (see `verifyAuth`). */
+  async health(): Promise<HealthResponse> {
+    const res = await this.http.raw('GET', '/health', undefined, false);
     return (await res.json()) as HealthResponse;
   }
 
-  /** Get the Git remote URL for a repo */
-  gitRemoteUrl(repoName: string): string {
-    return `${this.config.baseUrl.replace(/\/$/, '')}/git/${repoName}`;
+  /**
+   * Verify the configured credentials against a protected endpoint.
+   * Throws `GitFlareError` (401/403) if they are rejected.
+   */
+  async verifyAuth(): Promise<void> {
+    await this.repos.list(1, 0);
   }
 
-  /** Get the base URL */
+  /** Git remote URL for a repo (no credentials embedded). */
+  gitRemoteUrl(repoName: string): string {
+    return `${this.http.baseUrl}/git/${seg(repoName)}`;
+  }
+
   get baseUrl(): string {
-    return this.config.baseUrl;
+    return this.http.baseUrl;
   }
 }

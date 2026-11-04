@@ -1,34 +1,64 @@
 import { Hono } from 'hono';
 import type { Env } from '../env.ts';
-import { requirePermission } from '../middleware/auth.ts';
-import type { AuthVariables } from '../middleware/auth.ts';
+import { principalFrom, requirePermission } from '../middleware/auth.ts';
+import { auditContext, hasRepoLevel, requireRepoLevel, type RepoVariables } from '../middleware/repo-access.ts';
 import { audit } from '../lib/audit.ts';
+import { isValidPermission, readableReposFilter, VALID_PERMISSIONS } from '../lib/access.ts';
+import { isValidRefName, isValidRepoName } from '../lib/repo-validation.ts';
+import { isOptionalBoolean, isOptionalString, readJsonObject } from '../lib/request.ts';
 
-const app = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
+// Routes under /:repo run behind repoAccess (src/index.ts), which sets
+// `repoRecord` + `principal` and enforces read (GET) / write (other methods).
+const app = new Hono<{ Bindings: Env; Variables: RepoVariables }>();
 
 /**
- * List repositories with pagination.
+ * List repositories the caller can read, with pagination.
+ * Private repos only appear for members, global admins, and system keys.
  */
 app.get('/', async (c) => {
-  const limit = Math.min(Number(c.req.query('limit')) || 50, 100);
-  const offset = Number(c.req.query('offset')) || 0;
+  const principal = principalFrom(c.get('user'), c.get('apiKey'));
+  if (!principal) {
+    return c.json({ error: 'Forbidden: unrecognised role or permission level' }, 403);
+  }
+
+  const limit = Math.min(Math.max(Number(c.req.query('limit')) || 50, 1), 100);
+  const offset = Math.max(Number(c.req.query('offset')) || 0, 0);
+  const filter = readableReposFilter(principal);
 
   const { results } = await c.env.DB
-    .prepare('SELECT * FROM repositories ORDER BY created_at DESC LIMIT ? OFFSET ?')
-    .bind(limit, offset)
+    .prepare(`SELECT * FROM repositories WHERE ${filter.where} ORDER BY created_at DESC LIMIT ? OFFSET ?`)
+    .bind(...filter.params, limit, offset)
     .all();
 
   return c.json({ repos: results, limit, offset });
 });
 
 /**
- * Create a new repository in Artifacts and D1.
+ * Create a new repository in Artifacts and D1. The creator becomes an
+ * `admin` member (system keys without a user have global access already).
  */
 app.post('/', requirePermission('write'), async (c) => {
-  const body = await c.req.json<{ name: string; description?: string; is_private?: boolean; default_branch?: string }>();
-  
-  if (!body.name) {
+  const principal = principalFrom(c.get('user'), c.get('apiKey'));
+  if (!principal) {
+    return c.json({ error: 'Forbidden: unrecognised role or permission level' }, 403);
+  }
+  if (principal.repoScope) {
+    return c.json({ error: 'Forbidden: this API key is scoped to a single repository' }, 403);
+  }
+
+  const body = await readJsonObject<{ name: string; description?: string | null; is_private?: boolean; default_branch?: string }>(c);
+  if (!body || typeof body.name !== 'string' || !body.name) {
     return c.json({ error: 'Name is required' }, 400);
+  }
+  if ((body.description !== null && !isOptionalString(body.description)) || !isOptionalBoolean(body.is_private)) {
+    return c.json({ error: 'description must be a string and is_private a boolean' }, 400);
+  }
+  if (!isValidRepoName(body.name)) {
+    return c.json({ error: 'Invalid repository name: use 1-100 of A-Z a-z 0-9 . _ - (no leading "-", no trailing ".git")' }, 400);
+  }
+  const defaultBranch = body.default_branch || 'main';
+  if (typeof defaultBranch !== 'string' || !isValidRefName(defaultBranch)) {
+    return c.json({ error: 'Invalid default_branch' }, 400);
   }
 
   // Check if repo already exists in D1
@@ -48,55 +78,69 @@ app.post('/', requirePermission('write'), async (c) => {
     await c.env.REPOS.create(body.name);
   } catch (err: any) {
     // If it already exists in Artifacts, that's fine — just continue
-    if (!err.message?.includes('already exists')) {
-      return c.json({ error: 'Failed to create repo in Artifacts: ' + err.message }, 500);
+    if (!err?.message?.includes('already exists')) {
+      console.error(`Artifacts create failed for ${body.name}:`, err);
+      return c.json({ error: 'Failed to create repository storage' }, 500);
     }
   }
 
-  // Insert into D1
-  await c.env.DB
-    .prepare(
-      `INSERT INTO repositories (id, name, description, is_private, default_branch, artifact_name, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .bind(id, body.name, body.description || null, body.is_private ? 1 : 0, body.default_branch || 'main', body.name, now, now)
-    .run();
+  // Insert repo + default-branch protection + creator membership atomically.
+  // The protection row forces pushes to the default branch through the merge
+  // queue (which pushes to Artifacts directly, not via git.ts).
+  const statements = [
+    c.env.DB
+      .prepare(
+        `INSERT INTO repositories (id, name, description, is_private, default_branch, artifact_name, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .bind(id, body.name, body.description || null, body.is_private ? 1 : 0, defaultBranch, body.name, now, now),
+    c.env.DB
+      .prepare('INSERT OR IGNORE INTO protected_branches (id, repo_id, branch_pattern, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
+      .bind(crypto.randomUUID(), id, defaultBranch, now, now),
+  ];
+  if (principal.userId) {
+    statements.push(
+      c.env.DB
+        .prepare("INSERT INTO repo_members (repo_id, user_id, role, created_at) VALUES (?, ?, 'admin', ?)")
+        .bind(id, principal.userId, now)
+    );
+  }
+  await c.env.DB.batch(statements);
 
-  const user = c.get('user');
-  const apiKey = c.get('apiKey');
+  const ctx = auditContext(c);
   await audit(c.env.DB, {
     repoId: id,
-    actor: user?.id ?? apiKey?.id ?? 'system',
+    actor: ctx.actor,
     action: 'repo.create',
     details: { name: body.name },
-    ipAddress: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || undefined
+    ipAddress: ctx.ipAddress
   });
 
   return c.json({ id, name: body.name }, 201);
 });
 
 /**
- * Update repository metadata.
+ * Update repository metadata. Changing `is_private` requires repo admin.
  */
-app.patch('/:repo', requirePermission('write'), async (c) => {
-  const repoName = c.req.param('repo');
+app.patch('/:repo', async (c) => {
+  const repo = c.get('repoRecord');
 
-  const repo = await c.env.DB
-    .prepare('SELECT id FROM repositories WHERE name = ?')
-    .bind(repoName)
-    .first<{ id: string }>();
-
-  if (!repo) {
-    return c.json({ error: 'Repository not found' }, 404);
+  const body = await readJsonObject<{ description?: string | null; is_private?: boolean }>(c);
+  if (!body) return c.json({ error: 'Invalid JSON body' }, 400);
+  if ((body.description !== null && !isOptionalString(body.description)) || !isOptionalBoolean(body.is_private)) {
+    return c.json({ error: 'description must be a string and is_private a boolean' }, 400);
   }
 
-  const body = await c.req.json<{ description?: string; is_private?: boolean }>();
+  if (body.is_private !== undefined && !(await hasRepoLevel(c, 'admin'))) {
+    return c.json({ error: 'Forbidden: changing visibility requires admin access to this repository' }, 403);
+  }
+
   const sets: string[] = [];
   const values: (string | number)[] = [];
 
   if (body.description !== undefined) {
     sets.push('description = ?');
-    values.push(body.description);
+    values.push(String(body.description));
   }
   if (body.is_private !== undefined) {
     sets.push('is_private = ?');
@@ -109,21 +153,20 @@ app.patch('/:repo', requirePermission('write'), async (c) => {
 
   sets.push('updated_at = ?');
   values.push(new Date().toISOString());
-  values.push(repoName);
+  values.push(repo.id);
 
   await c.env.DB
-    .prepare(`UPDATE repositories SET ${sets.join(', ')} WHERE name = ?`)
+    .prepare(`UPDATE repositories SET ${sets.join(', ')} WHERE id = ?`)
     .bind(...values)
     .run();
 
-  const user = c.get('user');
-  const apiKey = c.get('apiKey');
+  const ctx = auditContext(c);
   await audit(c.env.DB, {
     repoId: repo.id,
-    actor: user?.id ?? apiKey?.id ?? 'system',
+    actor: ctx.actor,
     action: 'repo.update',
-    details: body,
-    ipAddress: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || undefined
+    details: { description: body.description, is_private: body.is_private },
+    ipAddress: ctx.ipAddress
   });
 
   return c.json({ success: true });
@@ -133,25 +176,16 @@ app.patch('/:repo', requirePermission('write'), async (c) => {
  * Get repository details.
  */
 app.get('/:repo', async (c) => {
-  const repoName = c.req.param('repo');
-
-  const repo = await c.env.DB
-    .prepare('SELECT * FROM repositories WHERE name = ?')
-    .bind(repoName)
-    .first();
-
-  if (!repo) {
-    return c.json({ error: 'Repository not found' }, 404);
-  }
+  const repo = c.get('repoRecord');
 
   let remoteUrl = null;
   try {
-    const artifactRepo = await c.env.REPOS.get(repoName);
+    const artifactRepo = await c.env.REPOS.get(repo.name);
     if (artifactRepo) {
       remoteUrl = artifactRepo.remote;
     }
   } catch (err) {
-    // Ignore Artifacts lookup errors or consider it missing remote
+    // Remote URL is informational; a lookup failure just leaves it null
   }
 
   return c.json({ ...repo, remote: remoteUrl });
@@ -159,40 +193,141 @@ app.get('/:repo', async (c) => {
 
 /**
  * Delete a repository from Artifacts and D1.
+ * An Artifacts failure aborts the delete (500) so D1 never forgets a repo
+ * whose git data still exists.
  */
-app.delete('/:repo', requirePermission('admin'), async (c) => {
-  const repoName = c.req.param('repo');
-
-  const repo = await c.env.DB
-    .prepare('SELECT id FROM repositories WHERE name = ?')
-    .bind(repoName)
-    .first<{ id: string }>();
-
-  if (!repo) {
-    return c.json({ error: 'Repository not found' }, 404);
-  }
+app.delete('/:repo', requireRepoLevel('admin'), async (c) => {
+  const repo = c.get('repoRecord');
 
   try {
-    if ((c.env.REPOS as any).delete) {
-      await (c.env.REPOS as any).delete(repoName);
+    const artifactRepo = await c.env.REPOS.get(repo.name);
+    if (artifactRepo) {
+      await c.env.REPOS.delete(repo.name);
     }
-  } catch (err) {
-    // Ignore Artifacts delete errors
+  } catch (err: any) {
+    console.error(`Artifacts delete failed for ${repo.name}:`, err);
+    return c.json({ error: 'Failed to delete repository storage; repository was not deleted' }, 500);
   }
 
   await c.env.DB
-    .prepare('DELETE FROM repositories WHERE name = ?')
-    .bind(repoName)
+    .prepare('DELETE FROM repositories WHERE id = ?')
+    .bind(repo.id)
     .run();
 
-  const user = c.get('user');
-  const apiKey = c.get('apiKey');
+  const ctx = auditContext(c);
   await audit(c.env.DB, {
     repoId: repo.id,
-    actor: user?.id ?? apiKey?.id ?? 'system',
+    actor: ctx.actor,
     action: 'repo.delete',
-    details: { name: repoName },
-    ipAddress: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || undefined
+    details: { name: repo.name },
+    ipAddress: ctx.ipAddress
+  });
+
+  return c.json({ success: true });
+});
+
+// ─── Member Management ─────────────────────────────────────────
+
+/**
+ * List repo members.
+ */
+app.get('/:repo/members', async (c) => {
+  const repo = c.get('repoRecord');
+  const { results } = await c.env.DB
+    .prepare(
+      `SELECT rm.user_id, rm.role, rm.created_at, u.email, u.name
+       FROM repo_members rm LEFT JOIN users u ON u.id = rm.user_id
+       WHERE rm.repo_id = ? ORDER BY rm.created_at`
+    )
+    .bind(repo.id)
+    .all();
+  return c.json({ members: results });
+});
+
+/**
+ * Add a member or change their role. Body: `{ user_id | email, role }`.
+ */
+app.post('/:repo/members', requireRepoLevel('admin'), async (c) => {
+  const repo = c.get('repoRecord');
+  const body = await readJsonObject<{ user_id?: string; email?: string; role?: string }>(c);
+  if (!body) return c.json({ error: 'Invalid JSON body' }, 400);
+
+  const role = body.role ?? 'read';
+  if (!isValidPermission(role)) {
+    return c.json({ error: `role must be one of: ${VALID_PERMISSIONS.join(', ')}` }, 400);
+  }
+
+  let target: { id: string; email: string } | null = null;
+  if (typeof body.user_id === 'string' && body.user_id) {
+    target = await c.env.DB.prepare('SELECT id, email FROM users WHERE id = ?').bind(body.user_id).first();
+  } else if (typeof body.email === 'string' && body.email) {
+    target = await c.env.DB
+      .prepare('SELECT id, email FROM users WHERE lower(email) = lower(?)')
+      .bind(body.email.trim())
+      .first();
+  } else {
+    return c.json({ error: 'user_id or email is required' }, 400);
+  }
+  if (!target) {
+    return c.json({ error: 'User not found (they must sign in once before being added)' }, 404);
+  }
+
+  await c.env.DB
+    .prepare(
+      `INSERT INTO repo_members (repo_id, user_id, role, created_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT (repo_id, user_id) DO UPDATE SET role = excluded.role`
+    )
+    .bind(repo.id, target.id, role, new Date().toISOString())
+    .run();
+
+  const ctx = auditContext(c);
+  await audit(c.env.DB, {
+    repoId: repo.id,
+    actor: ctx.actor,
+    action: 'repo.member.upsert',
+    details: { user_id: target.id, role },
+    ipAddress: ctx.ipAddress
+  });
+
+  return c.json({ repo_id: repo.id, user_id: target.id, email: target.email, role }, 201);
+});
+
+/**
+ * Remove a member. The last `admin` member can't be removed (global admins
+ * can still manage the repo, but owners shouldn't lock themselves out by accident).
+ */
+app.delete('/:repo/members/:userId', requireRepoLevel('admin'), async (c) => {
+  const repo = c.get('repoRecord');
+  const userId = c.req.param('userId');
+
+  const member = await c.env.DB
+    .prepare('SELECT role FROM repo_members WHERE repo_id = ? AND user_id = ?')
+    .bind(repo.id, userId)
+    .first<{ role: string }>();
+  if (!member) return c.json({ error: 'Member not found' }, 404);
+
+  if (member.role === 'admin') {
+    const admins = await c.env.DB
+      .prepare("SELECT COUNT(*) AS n FROM repo_members WHERE repo_id = ? AND role = 'admin'")
+      .bind(repo.id)
+      .first<{ n: number }>();
+    if ((admins?.n ?? 0) <= 1) {
+      return c.json({ error: 'Cannot remove the last admin member of this repository' }, 409);
+    }
+  }
+
+  await c.env.DB
+    .prepare('DELETE FROM repo_members WHERE repo_id = ? AND user_id = ?')
+    .bind(repo.id, userId)
+    .run();
+
+  const ctx = auditContext(c);
+  await audit(c.env.DB, {
+    repoId: repo.id,
+    actor: ctx.actor,
+    action: 'repo.member.remove',
+    details: { user_id: userId },
+    ipAddress: ctx.ipAddress
   });
 
   return c.json({ success: true });
@@ -204,15 +339,7 @@ app.delete('/:repo', requirePermission('admin'), async (c) => {
  * List branch protection rules for a repo.
  */
 app.get('/:repo/protection', async (c) => {
-  const repoName = c.req.param('repo');
-  const repo = await c.env.DB
-    .prepare('SELECT id FROM repositories WHERE name = ?')
-    .bind(repoName)
-    .first<{ id: string }>();
-
-  if (!repo) {
-    return c.json({ error: 'Repository not found' }, 404);
-  }
+  const repo = c.get('repoRecord');
 
   const { results } = await c.env.DB
     .prepare('SELECT * FROM protected_branches WHERE repo_id = ? ORDER BY created_at')
@@ -225,18 +352,9 @@ app.get('/:repo/protection', async (c) => {
 /**
  * Update a branch protection rule (toggle enforcement, set bypass actors, etc).
  */
-app.patch('/:repo/protection/:ruleId', requirePermission('admin'), async (c) => {
-  const repoName = c.req.param('repo');
+app.patch('/:repo/protection/:ruleId', requireRepoLevel('admin'), async (c) => {
+  const repo = c.get('repoRecord');
   const ruleId = c.req.param('ruleId');
-
-  const repo = await c.env.DB
-    .prepare('SELECT id FROM repositories WHERE name = ?')
-    .bind(repoName)
-    .first<{ id: string }>();
-
-  if (!repo) {
-    return c.json({ error: 'Repository not found' }, 404);
-  }
 
   const rule = await c.env.DB
     .prepare('SELECT * FROM protected_branches WHERE id = ? AND repo_id = ?')
@@ -247,12 +365,19 @@ app.patch('/:repo/protection/:ruleId', requirePermission('admin'), async (c) => 
     return c.json({ error: 'Protection rule not found' }, 404);
   }
 
-  const body = await c.req.json<{
+  const body = await readJsonObject<{
     enforce_merge_queue?: boolean;
     allow_force_push?: boolean;
     allow_deletion?: boolean;
     bypass_actors?: string[];
-  }>();
+  }>(c);
+  if (!body) return c.json({ error: 'Invalid JSON body' }, 400);
+  if (!isOptionalBoolean(body.enforce_merge_queue) || !isOptionalBoolean(body.allow_force_push) || !isOptionalBoolean(body.allow_deletion)) {
+    return c.json({ error: 'enforce_merge_queue, allow_force_push and allow_deletion must be booleans' }, 400);
+  }
+  if (body.bypass_actors !== undefined && !(Array.isArray(body.bypass_actors) && body.bypass_actors.every((a) => typeof a === 'string'))) {
+    return c.json({ error: 'bypass_actors must be an array of strings' }, 400);
+  }
 
   const sets: string[] = [];
   const values: (string | number)[] = [];
@@ -288,14 +413,13 @@ app.patch('/:repo/protection/:ruleId', requirePermission('admin'), async (c) => 
     .bind(...values)
     .run();
 
-  const user = c.get('user');
-  const apiKey = c.get('apiKey');
+  const ctx = auditContext(c);
   await audit(c.env.DB, {
     repoId: repo.id,
-    actor: user?.id ?? apiKey?.id ?? 'system',
+    actor: ctx.actor,
     action: 'branch_protection.update',
     details: { ruleId, ...body },
-    ipAddress: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || undefined
+    ipAddress: ctx.ipAddress
   });
 
   return c.json({ success: true });
@@ -304,32 +428,22 @@ app.patch('/:repo/protection/:ruleId', requirePermission('admin'), async (c) => 
 /**
  * Delete a branch protection rule.
  */
-app.delete('/:repo/protection/:ruleId', requirePermission('admin'), async (c) => {
-  const repoName = c.req.param('repo');
+app.delete('/:repo/protection/:ruleId', requireRepoLevel('admin'), async (c) => {
+  const repo = c.get('repoRecord');
   const ruleId = c.req.param('ruleId');
-
-  const repo = await c.env.DB
-    .prepare('SELECT id FROM repositories WHERE name = ?')
-    .bind(repoName)
-    .first<{ id: string }>();
-
-  if (!repo) {
-    return c.json({ error: 'Repository not found' }, 404);
-  }
 
   await c.env.DB
     .prepare('DELETE FROM protected_branches WHERE id = ? AND repo_id = ?')
     .bind(ruleId, repo.id)
     .run();
 
-  const user = c.get('user');
-  const apiKey = c.get('apiKey');
+  const ctx = auditContext(c);
   await audit(c.env.DB, {
     repoId: repo.id,
-    actor: user?.id ?? apiKey?.id ?? 'system',
+    actor: ctx.actor,
     action: 'branch_protection.delete',
     details: { ruleId },
-    ipAddress: c.req.header('cf-connecting-ip') || c.req.header('x-forwarded-for') || undefined
+    ipAddress: ctx.ipAddress
   });
 
   return c.json({ success: true });

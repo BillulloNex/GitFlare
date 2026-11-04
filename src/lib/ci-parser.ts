@@ -1,5 +1,6 @@
 import { parse } from 'yaml';
 import type { CIPipelineConfig } from '../env.ts';
+import { matchesBranchFilter } from './branch-pattern.ts';
 
 /**
  * Parse and validate CI Config from YAML content
@@ -8,7 +9,7 @@ export function parseCIConfig(yamlContent: string): CIPipelineConfig {
 	const config = parse(yamlContent) as Partial<CIPipelineConfig>;
 
 	if (!config.name) throw new Error("Missing 'name' in CI config");
-	if (!config.on) throw new Error("Missing 'on' in CI config");
+	// `on` is optional: no `on` block means "run on every push" (see shouldTrigger).
 	if (!config.jobs || typeof config.jobs !== 'object') throw new Error("Missing or invalid 'jobs' in CI config");
 
 	for (const [jobName, job] of Object.entries(config.jobs)) {
@@ -21,18 +22,34 @@ export function parseCIConfig(yamlContent: string): CIPipelineConfig {
 }
 
 /**
- * Check if a push/PR should trigger CI based on the config's 'on' field
+ * Should a push / pull_request event trigger this pipeline, per its `on` block?
+ *
+ *   (no `on` block)              → every push, no pull_request
+ *   on: push                     → every push
+ *   on: [push, pull_request]     → every push / PR
+ *   on: { push: }                → every push (null value, GitHub-style)
+ *   on: { push: { branches: [main, "release/*"] } } → glob match (lib/branch-pattern.ts)
+ *   on: { manual: true }         → no push / PR
+ *
+ * Only for automatic triggers. Manual runs and reruns (src/api/ci.ts) must NOT
+ * call this — the caller asked for the run explicitly.
  */
-export function shouldTrigger(config: CIPipelineConfig, event: { type: 'push'|'pull_request', branch: string }): boolean {
-	if (event.type === 'push' && config.on.push) {
-		if (!config.on.push.branches || config.on.push.branches.length === 0) return true;
-		return config.on.push.branches.includes(event.branch);
-	}
-	if (event.type === 'pull_request' && config.on.pull_request) {
-		if (!config.on.pull_request.branches || config.on.pull_request.branches.length === 0) return true;
-		return config.on.pull_request.branches.includes(event.branch);
-	}
-	return false;
+export function shouldTrigger(config: CIPipelineConfig, event: { type: 'push' | 'pull_request'; branch: string }): boolean {
+	// YAML may also give `on` as a string or list, so treat it as unknown.
+	const on: unknown = config.on;
+	if (on === undefined || on === null) return event.type === 'push';
+	if (typeof on === 'string') return on === event.type;
+	if (Array.isArray(on)) return on.includes(event.type);
+	if (typeof on !== 'object') return false;
+
+	const triggers = on as Record<string, unknown>;
+	if (!(event.type in triggers)) return false;
+	const filter = triggers[event.type] as { branches?: unknown } | null | undefined;
+	const branches = filter?.branches;
+	if (branches === undefined || branches === null) return true;
+	const patterns = Array.isArray(branches) ? branches.map(String) : [String(branches)];
+	if (patterns.length === 0) return true;
+	return matchesBranchFilter(patterns, event.branch);
 }
 
 /**

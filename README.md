@@ -1,178 +1,256 @@
 # GitFlare
 
-**GitHub on Cloudflare.** Version control, CI/CD, and agent orchestration — built on the edge.
+**Git hosting, CI/CD and a merge queue for agents — on Cloudflare.**
 
-GitFlare replaces GitHub for your projects. Git hosting runs on Cloudflare Artifacts, CI runs in Cloudflare Sandboxes, and deployments go to your Coolify instances on bare metal.
+Git repositories live in Cloudflare Artifacts and are served over Git Smart
+HTTP by a Worker. CI runs in Docker containers on a self-hosted runner
+(`packages/runner`), deployments go to Coolify or Cloudflare, and a per-repo
+merge queue lets many agents land branches safely. Repositories can be
+mirrored to GitHub.
 
 ## Architecture
 
 ```
-Developer / Agent
-       │
-       ▼ (git push / API)
-  Cloudflare Workers (GitFlare API)
-       │
-  ┌────┼────────────────┐
-  │    │                 │
-  ▼    ▼                 ▼
-Artifacts   D1 Database   Durable Objects
-(Git Repos)  (Metadata)    (Coordination)
-  │                        │
-  │    Queues ◄────────────┘
-  │      │
-  │      ▼
-  │   Sandboxes (CI Runners)
-  │      │
-  │      ▼ (webhook)
-  │   Coolify (Deploy)
-  │      │
-  │      ▼
-  │   Mac Mini / Lenovo (Bare Metal)
-  │
-  └──► R2 (LFS / Build Artifacts)
+ Developer / Agent  (git, REST API, MCP, gitflare CLI)
+        │
+        ▼
+ ┌──────────────────────── Cloudflare Worker (Hono) ────────────────────────┐
+ │  /git/*  Smart HTTP  ─────► Artifacts (git storage)                       │
+ │  /api/*  REST        ─────► D1 (metadata)   R2 (CI logs, D1 backups)      │
+ │  /mcp    MCP (HTTP)         KV (CI config cache)                          │
+ │                                                                            │
+ │  Durable Objects:  RepoCoordinator — per-repo push locks                  │
+ │                    TicketQueue     — per-repo merge queue state machine    │
+ │                                                                            │
+ │  Queues:  gitflare-ci-jobs ──┐   gitflare-deploy-jobs ──┐                  │
+ │           gitflare-mirror-sync → GitHub (pack push)      │                  │
+ │  Cron (*/5): fail stuck runs/deployments, purge sessions │                  │
+ └──────────────────────────────┼───────────────────────────┼─────────────────┘
+                                ▼                           ▼
+                 Runner (packages/runner, Docker host)  ── HTTPS, RUNNER_SECRET ──
+                   • CI jobs in throwaway containers
+                   • merge-queue rebase / fast-forward
+                   • deploys: Coolify API or `wrangler deploy`
+                   • results + logs → /api/internal/{ci,deploy,merge}/*
 ```
 
-## Quick Start
+- **Auth:** Google OAuth sessions for the dashboard; API keys (`gf_…`, stored
+  as SHA-256 hashes) for the REST API, MCP and `git` (key as the password).
+  Per-repo access via `repo_members`, `is_private` and repo-scoped keys.
+- **Secrets at rest** (GitHub mirror tokens, Coolify keys) are encrypted with
+  `ENCRYPTION_KEY` (HKDF → AES-256-GCM, `v1:` prefix).
+- **Errors:** every response carries `X-Request-Id`; unhandled errors return
+  `{ "error": "Internal Server Error", "request_id": "…" }` and the details
+  are only logged.
 
-### Prerequisites
-- Node.js 22+
-- Cloudflare account with Workers Paid plan
-- Wrangler CLI (`npm install -g wrangler`)
+### Packages
 
-### Setup
+| Path | What |
+| --- | --- |
+| `src/` | The Worker (API, git protocol, queue consumers, DOs, dashboard) |
+| `packages/runner` | CI / merge / deploy runner (Node, Docker) |
+| `packages/gitflare-client` | Typed REST client |
+| `packages/gitflare-cli` | `gitflare` CLI |
+| `packages/gitflare-mcp` | MCP server (stdio and Streamable HTTP) wrapping the client |
+
+## Configuration
+
+### Worker vars (`wrangler.jsonc` → `vars`)
+
+| Name | Purpose |
+| --- | --- |
+| `APP_URL` | Public origin of the Worker, e.g. `https://git.example.com`. Used for CORS, the OAuth redirect and runner callback URLs. **Required.** |
+| `CLOUDFLARE_ACCOUNT_ID` | Builds Artifacts remote URLs (`src/lib/artifacts-url.ts`). **Required.** |
+| `MAX_CI_DURATION_MS` | Runs older than this (plus grace) are failed by the cron. Default `900000`. |
+| `GITFLARE_VERSION` | Reported by `/health`. |
+
+Also update the custom-domain `routes` entry in `wrangler.jsonc` to match `APP_URL`.
+
+### Worker secrets (`wrangler secret put`, locally `.dev.vars`)
+
+| Name | Required | Purpose |
+| --- | --- | --- |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | yes | Google OAuth login |
+| `ENCRYPTION_KEY` | yes | Encrypts stored secrets. `openssl rand -base64 32`. Changing it makes stored `v1:` secrets unreadable. |
+| `SESSION_SECRET` | yes | Session signing; also decrypts legacy (pre-`v1:`) secrets |
+| `RUNNER_URL` | yes | Base URL of the runner |
+| `RUNNER_SECRET` | yes | Shared bearer secret, Worker ⇄ runner (both directions) |
+| `ADMIN_API_KEY` | yes | Only for `POST /api/bootstrap` (first admin key); disabled once an admin key exists |
+| `COOLIFY_BASE_URL`, `COOLIFY_API_KEY` | no | Fallback for Coolify deploy targets without their own credentials |
+| `ALLOWED_DOMAINS` | no | Comma-separated email domains allowed to sign in (in-domain users get `user`). Unset → anyone verified, as `viewer`. |
+| `ADMIN_EMAILS` | no | Comma-separated emails granted `admin` on login |
+| `GIT_PROTOCOL_DEBUG` | no | `1` → hex-dump receive-pack traffic to the log. Leave unset normally. |
+
+See `.dev.vars.example` for a template.
+
+### Runner (`packages/runner/docker-compose.yml`)
+
+| Name | Purpose |
+| --- | --- |
+| `RUNNER_SECRET` | Same value as the Worker secret. **Required.** |
+| `ALLOWED_CALLBACK_ORIGINS` | Comma-separated origins the runner may call back to — set to the Worker's `APP_URL`. **Required.** |
+| `RUNNER_ID` | Labels this runner's containers so restarts only clean up their own |
+| `CI_IMAGE`, `CI_USER`, `CI_MEMORY`, `CI_CPUS`, `CI_NETWORK`, `CI_PIDS_LIMIT` | Job container settings |
+| `MAX_CONCURRENT_JOBS`, `MAX_CONCURRENT_MERGES` | Concurrency caps |
+| `CI_STEP_TIMEOUT_S`, `CI_RUN_TIMEOUT_MS`, `CI_MAX_STEP_LOG_CHARS` | Limits |
+| `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | Only for Cloudflare deploy targets; injected into `wrangler deploy`, never into CI steps |
+
+### CLI / MCP
+
+`gitflare` and `gitflare-mcp` need `GITFLARE_URL` (your `APP_URL`) and
+`GITFLARE_API_KEY`. The CLI can store them via `gitflare auth login`. The HTTP MCP
+server takes the API key per request (`Authorization: Bearer …`) instead.
+
+## Setup
+
+Prerequisites: Node.js 22+, a Cloudflare account on Workers Paid with
+Artifacts access, and a Docker host for the runner.
+
 ```bash
-# Install dependencies
 npm install
+npx wrangler login
 
-# Login to Cloudflare
-wrangler login
+# Resources — put the returned IDs into wrangler.jsonc
+npx wrangler d1 create gitflare-db
+npx wrangler r2 bucket create gitflare-storage
+npx wrangler kv namespace create CACHE
+for q in gitflare-ci-jobs gitflare-ci-dlq gitflare-deploy-jobs gitflare-deploy-dlq \
+         gitflare-mirror-sync gitflare-mirror-dlq; do npx wrangler queues create $q; done
 
-# Create D1 database
-wrangler d1 create gitflare-db
-# Update database_id in wrangler.jsonc with the returned ID
+# Edit wrangler.jsonc: APP_URL, CLOUDFLARE_ACCOUNT_ID, routes
 
-# Create R2 bucket
-wrangler r2 bucket create gitflare-storage
+# Secrets (see table above)
+npx wrangler secret put GOOGLE_CLIENT_ID   # …and the rest
 
-# Create KV namespace
-wrangler kv namespace create CACHE
-# Update KV id in wrangler.jsonc
-
-# Create queues
-wrangler queues create gitflare-ci-jobs
-wrangler queues create gitflare-deploy-jobs
-wrangler queues create gitflare-ci-dlq
-wrangler queues create gitflare-deploy-dlq
-
-# Run D1 migrations
 npm run db:migrate:remote
-
-# Set secrets
-wrangler secret put JWT_SECRET
-wrangler secret put COOLIFY_API_KEY
-wrangler secret put COOLIFY_BASE_URL
-wrangler secret put ADMIN_API_KEY
-
-# Deploy
 npm run deploy
+
+# First admin API key
+curl -X POST "$APP_URL/api/bootstrap" -H "Authorization: Bearer $ADMIN_API_KEY"
 ```
 
-### Local Development
+Runner: on the Docker host, `cd packages/runner && RUNNER_SECRET=… ALLOWED_CALLBACK_ORIGINS=$APP_URL docker compose up -d --build`,
+then point the Worker's `RUNNER_URL` at it. Worker and runner share a
+protocol version (`src/lib/runner-protocol.ts`); deploy them together when it
+changes.
+
+### Local development
+
 ```bash
-# Run migrations locally
+cp .dev.vars.example .dev.vars   # fill in values
 npm run db:migrate:local
-
-# Start dev server
-npm run dev
+npm run dev                      # http://localhost:8787
+npm run typecheck && npm test
 ```
+
+## Database migrations
+
+Schema changes live in `migrations/` as `NNNN_description.sql` with unique,
+sequential prefixes. Wrangler records applied files in the `d1_migrations`
+table and only runs new ones.
+
+```bash
+npm run db:migrations:create -- <description>   # new numbered file
+npm run db:migrate:local                         # apply locally
+npm run db:migrations:list                       # show unapplied (remote)
+npm run db:export:remote                         # manual backup
+```
+
+Production migrations run in the deploy workflow
+(`.github/workflows/deploy.yml`): typecheck and tests, verify critical
+secrets, export a D1 backup to R2, `wrangler d1 migrations apply --remote`,
+then deploy. Migrations run before the new code ships, so they must stay
+compatible with the code that is currently live (add columns/tables; don't
+drop or rename in the same release that stops using them).
+
+> **One-time, existing production DB:** production was migrated by hand
+> before Wrangler tracking existed. Before the first deploy with the migration
+> step, run `scripts/2a-inspect-schema.sql` and then
+> `scripts/2c-seed-migrations.sql` so Wrangler does not replay 0001–0005.
+
+Durable Object class changes are migrated separately, via the `migrations`
+block in `wrangler.jsonc` (tag `v3` deletes the unused `CISession` class).
 
 ## Usage
 
-### Create a Repository
 ```bash
-curl -X POST https://gitflare.your-domain.com/api/repos \
-  -H "Authorization: Bearer YOUR_API_KEY" \
+# Create a repository
+curl -X POST "$APP_URL/api/repos" -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" -d '{"name": "my-app", "is_private": true}'
+
+# Create a scoped API key (capped at your own access level)
+curl -X POST "$APP_URL/api/keys" -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
-  -d '{"name": "starship", "description": "Autonomous coding agent platform"}'
-```
+  -d '{"name": "ci-bot", "repo_id": "REPO_ID", "permissions": "write", "expires_in_days": 90}'
 
-### Create an API Key
-```bash
-curl -X POST https://gitflare.your-domain.com/api/keys \
-  -H "Authorization: Bearer YOUR_ADMIN_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "starship-push", "repo_id": "REPO_ID", "permissions": "write"}'
-```
-
-### Push Code
-```bash
-# Add GitFlare as a remote
-git remote add gitflare https://gitflare.your-domain.com/git/starship
-
-# Push (use API key as password)
+# Push (any username, API key as password)
+git remote add gitflare "$APP_URL/git/my-app"
 git push gitflare main
-# Username: anything
-# Password: YOUR_API_KEY
 ```
 
-### Add Coolify Deploy Target
+The default branch is protected on creation: pushes to it go through the
+merge queue (`POST /api/repos/:repo/tickets`, then move the ticket to
+review). The queue rebases the branch on the runner, runs CI on the result,
+and fast-forwards the base branch only if CI passes.
+
+### Deploy targets
+
 ```bash
-curl -X POST https://gitflare.your-domain.com/api/repos/starship/deploys \
-  -H "Authorization: Bearer YOUR_API_KEY" \
+curl -X POST "$APP_URL/api/repos/my-app/deploys" -H "Authorization: Bearer $KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "production",
     "type": "coolify",
-    "coolify_app_id": "YOUR_COOLIFY_APP_ID",
-    "coolify_base_url": "https://coolify.your-domain.com",
-    "coolify_api_key": "YOUR_COOLIFY_KEY",
+    "coolify_app_id": "APP_UUID",
+    "coolify_base_url": "https://coolify.example.com",
+    "coolify_api_key": "…",
     "branch_filter": ["main"]
   }'
 ```
 
-### CI Configuration
-Add `.gitflare/ci.yml` to your repo:
+When a CI run passes, every active target whose `branch_filter` matches the
+branch is deployed. `type: "cloudflare"` targets run `wrangler deploy` on the
+runner (`wrangler_config` selects the config file).
+
+### GitHub mirror
+
+`POST /api/repos/:repo/mirror` with `github_url` and a `github_token` that has
+push access. Pushes and merge-queue merges are mirrored via the
+`gitflare-mirror-sync` queue; `POST …/mirror/sync` forces a full sync.
+
+### CI configuration
+
+Add `.gitflare/ci.yml` to the repo:
+
 ```yaml
 name: My Pipeline
 
-on:
+on:                       # omit to run on every push
   push:
-    branches: [main]
-  pull_request:
+    branches: [main, "release/*"]
+
+env:
+  NODE_ENV: test
 
 jobs:
   test:
-    sandbox: standard-2
     steps:
-      - name: Install deps
-        run: npm install
-      - name: Run tests
+      - name: Install
+        run: npm ci
+      - name: Test
         run: npm test
+        timeout: 600      # seconds
 
-  deploy:
+  build:
     needs: [test]
-    deploy:
-      target: coolify
-      branch_filter: [main]
     steps:
-      - name: Deploy
-        run: echo "Deploying via Coolify webhook"
+      - run: npm run build
 ```
 
-## First Project: Starship
-
-Starship is the first project being hosted on GitFlare. See `examples/starship.ci.yml` for its CI configuration.
-
-## Tech Stack
-- **Runtime:** Cloudflare Workers (Hono framework)
-- **Git Storage:** Cloudflare Artifacts (Git-native Zig/WASM engine)
-- **Database:** Cloudflare D1 (SQLite at the edge)
-- **Object Storage:** Cloudflare R2 (zero egress)
-- **CI Runners:** Cloudflare Sandboxes (Docker containers)
-- **Job Queue:** Cloudflare Queues
-- **Real-time:** Cloudflare Durable Objects (WebSocket)
-- **AI:** Cloudflare Workers AI (code review, search)
-- **Deploy Target:** Coolify on bare metal
+Each run executes in a fresh container (`CI_IMAGE`) on the runner. Logs
+stream back to the Worker and are stored in R2. See
+`examples/starship.ci.yml` for a larger example.
 
 ## License
-Private — Thomas's projects.
+
+Private.

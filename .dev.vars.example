@@ -1,0 +1,44 @@
+# Copy to .dev.vars for `wrangler dev`. Never commit .dev.vars.
+
+# ── Required ─────────────────────────────────────────────────────
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+# Encrypts stored secrets (GitHub mirror tokens, later Coolify keys) as `v1:`
+# values via HKDF → AES-256-GCM. Generate with: openssl rand -base64 32
+# Changing it makes every stored `v1:` secret unreadable.
+ENCRYPTION_KEY=
+# Session secret. Also decrypts legacy (pre-`v1:`) secrets, so it must stay
+# set until scripts/2g-migrate-encryption.ts --verify reports every value is v1.
+SESSION_SECRET=
+RUNNER_URL=http://localhost:7654
+# Shared secret between Worker and runner. If unset, runner callbacks
+# (/api/internal/*) and runner webhooks return 503.
+RUNNER_SECRET=
+# Only used to mint the first admin key via POST /api/bootstrap.
+# Bootstrap is disabled once any admin key exists.
+ADMIN_API_KEY=
+APP_URL=http://localhost:8787
+CLOUDFLARE_ACCOUNT_ID=
+
+# Can be removed after 2g migration confirms all values are v1:
+# SESSION_SECRET=  (move here once confirmed)
+
+# ── Optional ─────────────────────────────────────────────────────
+COOLIFY_BASE_URL=
+COOLIFY_API_KEY=
+
+# Comma-separated email domains allowed to sign in with Google,
+# e.g. "example.com,example.org". When set, other domains are rejected
+# and in-domain users get the `user` role (write).
+# When unset, anyone with a verified Google email can sign in as `viewer` (read-only).
+ALLOWED_DOMAINS=
+
+# Comma-separated emails that get the `admin` role on login
+# (applies to existing users on their next login; verified emails only).
+ADMIN_EMAILS=
+
+# Set to 1 to hex-dump git push (receive-pack) traffic to the Worker log:
+# the request's command section (ref names + SHAs), the Artifacts response,
+# and — when a request can't be parsed — its first 512 bytes (may include the
+# start of the packfile). Leave unset in normal operation.
+GIT_PROTOCOL_DEBUG=

@@ -61,6 +61,10 @@
 			{
 				"binding": "DEPLOY_QUEUE",
 				"queue": "gitflare-deploy-jobs"
+			},
+			{
+				"binding": "MIRROR_QUEUE",
+				"queue": "gitflare-mirror-sync"
 			}
 		],
 		"consumers": [
@@ -75,31 +79,42 @@
 				"max_batch_size": 5,
 				"max_retries": 3,
 				"dead_letter_queue": "gitflare-deploy-dlq"
+			},
+			{
+				// GitHub mirror pushes (lib/github-mirror.ts). Queue consumers get
+				// minutes of wall clock vs ~30s for waitUntil — needed for big packs.
+				// max_concurrency 1: no two syncs race on the same GitHub refs.
+				"queue": "gitflare-mirror-sync",
+				"max_batch_size": 10,
+				"max_batch_timeout": 5,
+				"max_retries": 3,
+				"max_concurrency": 1,
+				"dead_letter_queue": "gitflare-mirror-dlq"
 			}
 		]
 	},
 
-	// ─── Durable Objects (Coordination & Real-time) ─────────────
+	// ─── Scheduled Maintenance ──────────────────────────────────
+	// src/lib/maintenance.ts: fail CI runs/deployments stuck past their
+	// deadline, purge expired sessions.
+	"triggers": {
+		"crons": ["*/5 * * * *"]
+	},
+
+	// ─── Durable Objects (Coordination) ─────────────────────────
 	"durable_objects": {
 		"bindings": [
 			{
+				// Per-repo push locks (src/do/repo-coordinator.ts)
 				"name": "REPO_COORDINATOR",
 				"class_name": "RepoCoordinator"
 			},
 			{
-				"name": "CI_SESSION",
-				"class_name": "CISession"
-			},
-			{
+				// Per-repo merge queue (src/do/ticket-queue.ts)
 				"name": "TICKET_QUEUE",
 				"class_name": "TicketQueue"
 			}
 		]
-	},
-
-	// ─── AI (Code Review, Search) ───────────────────────────────
-	"ai": {
-		"binding": "AI"
 	},
 
 	// ─── Observability ──────────────────────────────────────────
@@ -120,14 +135,33 @@
 		{
 			"tag": "v2",
 			"new_sqlite_classes": ["TicketQueue"]
+		},
+		{
+			// CISession (WebSocket log streaming) was never wired to a route
+			// or written to; removed in Phase Final cleanup. Deleting a class
+			// discards its storage — it never held any.
+			"tag": "v3",
+			"deleted_classes": ["CISession"]
 		}
 	],
+
+	// ─── Secrets ────────────────────────────────────────────────
+	// Set with `wrangler secret put <NAME>` (locally: .dev.vars, see
+	// .dev.vars.example). Required:
+	//   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, ENCRYPTION_KEY, SESSION_SECRET,
+	//   RUNNER_URL, RUNNER_SECRET, ADMIN_API_KEY
+	// Optional: COOLIFY_BASE_URL, COOLIFY_API_KEY, ALLOWED_DOMAINS, ADMIN_EMAILS
+	//
+	// Deliberately NOT declared via `"secrets": { "required": [...] }`: that
+	// makes wrangler drop every .dev.vars entry not on the list in local dev
+	// (so the optional ones above would silently vanish) and fail deploys on
+	// any missing secret. The deploy workflow checks the critical ones instead.
 
 	// ─── Environment Variables ──────────────────────────────────
 	"vars": {
 		"GITFLARE_VERSION": "1.0.0",
-		"DEFAULT_SANDBOX_TIER": "standard-2",
 		"MAX_CI_DURATION_MS": "900000",
-		"APP_URL": "https://git.beenex.company"
+		"APP_URL": "https://git.beenex.company",
+		"CLOUDFLARE_ACCOUNT_ID": "aed09ddf6077b29514def05ed3d5e699"
 	}
 }

@@ -1,10 +1,53 @@
+# GitFlare runner.
+#
+# CI steps run in throwaway job containers created through the host Docker
+# socket. The runner refuses CI work (503 "Docker required for CI execution")
+# if the socket isn't reachable — there is no fallback to running commands in
+# this container.
+#
+# SECURITY: access to the Docker socket is equivalent to root on the host.
+# Run this on a host dedicated to CI.
+#
+# DEPLOY IN LOCKSTEP WITH THE WORKER: the runner and the Worker speak a
+# versioned protocol (X-GitFlare-Runner-Protocol; packages/runner/src/protocol.ts
+# ↔ src/lib/runner-protocol.ts). When it changes, ship both together. A
+# mismatch is rejected with 426 and the Worker's queue retries, so either
+# order converges within a few minutes.
+#
+# Find the socket's group id on the host with:  stat -c %g /var/run/docker.sock
+
 services:
   runner:
     build: .
+    image: ${RUNNER_IMAGE:-gitflare-runner:latest}
     ports:
       - "7654:7654"
     environment:
-      - RUNNER_SECRET=${RUNNER_SECRET}
-      - COOLIFY_BASE_URL=${COOLIFY_BASE_URL}
-      - COOLIFY_API_KEY=${COOLIFY_API_KEY}
+      RUNNER_SECRET: ${RUNNER_SECRET:?RUNNER_SECRET is required}
+      # Stable id: labels job containers so a restart only sweeps its own.
+      RUNNER_ID: ${RUNNER_ID:-gitflare-runner}
+      # Only POST results (and RUNNER_SECRET) back to these origins.
+      # Set to the Worker's APP_URL origin, e.g. https://git.example.com
+      ALLOWED_CALLBACK_ORIGINS: ${ALLOWED_CALLBACK_ORIGINS:?ALLOWED_CALLBACK_ORIGINS is required (the Worker APP_URL origin)}
+      # Job container settings
+      CI_IMAGE: ${CI_IMAGE:-node:22-bookworm}
+      CI_USER: ${CI_USER:-1000:1000}
+      CI_MEMORY: ${CI_MEMORY:-4g}
+      CI_CPUS: ${CI_CPUS:-2}
+      CI_NETWORK: ${CI_NETWORK:-bridge}
+      MAX_CONCURRENT_JOBS: ${MAX_CONCURRENT_JOBS:-2}
+      CI_RUN_TIMEOUT_MS: ${CI_RUN_TIMEOUT_MS:-3600000}
+      # Cloudflare deploys only. Injected into the `wrangler deploy` exec and
+      # nothing else — never into CI steps.
+      CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
+      CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - "${DOCKER_GID:-999}"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped

@@ -1,0 +1,46 @@
+-- ════════════════════════════════════════════════════════════════════
+-- Phase 1a — Revoke the leaked API key (prefix gf_2d61a)
+-- ════════════════════════════════════════════════════════════════════
+--
+-- The full key was hardcoded in src/dashboard/index.html as a localStorage
+-- fallback and shipped to every dashboard visitor. It has been removed from
+-- source (Phase 1b) but must also be revoked in production D1. It is also in
+-- git history — treat it as public forever; deleting the row is what matters.
+--
+-- Run these MANUALLY, one step at a time, against the remote DB:
+--
+--   npx wrangler d1 execute gitflare-db --remote --command "<statement>"
+--
+-- Every statement is commented out so this file is never run blindly.
+-- Record the output of steps 1 and 2 (incident record) BEFORE running step 3.
+
+-- ── Step 1: Identify the key and record what it was ─────────────────
+-- SELECT id, name, permissions, repo_id, user_id, last_used_at, created_at, expires_at
+--   FROM api_keys
+--  WHERE key_prefix = 'gf_2d61a';
+--
+-- Expect exactly one row. Note the `id` — it is <KEY_ID> below.
+-- If there is more than one row, STOP and inspect each before deleting.
+
+-- ── Step 2: Check the audit log for misuse ─────────────────────────
+-- SELECT id, action, repo_id, details, created_at
+--   FROM audit_log
+--  WHERE actor = '<KEY_ID>'
+--  ORDER BY created_at DESC;
+--
+-- Look especially for: repo.create / repo.delete, git.push to unexpected
+-- branches, key creation, mirror or deploy target changes.
+--
+-- Keys minted by MCP `gitflare_key_create` were not audited. Check for keys
+-- created while the leaked key was live that nobody recognises:
+-- SELECT id, name, key_prefix, permissions, repo_id, user_id, created_at, last_used_at
+--   FROM api_keys
+--  WHERE created_at >= (SELECT created_at FROM api_keys WHERE id = '<KEY_ID>')
+--  ORDER BY created_at;
+
+-- ── Step 3: Revoke ─────────────────────────────────────────────────
+-- DELETE FROM api_keys WHERE id = '<KEY_ID>';
+
+-- ── Step 4: Verify ─────────────────────────────────────────────────
+-- SELECT COUNT(*) AS remaining FROM api_keys WHERE key_prefix = 'gf_2d61a';
+-- Expect: remaining = 0
