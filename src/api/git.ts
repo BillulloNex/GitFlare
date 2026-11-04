@@ -9,6 +9,7 @@ import {
 	type RefUpdate,
 } from '../lib/git-protocol.ts';
 import { triggerGitHubMirror } from '../lib/github-mirror.ts';
+import { getArtifactFileContent, CI_CONFIG_PATH } from '../lib/artifact-reader.ts';
 
 const app = new Hono<{ Bindings: Env; Variables: { apiKey: ApiKey } }>();
 
@@ -405,11 +406,12 @@ app.post('/:repo/git-receive-pack', async (c) => {
 				}
 			}
 
-			// Last resort: if no successful branches were identified after all
-			// parsing attempts, but Artifacts returned 200, we know *something*
-			// was pushed. Assume "main" was updated.
+			// Last resort (safety net): if no successful branches were identified
+			// after all parsing attempts, but Artifacts returned 200, we know
+			// *something* was pushed. Assume "main"@HEAD was updated. This is a
+			// guess — if it fires regularly, the request/response parsing is broken.
 			if (successfulBranches.length === 0) {
-				console.warn(`No successful branches identified for ${repoName} (parsedRefs=${parsedRefs.length}) — falling back to main`);
+				console.warn(`[git-push] WARNING: could not determine pushed refs for ${repoName} (parsedRefs=${parsedRefs.length}, status=${response.status}) — assuming main@HEAD as a last-resort fallback`);
 				successfulBranches.push('main');
 				successfulShas.set('main', 'HEAD');
 			}
@@ -456,22 +458,13 @@ app.post('/:repo/git-receive-pack', async (c) => {
 					const commitSha = successfulShas.get(branch) || 'unknown';
 
 					try {
-						let yamlContent = await c.env.CACHE.get(`ci-config:${repoRecord.name}`);
-
+						// Read CI config from the just-pushed branch in Artifacts
+						const yamlContent = await getArtifactFileContent(c.env, repoRecord.name, CI_CONFIG_PATH, branch);
 						if (!yamlContent) {
-							yamlContent = `
-name: auto
-on:
-  push:
-    branches: [main]
-jobs:
-  deploy:
-    sandbox: standard-2
-    steps:
-      - name: Push received
-        run: echo "Deploying ${repoRecord.name}@${branch}"
-`;
+							console.log(`No CI config (${CI_CONFIG_PATH}) found for ${repoName}@${branch} — skipping CI`);
+							continue;
 						}
+						await c.env.CACHE.put(`ci-config:${repoRecord.name}`, yamlContent);
 
 						const config = parseCIConfig(yamlContent);
 

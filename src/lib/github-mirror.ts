@@ -230,7 +230,7 @@ export async function mirrorPushToGitHub(
 				const commitSha = commitShas.get(branch) || 'unknown';
 
 				// Use upload-pack to get the packfile from Artifacts
-				const uploadPackBody = buildUploadPackRequest(artifactsRefsRes, branch);
+				const uploadPackBody = await buildUploadPackRequest(artifactsRefsRes, branch);
 				const packfileRes = await fetch(`${artifactsRemote}/git-upload-pack`, {
 					method: 'POST',
 					headers: {
@@ -287,17 +287,43 @@ export async function mirrorPushToGitHub(
  *
  * For the MVP, we use GitHub's REST API to create/update refs,
  * which handles the common case of keeping branches in sync.
+ *
+ * IMPORTANT CAVEAT: this API-level sync only moves ref *pointers*. It does not
+ * transfer any commit/tree/blob objects. GitHub rejects a ref update (422
+ * "Object does not exist") unless it already has the target commit — e.g. from
+ * a previous `git push`, or because the two repos share history. For repos
+ * that don't share objects, the raw Smart HTTP push path (mirrorPushToGitHub)
+ * is required, but that needs full pack negotiation (upload-pack from Artifacts,
+ * demux the packfile, receive-pack to GitHub), which is considerably more
+ * complex. The API sync is the practical MVP.
+ *
+ * Only refs/heads/* are synced. Branches that exist on GitHub but not in
+ * Artifacts are left alone (no deletions). Failures are tracked per branch so
+ * one bad branch does not abort the rest of the sync.
  */
 export async function mirrorSyncViaAPI(
 	env: Env,
 	repoName: string,
 	githubUrl: string,
 	githubToken: string
-): Promise<{ status: 'success' | 'failed'; error?: string; branches_synced?: number }> {
+): Promise<{
+	status: 'success' | 'failed';
+	error?: string;
+	branches_synced?: number;
+	branches_failed?: { branch: string; error: string }[];
+}> {
 	const parsed = parseGitHubUrl(githubUrl);
 	if (!parsed) {
 		return { status: 'failed', error: 'Invalid GitHub URL' };
 	}
+
+	const githubHeaders = {
+		Authorization: `Bearer ${githubToken}`,
+		Accept: 'application/vnd.github+json',
+		'User-Agent': 'GitFlare-Mirror/1.0',
+		'X-GitHub-Api-Version': '2022-11-28',
+	};
+	const githubRepoApi = `https://api.github.com/repos/${parsed.owner}/${parsed.repo}`;
 
 	try {
 		// Get Artifacts remote info
@@ -322,20 +348,101 @@ export async function mirrorSyncViaAPI(
 			return { status: 'failed', error: `Could not read Artifacts refs: ${refsRes.status}` };
 		}
 
-		// Get refs from GitHub for comparison
-		const ghRefsRes = await fetch(`https://api.github.com/repos/${parsed.owner}/${parsed.repo}/git/refs`, {
-			headers: {
-				Authorization: `Bearer ${githubToken}`,
-				Accept: 'application/vnd.github+json',
-				'User-Agent': 'GitFlare-Mirror/1.0',
-				'X-GitHub-Api-Version': '2022-11-28',
-			},
+		// Parse Artifacts branch → SHA mappings from the pkt-line advertisement
+		const { refs: artifactsRefs } = parseInfoRefs(await refsRes.arrayBuffer());
+		const artifactsBranches = new Map<string, string>();
+		for (const [refName, sha] of artifactsRefs) {
+			if (refName.startsWith('refs/heads/')) {
+				artifactsBranches.set(refName.slice('refs/heads/'.length), sha);
+			}
+		}
+
+		// Get branch refs from GitHub for comparison.
+		// matching-refs always returns an array (empty if no branches), unlike
+		// /git/refs/heads which 404s when there are no matches.
+		const ghRefsRes = await fetch(`${githubRepoApi}/git/matching-refs/heads/`, {
+			headers: githubHeaders,
 		});
 
-		// Log basic sync attempt
-		console.log(`Mirror sync: ${repoName} → ${parsed.owner}/${parsed.repo} (GitHub refs status: ${ghRefsRes.status})`);
+		const githubBranches = new Map<string, string>();
+		if (ghRefsRes.ok) {
+			const ghRefs = (await ghRefsRes.json()) as { ref: string; object: { sha: string } }[];
+			for (const ref of ghRefs) {
+				if (ref.ref.startsWith('refs/heads/')) {
+					githubBranches.set(ref.ref.slice('refs/heads/'.length), ref.object.sha);
+				}
+			}
+		} else if (ghRefsRes.status !== 409) {
+			// 409 = empty repository (no refs yet) — treat as "GitHub has nothing".
+			// Anything else means we can't trust the comparison, so bail out.
+			const body = await ghRefsRes.text();
+			return { status: 'failed', error: `Could not read GitHub refs: ${ghRefsRes.status} ${body.slice(0, 200)}` };
+		}
 
-		return { status: 'success', branches_synced: 0 };
+		console.log(
+			`Mirror sync: ${repoName} → ${parsed.owner}/${parsed.repo} ` +
+				`(${artifactsBranches.size} Artifacts branches, ${githubBranches.size} GitHub branches)`
+		);
+
+		// Push each out-of-sync branch, isolating failures per branch
+		let branchesSynced = 0;
+		const branchesFailed: { branch: string; error: string }[] = [];
+
+		for (const [branch, sha] of artifactsBranches) {
+			const githubSha = githubBranches.get(branch);
+			if (githubSha === sha) {
+				continue; // Already in sync
+			}
+
+			try {
+				let res: Response;
+				if (githubSha) {
+					// Ref exists on GitHub — move it (force, since this is a mirror)
+					const refPath = branch.split('/').map(encodeURIComponent).join('/');
+					res = await fetch(`${githubRepoApi}/git/refs/heads/${refPath}`, {
+						method: 'PATCH',
+						headers: { ...githubHeaders, 'Content-Type': 'application/json' },
+						body: JSON.stringify({ sha, force: true }),
+					});
+				} else {
+					// Ref doesn't exist on GitHub — create it
+					res = await fetch(`${githubRepoApi}/git/refs`, {
+						method: 'POST',
+						headers: { ...githubHeaders, 'Content-Type': 'application/json' },
+						body: JSON.stringify({ ref: `refs/heads/${branch}`, sha }),
+					});
+				}
+
+				if (res.ok) {
+					branchesSynced++;
+				} else {
+					const body = await res.text();
+					let message = body.slice(0, 200);
+					try {
+						message = (JSON.parse(body) as { message?: string }).message ?? message;
+					} catch {
+						// Non-JSON error body — keep the raw text
+					}
+					branchesFailed.push({
+						branch,
+						error: `${githubSha ? 'PATCH' : 'POST'} ${res.status}: ${message}`,
+					});
+				}
+			} catch (err: any) {
+				branchesFailed.push({ branch, error: err.message });
+			}
+		}
+
+		if (branchesFailed.length > 0) {
+			return {
+				status: 'failed',
+				error: branchesFailed.map((f) => `${f.branch}: ${f.error}`).join('; '),
+				branches_synced: branchesSynced,
+				branches_failed: branchesFailed,
+			};
+		}
+
+		return { status: 'success', branches_synced: branchesSynced };
 	} catch (err: any) {
 		return { status: 'failed', error: err.message };
 	}
@@ -344,16 +451,96 @@ export async function mirrorSyncViaAPI(
 // ─── Git Protocol Helpers (for Smart HTTP push) ─────────────────
 
 /**
- * Build an upload-pack request to fetch specific branch data from Artifacts.
- * Simplified: requests all refs for now.
+ * Parse a Smart HTTP (protocol v0/v1) info/refs advertisement.
+ *
+ * Format:
+ *   001e# service=git-upload-pack\n   (optional service header, HTTP only)
+ *   0000
+ *   [000eversion 1\n]
+ *   <sha> <ref>\0<capabilities>\n      (first ref carries capabilities)
+ *   <sha> <ref>\n ...
+ *   0000
+ *
+ * Peeled tag entries (`<ref>^{}`) and the empty-repo placeholder
+ * (`capabilities^{}`) are skipped.
  */
-function buildUploadPackRequest(_refsResponse: Response, _branch: string): ArrayBuffer {
-	// For the initial version, we'll use a minimal upload-pack request
-	// that tells the server we want everything (no "have" lines)
-	const lines = [
-		'0000', // flush-pkt signals "send me everything"
-	];
-	const encoded = new TextEncoder().encode(lines.join(''));
+function parseInfoRefs(body: ArrayBuffer): { refs: Map<string, string>; capabilities: string[] } {
+	const buffer = new Uint8Array(body);
+	const decoder = new TextDecoder();
+	const refs = new Map<string, string>();
+	let capabilities: string[] = [];
+	let offset = 0;
+
+	while (offset + 4 <= buffer.length) {
+		const len = parseInt(decoder.decode(buffer.subarray(offset, offset + 4)), 16);
+		if (isNaN(len)) break;
+
+		// Flush / delim / response-end packets carry no payload
+		if (len < 4) {
+			offset += 4;
+			continue;
+		}
+		if (offset + len > buffer.length) break; // Truncated packet
+
+		let line = decoder.decode(buffer.subarray(offset + 4, offset + len));
+		offset += len;
+
+		if (line.endsWith('\n')) line = line.slice(0, -1);
+		if (line.startsWith('# service=') || line.startsWith('version ')) continue;
+
+		const nulIdx = line.indexOf('\0');
+		if (nulIdx !== -1) {
+			capabilities = line.slice(nulIdx + 1).split(' ').filter(Boolean);
+			line = line.slice(0, nulIdx);
+		}
+
+		const spaceIdx = line.indexOf(' ');
+		if (spaceIdx === -1) continue;
+		const sha = line.slice(0, spaceIdx);
+		const refName = line.slice(spaceIdx + 1);
+
+		if (!/^[0-9a-f]{40}$/.test(sha)) continue;
+		if (refName.endsWith('^{}')) continue;
+
+		refs.set(refName, sha);
+	}
+
+	return { refs, capabilities };
+}
+
+/**
+ * Build an upload-pack request to fetch a specific branch from Artifacts.
+ *
+ * Since we send no "have" lines, this is a full fetch of the branch history:
+ *   0032want <sha> <capabilities>\n
+ *   0000
+ *   0009done\n
+ *
+ * The server replies with NAK followed by the packfile (sideband-multiplexed
+ * if side-band-64k was negotiated).
+ */
+async function buildUploadPackRequest(refsResponse: Response, branch: string): Promise<ArrayBuffer> {
+	const { refs, capabilities: advertised } = parseInfoRefs(await refsResponse.arrayBuffer());
+
+	const refName = branch.startsWith('refs/') ? branch : `refs/heads/${branch}`;
+	const wantSha = refs.get(refName);
+	if (!wantSha) {
+		throw new Error(`Branch ${refName} not advertised by Artifacts`);
+	}
+
+	// Only request capabilities the server actually advertised
+	const caps: string[] = [];
+	if (advertised.includes('side-band-64k')) caps.push('side-band-64k');
+	else if (advertised.includes('side-band')) caps.push('side-band');
+	if (advertised.includes('ofs-delta')) caps.push('ofs-delta');
+	if (advertised.includes('no-progress')) caps.push('no-progress');
+	if (advertised.some((c) => c.startsWith('agent='))) caps.push('agent=GitFlare-Mirror/1.0');
+
+	// First (and only) want line carries the capability list
+	const wantLine = caps.length > 0 ? `want ${wantSha} ${caps.join(' ')}\n` : `want ${wantSha}\n`;
+
+	const request = pktLine(wantLine) + '0000' + pktLine('done\n');
+	const encoded = new TextEncoder().encode(request);
 	return encoded.buffer.slice(encoded.byteOffset, encoded.byteOffset + encoded.byteLength) as ArrayBuffer;
 }
 

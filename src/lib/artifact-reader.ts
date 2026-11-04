@@ -171,6 +171,26 @@ export async function getArtifactBlob(env: Env, name: string, filePath: string, 
   };
 }
 
+export const CI_CONFIG_PATH = '.gitflare/ci.yml';
+
+/**
+ * Read a single text file (e.g. '.gitflare/ci.yml') from an Artifacts repo.
+ * Returns null if the repo, ref, or file doesn't exist, or if the read fails.
+ */
+export async function getArtifactFileContent(env: Env, repoName: string, filePath: string, branch = 'main'): Promise<string | null> {
+  const cleanPath = filePath.replace(/^\/+/, '');
+  if (!cleanPath || cleanPath.split('/').some(segment => !segment || segment === '.' || segment === '..')) return null;
+  try {
+    const repo = await artifactRepo(env, repoName);
+    if (!repo) return null;
+    const file = await repo.readFile({ ref: branch, path: cleanPath });
+    return file ? await file.text() : null;
+  } catch (error: any) {
+    console.warn(`[artifact-reader] failed to read ${repoName}@${branch}:${cleanPath}: ${error?.message ?? error}`);
+    return null;
+  }
+}
+
 export async function getArtifactRawFile(env: Env, name: string, filePath: string, ref = 'main'): Promise<Blob | null> {
   const cleanPath = filePath.replace(/^\/+/, '');
   if (!cleanPath || cleanPath.split('/').some(segment => !segment || segment === '.' || segment === '..')) return null;

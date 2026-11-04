@@ -1,6 +1,39 @@
-import type { Env, CIJobMessage, DeployJobMessage, SandboxInstance } from '../env.ts';
+import type { Env, CIJobMessage, DeployJobMessage, CIPipelineConfig } from '../env.ts';
 import { getJobExecutionOrder } from '../lib/ci-parser.ts';
 import { CoolifyClient } from '../lib/coolify.ts';
+import { runCISteps, type RunnerStep } from '../lib/sandbox.ts';
+
+function ciCallbackUrl(env: Env): string {
+	return `${(env.APP_URL || 'https://git.beenex.company').replace(/\/+$/, '')}/api/internal/ci/callback`;
+}
+
+/**
+ * Flatten the pipeline into an ordered list of runner steps.
+ * Jobs are ordered by `needs` (topological groups); within a group, jobs run
+ * in declaration order. Env is merged pipeline → job → step. Steps without a
+ * `run` command are skipped.
+ */
+function getOrderedSteps(config: CIPipelineConfig): (RunnerStep & { jobName: string; stepIndex: number })[] {
+	const ordered: (RunnerStep & { jobName: string; stepIndex: number })[] = [];
+	for (const group of getJobExecutionOrder(config)) {
+		for (const jobName of group) {
+			const job = config.jobs[jobName];
+			job.steps.forEach((step, stepIndex) => {
+				if (!step.run) return;
+				const env = { ...config.env, ...job.env, ...step.env };
+				ordered.push({
+					jobName,
+					stepIndex,
+					name: step.name || step.run,
+					command: step.run,
+					...(Object.keys(env).length > 0 ? { env } : {}),
+					...(step.timeout !== undefined ? { timeout: step.timeout } : {}),
+				});
+			});
+		}
+	}
+	return ordered;
+}
 
 /**
  * Handle CI Job Message from queue
@@ -10,6 +43,34 @@ export async function handleCIJob(message: CIJobMessage, env: Env): Promise<void
 
 	try {
 		const { results: targets } = await DB.prepare('SELECT * FROM deploy_targets WHERE repo_id = ?').bind(message.repoId).all();
+
+		// Execute CI steps on the Runner. If it accepts, the run's final status
+		// arrives via /api/internal/ci/callback; otherwise fall through to the
+		// deploy-target handling below.
+		const steps = message.config?.jobs ? getOrderedSteps(message.config) : [];
+		if (steps.length > 0) {
+			const result = await runCISteps(env.RUNNER_URL, env.RUNNER_SECRET, {
+				runId: message.runId,
+				repoName: message.repoName,
+				branch: message.branch,
+				commitSha: message.commitSha,
+				steps: steps.map(({ name, command, env: stepEnv, timeout }) => ({ name, command, env: stepEnv, timeout })),
+				callbackUrl: ciCallbackUrl(env),
+			});
+
+			if (result.accepted) {
+				const now = new Date().toISOString();
+				await DB.prepare("UPDATE ci_runs SET status = 'running', started_at = ? WHERE id = ?")
+					.bind(now, message.runId).run();
+				await DB.batch(steps.map((s) =>
+					DB.prepare('INSERT INTO ci_steps (id, run_id, job_name, step_index, name, command, status) VALUES (?, ?, ?, ?, ?, ?, ?)')
+						.bind(crypto.randomUUID(), message.runId, s.jobName, s.stepIndex, s.name, s.command, 'pending')
+				));
+				return;
+			}
+
+			console.warn(`Runner did not accept CI steps for run ${message.runId}: ${result.error}`);
+		}
 
 		if (!targets || targets.length === 0) {
 			await DB.prepare("UPDATE ci_runs SET status = 'passed', finished_at = ? WHERE id = ?")
@@ -40,7 +101,7 @@ export async function handleCIJob(message: CIJobMessage, env: Env): Promise<void
 							branch: message.branch,
 							commitSha: message.commitSha,
 							coolifyAppId: t.coolify_app_id,
-							callbackUrl: 'https://git.beenex.company/api/internal/ci/callback'
+							callbackUrl: ciCallbackUrl(env)
 						})
 					});
 
@@ -138,19 +199,23 @@ export async function handleDeployJob(message: DeployJobMessage, env: Env): Prom
 			const client = new CoolifyClient(baseUrl, apiKey);
 			await client.deploy(message.target.coolifyAppId);
 		} else if (message.target.type === 'cloudflare') {
-			// const sandbox: SandboxInstance = await env.SANDBOXES.create({ tier: env.DEFAULT_SANDBOX_TIER });
-			const sandbox: SandboxInstance = {
-				exec: async () => ({ exitCode: 0, stdout: 'Mock deploy output', stderr: '' }),
-				terminal: () => ({} as WebSocket),
-				mount: async () => {},
-				destroy: async () => {}
-			};
-			const artifactRepo = await env.REPOS.get(message.repoName);
-			if (artifactRepo) {
-				await sandbox.mount(artifactRepo, '/workspace');
-				await sandbox.exec('npx wrangler deploy', { cwd: '/workspace' });
+			const command = message.target.wranglerConfig
+				? `npx wrangler deploy --config ${message.target.wranglerConfig}`
+				: 'npx wrangler deploy';
+			const result = await runCISteps(env.RUNNER_URL, env.RUNNER_SECRET, {
+				runId: message.runId,
+				repoName: message.repoName,
+				branch: message.branch,
+				commitSha: message.commitSha,
+				steps: [{ name: 'Cloudflare Deploy', command }],
+				callbackUrl: ciCallbackUrl(env),
+			});
+			if (!result.accepted) {
+				throw new Error(`Runner rejected Cloudflare deploy: ${result.error}`);
 			}
-			await sandbox.destroy();
+			// Accepted: the deploy runs asynchronously on the Runner, so leave the
+			// deployment in 'running' rather than marking it successful here.
+			return;
 		}
 
 		await DB.prepare("UPDATE deployments SET status = 'success', finished_at = ? WHERE id = ?")
