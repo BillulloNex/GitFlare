@@ -7,7 +7,7 @@
  * retries, so a rolling deploy of either side converges).
  */
 
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 export const PROTOCOL_HEADER = 'x-gitflare-runner-protocol';
 
 export type LogLine = { timestamp: string; stream: 'stdout' | 'stderr'; line: string };
@@ -45,11 +45,20 @@ export interface DeployRequest {
   protocolVersion: number;
   deploymentId: string;
   ciRunId: string | null;
-  type: 'coolify' | 'cloudflare';
+  type: 'coolify' | 'cloudflare' | 'cloudrun';
   callbackUrl: string;
   deadlineMs: number;
   coolify?: { baseUrl: string; apiKey: string; appId: string };
   cloudflare?: { checkout: Checkout; repoName: string; wranglerConfig: string | null };
+  /** Google Cloud Run source deploy. `serviceAccountKey` null → runner's GCP_SERVICE_ACCOUNT_KEY. */
+  cloudrun?: {
+    checkout: Checkout;
+    repoName: string;
+    projectId: string;
+    region: string;
+    service: string;
+    serviceAccountKey: string | null;
+  };
 }
 
 /** Merge-queue git operation (see src/lib/runner-protocol.ts RunnerMergeRequest). */
@@ -220,6 +229,17 @@ export function validateMergeRequest(p: any, allowedOrigins: string[]): string |
   return null;
 }
 
+/** Mirror the Worker's GCP identifier checks (src/lib/deploy-targets.ts). */
+export function isValidGcpProjectId(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(value);
+}
+export function isValidGcpRegion(value: unknown): value is string {
+  return typeof value === 'string' && value.length <= 40 && /^[a-z]+-[a-z]+[0-9]$/.test(value);
+}
+export function isValidCloudRunService(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-z]([a-z0-9-]{0,47}[a-z0-9])?$/.test(value);
+}
+
 export function validateDeployRequest(p: any, allowedOrigins: string[]): string | null {
   if (!p || typeof p !== 'object') return 'Body must be a JSON object';
   if (p.protocolVersion !== PROTOCOL_VERSION) return `protocolVersion must be ${PROTOCOL_VERSION}`;
@@ -240,8 +260,19 @@ export function validateDeployRequest(p: any, allowedOrigins: string[]): string 
     if (cf.wranglerConfig != null && (typeof cf.wranglerConfig !== 'string' || !isValidWranglerConfig(cf.wranglerConfig))) {
       return 'cloudflare.wranglerConfig is invalid';
     }
+  } else if (p.type === 'cloudrun') {
+    const cr = p.cloudrun;
+    if (!cr || typeof cr !== 'object') return 'cloudrun is required';
+    const checkoutError = validateCheckout(cr.checkout, 'cloudrun.checkout');
+    if (checkoutError) return checkoutError;
+    if (!isValidGcpProjectId(cr.projectId)) return 'cloudrun.projectId is invalid';
+    if (!isValidGcpRegion(cr.region)) return 'cloudrun.region is invalid';
+    if (!isValidCloudRunService(cr.service)) return 'cloudrun.service is invalid';
+    if (cr.serviceAccountKey != null && (typeof cr.serviceAccountKey !== 'string' || !cr.serviceAccountKey)) {
+      return 'cloudrun.serviceAccountKey must be a non-empty string or null';
+    }
   } else {
-    return "type must be 'coolify' or 'cloudflare'";
+    return "type must be 'coolify', 'cloudflare' or 'cloudrun'";
   }
   return null;
 }

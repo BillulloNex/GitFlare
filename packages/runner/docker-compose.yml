@@ -41,6 +41,11 @@ services:
       # nothing else — never into CI steps.
       CLOUDFLARE_API_TOKEN: ${CLOUDFLARE_API_TOKEN:-}
       CLOUDFLARE_ACCOUNT_ID: ${CLOUDFLARE_ACCOUNT_ID:-}
+      # Google Cloud Run deploys. Image must contain git + gcloud. The key is
+      # the fallback for targets without their own; injected into the gcloud
+      # exec only — never into CI steps.
+      CLOUDRUN_IMAGE: ${CLOUDRUN_IMAGE:-google/cloud-sdk:slim}
+      GCP_SERVICE_ACCOUNT_KEY: ${GCP_SERVICE_ACCOUNT_KEY:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     group_add:

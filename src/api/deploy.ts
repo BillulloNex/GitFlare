@@ -3,8 +3,13 @@ import type { DeployJobMessage, Env } from '../env.ts';
 import { audit } from '../lib/audit.ts';
 import {
 	encryptCoolifyApiKey,
+	encryptGcpServiceAccountKey,
 	isDeployTargetType,
+	isValidCloudRunService,
+	isValidGcpProjectId,
+	isValidGcpRegion,
 	isValidWranglerConfig,
+	normaliseGcpServiceAccountKey,
 	resolveCommitSha,
 } from '../lib/deploy-targets.ts';
 import { isValidRefName } from '../lib/repo-validation.ts';
@@ -21,6 +26,10 @@ type TargetBody = {
 	coolify_base_url?: unknown;
 	coolify_api_key?: unknown;
 	wrangler_config?: unknown;
+	gcp_project_id?: unknown;
+	gcp_region?: unknown;
+	gcp_service?: unknown;
+	gcp_service_account_key?: unknown;
 	branch_filter?: unknown;
 	is_active?: unknown;
 };
@@ -58,7 +67,7 @@ async function targetColumns(
 		columns.name = body.name.trim();
 	}
 	if (body.type !== undefined || requireAll) {
-		if (!isDeployTargetType(body.type)) return { error: "type must be 'coolify' or 'cloudflare'" };
+		if (!isDeployTargetType(body.type)) return { error: "type must be 'coolify', 'cloudflare' or 'cloudrun'" };
 		columns.type = body.type;
 	}
 
@@ -77,6 +86,24 @@ async function targetColumns(
 			return { error: 'wrangler_config must be a relative path (letters, digits, . _ - /; no ..)' };
 		}
 		columns.wrangler_config = wranglerConfig;
+	}
+
+	const projectId = optionalString(body.gcp_project_id);
+	if (projectId !== undefined) {
+		if (projectId && !isValidGcpProjectId(projectId)) return { error: 'gcp_project_id must be a valid GCP project id (6-30 lowercase letters, digits, hyphens)' };
+		columns.gcp_project_id = projectId;
+	}
+
+	const region = optionalString(body.gcp_region);
+	if (region !== undefined) {
+		if (region && !isValidGcpRegion(region)) return { error: 'gcp_region must be a Cloud Run region such as us-central1' };
+		columns.gcp_region = region;
+	}
+
+	const service = optionalString(body.gcp_service);
+	if (service !== undefined) {
+		if (service && !isValidCloudRunService(service)) return { error: 'gcp_service must be a valid Cloud Run service name (lowercase letters, digits, hyphens; max 49 chars)' };
+		columns.gcp_service = service;
 	}
 
 	if (body.branch_filter !== undefined) {
@@ -100,21 +127,35 @@ async function targetColumns(
 		columns.coolify_api_key_encrypted = apiKey ? await encryptCoolifyApiKey(env, apiKey) : null;
 	}
 
+	// Service-account key JSON. Omitted → untouched. null / '' → cleared.
+	const saKey = optionalString(body.gcp_service_account_key);
+	if (saKey !== undefined) {
+		if (!saKey) {
+			columns.gcp_service_account_key_encrypted = null;
+		} else {
+			if (saKey.length > 16 * 1024) return { error: 'gcp_service_account_key is too large' };
+			const normalised = normaliseGcpServiceAccountKey(saKey);
+			if (!normalised) return { error: 'gcp_service_account_key must be a service-account JSON key (type, project_id, client_email, private_key)' };
+			columns.gcp_service_account_key_encrypted = await encryptGcpServiceAccountKey(env, normalised);
+		}
+	}
+
 	return { columns };
 }
 
 /**
- * List deploy targets. The stored Coolify API key is never returned (to
- * anyone); callers get `has_coolify_api_key`.
+ * List deploy targets. Stored secrets (Coolify API key, GCP service-account
+ * key) are never returned (to anyone); callers get `has_*` flags.
  */
 app.get('/:repo/deploys', async (c) => {
 	const repoRecord = c.get('repoRecord');
 	const { results } = await c.env.DB.prepare('SELECT * FROM deploy_targets WHERE repo_id = ? ORDER BY created_at ASC')
 		.bind(repoRecord.id)
 		.all<Record<string, unknown>>();
-	const data = results.map(({ coolify_api_key_encrypted, ...rest }) => ({
+	const data = results.map(({ coolify_api_key_encrypted, gcp_service_account_key_encrypted, ...rest }) => ({
 		...rest,
 		has_coolify_api_key: !!coolify_api_key_encrypted,
+		has_gcp_service_account_key: !!gcp_service_account_key_encrypted,
 	}));
 	return c.json({ data });
 });
@@ -126,7 +167,7 @@ app.get('/:repo/deployments', async (c) => {
 	const repoRecord = c.get('repoRecord');
 	const limit = Math.min(Math.max(parseInt(c.req.query('limit') || '25') || 25, 1), 100);
 	const { results } = await c.env.DB.prepare(
-		`SELECT d.id, d.target_id, d.ci_run_id, d.branch, d.commit_sha, d.status, d.coolify_deployment_id,
+		`SELECT d.id, d.target_id, d.ci_run_id, d.branch, d.commit_sha, d.status, d.coolify_deployment_id, d.service_url,
 		        d.error_message, d.started_at, d.finished_at, d.created_at, dt.name AS target_name, dt.type AS target_type
 		 FROM deployments d LEFT JOIN deploy_targets dt ON dt.id = d.target_id
 		 WHERE d.repo_id = ? ORDER BY d.created_at DESC LIMIT ?`
@@ -148,12 +189,16 @@ app.post('/:repo/deploys', requireRepoLevel('admin'), async (c) => {
 	if ('error' in parsed) return c.json({ error: parsed.error }, 400);
 	const cols = parsed.columns;
 	if (cols.type === 'coolify' && !cols.coolify_app_id) return c.json({ error: 'coolify_app_id is required for coolify targets' }, 400);
+	if (cols.type === 'cloudrun' && (!cols.gcp_project_id || !cols.gcp_region || !cols.gcp_service)) {
+		return c.json({ error: 'gcp_project_id, gcp_region and gcp_service are required for cloudrun targets' }, 400);
+	}
 
 	const id = crypto.randomUUID();
 	const now = new Date().toISOString();
 	await c.env.DB.prepare(
-		`INSERT INTO deploy_targets (id, repo_id, name, type, is_active, coolify_app_id, coolify_base_url, coolify_api_key_encrypted, wrangler_config, branch_filter, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		`INSERT INTO deploy_targets (id, repo_id, name, type, is_active, coolify_app_id, coolify_base_url, coolify_api_key_encrypted, wrangler_config,
+		                             gcp_project_id, gcp_region, gcp_service, gcp_service_account_key_encrypted, branch_filter, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	)
 		.bind(
 			id,
@@ -165,6 +210,10 @@ app.post('/:repo/deploys', requireRepoLevel('admin'), async (c) => {
 			cols.coolify_base_url ?? null,
 			cols.coolify_api_key_encrypted ?? null,
 			cols.wrangler_config ?? null,
+			cols.gcp_project_id ?? null,
+			cols.gcp_region ?? null,
+			cols.gcp_service ?? null,
+			cols.gcp_service_account_key_encrypted ?? null,
 			cols.branch_filter ?? null,
 			now,
 			now

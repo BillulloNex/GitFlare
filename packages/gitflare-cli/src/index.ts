@@ -444,6 +444,7 @@ deploy.command('list')
         ID: t.id.substring(0, 8) + '...',
         Name: t.name,
         Type: t.type,
+        Target: t.type === 'cloudrun' ? `${t.gcp_project_id}/${t.gcp_region}/${t.gcp_service}` : t.type === 'coolify' ? t.coolify_app_id ?? '' : t.wrangler_config ?? 'wrangler.jsonc',
         Branches: formatBranchFilter(t),
       })));
     } catch (err) {
@@ -455,18 +456,31 @@ deploy.command('add')
   .argument('<repo>', 'Repository name')
   .description('Add a deploy target')
   .requiredOption('--name <name>', 'Target name')
-  .requiredOption('--type <type>', 'Deploy type (coolify or cloudflare)')
+  .requiredOption('--type <type>', 'Deploy type (coolify, cloudflare or cloudrun)')
   .option('--app-id <id>', 'Coolify app ID')
   .option('--base-url <url>', 'Coolify base URL')
+  .option('--api-key <key>', 'Coolify API key')
+  .option('--wrangler-config <path>', 'Cloudflare: wrangler config path')
+  .option('--gcp-project <id>', 'Cloud Run: GCP project id')
+  .option('--gcp-region <region>', 'Cloud Run: region, e.g. us-central1')
+  .option('--gcp-service <name>', 'Cloud Run: service name')
+  .option('--gcp-key-file <path>', 'Cloud Run: service-account JSON key file (omit to use the runner key)')
   .option('--branch-filter <branches>', 'Comma-separated list of branches')
   .action(async (repoName: string, options: any) => {
     try {
       const client = getClient();
+      const gcpKey = options.gcpKeyFile ? fs.readFileSync(options.gcpKeyFile, 'utf8') : undefined;
       const result = await client.deploys.create(repoName, {
         name: options.name,
         type: options.type,
         coolify_app_id: options.appId,
         coolify_base_url: options.baseUrl,
+        coolify_api_key: options.apiKey,
+        wrangler_config: options.wranglerConfig,
+        gcp_project_id: options.gcpProject,
+        gcp_region: options.gcpRegion,
+        gcp_service: options.gcpService,
+        gcp_service_account_key: gcpKey,
         branch_filter: options.branchFilter?.split(',').map((b: string) => b.trim()),
       });
       console.log(chalk.green(`✓ Deploy target added (ID: ${result.id})`));

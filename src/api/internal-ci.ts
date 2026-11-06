@@ -326,6 +326,7 @@ deployCallbackApp.post('/callback', async (c) => {
 	if (!deployment) return c.json({ error: 'Deployment not found' }, 404);
 
 	const coolifyId = typeof body.coolifyDeploymentId === 'string' && body.coolifyDeploymentId ? body.coolifyDeploymentId : null;
+	const serviceUrl = typeof body.serviceUrl === 'string' && /^https:\/\/[^\s]{1,500}$/.test(body.serviceUrl) ? body.serviceUrl : null;
 	const error = typeof body.error === 'string' ? body.error.slice(0, 2000) : null;
 
 	if (body.status === 'running') {
@@ -340,10 +341,11 @@ deployCallbackApp.post('/callback', async (c) => {
 
 	const result = await DB.prepare(
 		`UPDATE deployments
-		 SET status = ?, finished_at = ?, error_message = ?, coolify_deployment_id = COALESCE(?, coolify_deployment_id)
+		 SET status = ?, finished_at = ?, error_message = ?, coolify_deployment_id = COALESCE(?, coolify_deployment_id),
+		     service_url = COALESCE(?, service_url)
 		 WHERE id = ? AND status IN ('queued', 'pending', 'running')`
 	)
-		.bind(body.status, new Date().toISOString(), body.status === 'failed' ? error || 'Deployment failed' : null, coolifyId, deployment.id)
+		.bind(body.status, new Date().toISOString(), body.status === 'failed' ? error || 'Deployment failed' : null, coolifyId, serviceUrl, deployment.id)
 		.run();
 
 	return c.json({ ok: true, ignored: !result.meta.changes });

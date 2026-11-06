@@ -16,8 +16,10 @@ import type { CIJobMessage, CIPipelineConfig, DeployJobMessage, Env, LegacyDeplo
 import { getJobExecutionOrder } from '../lib/ci-parser.ts';
 import { getArtifactsRemoteUrl } from '../lib/artifacts-url.ts';
 import {
+	type DeployTargetType,
 	enqueueDeploysForRun,
 	isDeployTargetType,
+	readGcpServiceAccountKey,
 	isValidWranglerConfig,
 	readCoolifyApiKey,
 	resolveCommitSha,
@@ -39,6 +41,14 @@ const MAX_DELIVERY_ATTEMPTS = 4;
 const CHECKOUT_TOKEN_TTL_S = 30 * 60;
 /** Coolify poll deadline (B1.4) and Cloudflare deploy budget. */
 export const DEPLOY_DEADLINE_MS = 10 * 60 * 1000;
+/** Cloud Run source deploys go through Cloud Build; give them a larger budget. */
+export const CLOUDRUN_DEADLINE_MS = 25 * 60 * 1000;
+/** Largest per-type deadline; the maintenance cron derives its stuck cutoff from this. */
+export const MAX_DEPLOY_DEADLINE_MS = Math.max(DEPLOY_DEADLINE_MS, CLOUDRUN_DEADLINE_MS);
+
+function deployDeadlineMs(type: DeployTargetType): number {
+	return type === 'cloudrun' ? CLOUDRUN_DEADLINE_MS : DEPLOY_DEADLINE_MS;
+}
 const DEFAULT_MAX_CI_DURATION_MS = 15 * 60 * 1000;
 
 export interface QueueDelivery {
@@ -301,6 +311,10 @@ type TargetRow = {
 	coolify_base_url: string | null;
 	coolify_api_key_encrypted: string | null;
 	wrangler_config: string | null;
+	gcp_project_id: string | null;
+	gcp_region: string | null;
+	gcp_service: string | null;
+	gcp_service_account_key_encrypted: string | null;
 };
 
 export async function handleDeployJob(body: DeployJobMessage | LegacyDeployJobMessage, env: Env, delivery: QueueDelivery): Promise<void> {
@@ -355,7 +369,7 @@ export async function handleDeployJob(body: DeployJobMessage | LegacyDeployJobMe
 		ciRunId: deployment.ci_run_id ?? message.ciRunId,
 		type: target.type,
 		callbackUrl: deployCallbackUrl(env),
-		deadlineMs: DEPLOY_DEADLINE_MS,
+		deadlineMs: deployDeadlineMs(target.type),
 	};
 
 	if (target.type === 'coolify') {
@@ -372,6 +386,36 @@ export async function handleDeployJob(body: DeployJobMessage | LegacyDeployJobMe
 			return;
 		}
 		request.coolify = { baseUrl, apiKey, appId: target.coolify_app_id };
+	} else if (target.type === 'cloudrun') {
+		if (!target.gcp_project_id || !target.gcp_region || !target.gcp_service) {
+			await failDeployment(env, deployment.id, 'Cloud Run target is missing project id, region or service name');
+			return;
+		}
+		let serviceAccountKey: string | null;
+		try {
+			serviceAccountKey = await readGcpServiceAccountKey(env, target.gcp_service_account_key_encrypted);
+		} catch (err) {
+			await failDeployment(env, deployment.id, `Could not decrypt GCP service-account key: ${String(err)}`);
+			return;
+		}
+		try {
+			request.cloudrun = {
+				repoName: message.repoName,
+				projectId: target.gcp_project_id,
+				region: target.gcp_region,
+				service: target.gcp_service,
+				serviceAccountKey,
+				checkout: {
+					url: getArtifactsRemoteUrl(env, message.repoName),
+					token: await mintReadToken(env, message.repoName, CHECKOUT_TOKEN_TTL_S),
+					branch,
+					commitSha,
+				},
+			};
+		} catch (err) {
+			if (delivery.attempts >= MAX_DELIVERY_ATTEMPTS) await failDeployment(env, deployment.id, `Could not mint checkout token: ${String(err)}`);
+			throw new TransientError(`Could not mint checkout token: ${String(err)}`);
+		}
 	} else {
 		if (target.wrangler_config && !isValidWranglerConfig(target.wrangler_config)) {
 			await failDeployment(env, deployment.id, 'Invalid wrangler_config path on deploy target');

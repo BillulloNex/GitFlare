@@ -4,7 +4,7 @@
 
 Git repositories live in Cloudflare Artifacts and are served over Git Smart
 HTTP by a Worker. CI runs in Docker containers on a self-hosted runner
-(`packages/runner`), deployments go to Coolify or Cloudflare, and a per-repo
+(`packages/runner`), deployments go to Coolify, Cloudflare or Google Cloud Run, and a per-repo
 merge queue lets many agents land branches safely. Repositories can be
 mirrored to GitHub.
 
@@ -30,7 +30,7 @@ mirrored to GitHub.
                  Runner (packages/runner, Docker host)  ── HTTPS, RUNNER_SECRET ──
                    • CI jobs in throwaway containers
                    • merge-queue rebase / fast-forward
-                   • deploys: Coolify API or `wrangler deploy`
+                   • deploys: Coolify API, `wrangler deploy` or `gcloud run deploy`
                    • results + logs → /api/internal/{ci,deploy,merge}/*
 ```
 
@@ -94,6 +94,8 @@ See `.dev.vars.example` for a template.
 | `MAX_CONCURRENT_JOBS`, `MAX_CONCURRENT_MERGES` | Concurrency caps |
 | `CI_STEP_TIMEOUT_S`, `CI_RUN_TIMEOUT_MS`, `CI_MAX_STEP_LOG_CHARS` | Limits |
 | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` | Only for Cloudflare deploy targets; injected into `wrangler deploy`, never into CI steps |
+| `GCP_SERVICE_ACCOUNT_KEY` | Fallback service-account JSON key for Cloud Run targets without their own; injected into the `gcloud` exec only |
+| `CLOUDRUN_IMAGE` | Job image for Cloud Run deploys (default `google/cloud-sdk:slim`); must contain `git` and `gcloud` |
 
 ### CLI / MCP
 
@@ -211,6 +213,34 @@ curl -X POST "$APP_URL/api/repos/my-app/deploys" -H "Authorization: Bearer $KEY"
 When a CI run passes, every active target whose `branch_filter` matches the
 branch is deployed. `type: "cloudflare"` targets run `wrangler deploy` on the
 runner (`wrangler_config` selects the config file).
+
+`type: "cloudrun"` targets run `gcloud run deploy --source .` on the runner:
+Cloud Build builds the checkout (Dockerfile or buildpacks) and rolls out the
+revision. The service URL is recorded on the deployment.
+
+```bash
+curl -X POST "$APP_URL/api/repos/my-app/deploys" -H "Authorization: Bearer $KEY" \
+  -H "Content-Type: application/json" \
+  -d "$(jq -n --rawfile key sa.json '{
+    name: "production",
+    type: "cloudrun",
+    gcp_project_id: "my-project",
+    gcp_region: "us-central1",
+    gcp_service: "my-app",
+    gcp_service_account_key: $key,
+    branch_filter: ["main"]
+  }')"
+# or: gitflare deploy add my-app --name production --type cloudrun \
+#       --gcp-project my-project --gcp-region us-central1 --gcp-service my-app \
+#       --gcp-key-file sa.json --branch-filter main
+```
+
+The service account needs Cloud Run Admin, Cloud Build Editor, Artifact
+Registry Writer, Storage Admin (for the source upload bucket) and Service
+Account User on the Cloud Run runtime account. Omit `gcp_service_account_key`
+to use the runner's `GCP_SERVICE_ACCOUNT_KEY` instead. Keys are stored
+encrypted and never returned by the API. Cloud Run deploys get a 25 minute
+budget (Coolify and Cloudflare: 10).
 
 ### GitHub mirror
 

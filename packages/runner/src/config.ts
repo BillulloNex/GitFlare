@@ -23,6 +23,8 @@ export const config = {
   // ── Job containers ──
   /** Image for CI jobs and Cloudflare deploys. Must contain `git` and `sh`. */
   ciImage: process.env.CI_IMAGE || 'node:22-bookworm',
+  /** Image for Cloud Run deploys. Must contain `git`, `sh` and `gcloud`. */
+  cloudRunImage: process.env.CLOUDRUN_IMAGE || 'google/cloud-sdk:slim',
   /** uid:gid steps run as inside the job container (never root). */
   jobUser: process.env.CI_USER || '1000:1000',
   jobMemory: process.env.CI_MEMORY || '4g',
@@ -48,4 +50,9 @@ export const config = {
   /** Injected ONLY into the `wrangler deploy` exec of Cloudflare deploys. */
   cloudflareApiToken: process.env.CLOUDFLARE_API_TOKEN || '',
   cloudflareAccountId: process.env.CLOUDFLARE_ACCOUNT_ID || '',
+  /**
+   * Fallback GCP service-account key (JSON) for Cloud Run targets that have no
+   * key of their own. Injected ONLY into the `gcloud` exec of Cloud Run deploys.
+   */
+  gcpServiceAccountKey: process.env.GCP_SERVICE_ACCOUNT_KEY || '',
 };

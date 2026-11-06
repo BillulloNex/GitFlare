@@ -199,11 +199,14 @@ export interface CIStepConfig {
 
 export interface DeployTarget {
 	id: string;
-	type: "coolify" | "cloudflare";
+	type: "coolify" | "cloudflare" | "cloudrun";
 	coolifyAppId?: string;
 	coolifyBaseUrl?: string;
 	coolifyApiKey?: string;
 	wranglerConfig?: string;
+	gcpProjectId?: string;
+	gcpRegion?: string;
+	gcpService?: string;
 	branchFilter?: string[];
 }
 

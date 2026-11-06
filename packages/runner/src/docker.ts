@@ -111,7 +111,12 @@ export interface JobContainer {
  * the job user), long-lived idle process, non-root, no capabilities,
  * resource-limited. Steps are `docker exec`ed into it.
  */
-export async function createJobContainer(kind: 'ci' | 'deploy', id: string, onLine: ExecOptions['onLine']): Promise<JobContainer> {
+export async function createJobContainer(
+  kind: 'ci' | 'deploy',
+  id: string,
+  onLine: ExecOptions['onLine'],
+  image: string = config.ciImage
+): Promise<JobContainer> {
   const base = `gitflare-${kind}-${safeName(id)}`;
   const job: JobContainer = { name: base, volume: base };
   const labels = ['--label', `${LABEL_JOB}=${id}`, '--label', `${LABEL_RUNNER}=${config.runnerId}`];
@@ -120,11 +125,11 @@ export async function createJobContainer(kind: 'ci' | 'deploy', id: string, onLi
   if (vol.code !== 0) throw new Error(`docker volume create failed: ${vol.stderr.trim()}`);
 
   // Pull explicitly so pull progress shows up in the logs.
-  const pull = await docker(['pull', '--quiet', config.ciImage], { timeoutMs: 15 * 60_000, onLine });
+  const pull = await docker(['pull', '--quiet', image], { timeoutMs: 15 * 60_000, onLine });
   if (pull.code !== 0) {
     // A locally built image may not be pullable; carry on if it exists.
-    const inspect = await docker(['image', 'inspect', config.ciImage]);
-    if (inspect.code !== 0) throw new Error(`Could not pull image ${config.ciImage}: ${pull.stderr.trim()}`);
+    const inspect = await docker(['image', 'inspect', image]);
+    if (inspect.code !== 0) throw new Error(`Could not pull image ${image}: ${pull.stderr.trim()}`);
   }
 
   // Fresh named volumes are root-owned; hand /workspace to the job user.
@@ -135,7 +140,7 @@ export async function createJobContainer(kind: 'ci' | 'deploy', id: string, onLi
     '--security-opt', 'no-new-privileges',
     '-v', `${job.volume}:${WORKSPACE}`,
     '--entrypoint', 'chown',
-    config.ciImage, config.jobUser, WORKSPACE,
+    image, config.jobUser, WORKSPACE,
   ], { timeoutMs: 120_000 });
   if (chown.code !== 0) throw new Error(`Could not prepare workspace volume: ${chown.stderr.trim()}`);
 
@@ -155,7 +160,7 @@ export async function createJobContainer(kind: 'ci' | 'deploy', id: string, onLi
     // Allowlisted base env only; PATH etc. come from the image.
     '-e', `HOME=${JOB_HOME}`, '-e', 'TMPDIR=/tmp', '-e', 'LANG=C.UTF-8', '-e', 'CI=true',
     '--entrypoint', 'sh',
-    config.ciImage,
+    image,
     '-c', `mkdir -p "$HOME" && exec tail -f /dev/null`,
   ], { timeoutMs: 120_000 });
   if (run.code !== 0) throw new Error(`docker run failed: ${run.stderr.trim()}`);

@@ -4,7 +4,7 @@
  *   GET  /health             liveness + protocol version + Docker status
  *   POST /webhook/ci         run CI steps in a throwaway Docker container   (202)
  *   POST /webhook/ci/cancel  kill a run's container                          (200 / 404)
- *   POST /webhook/deploy     Coolify or Cloudflare deploy                    (202)
+ *   POST /webhook/deploy     Coolify, Cloudflare or Cloud Run deploy         (202)
  *   POST /webhook/merge      merge-queue rebase / fast-forward (git argv)    (202)
  *
  * All POSTs need `Authorization: Bearer <RUNNER_SECRET>` (503 if the secret
@@ -109,7 +109,7 @@ async function handlePost(url: URL, req: http.IncomingMessage, res: http.ServerR
       const error = validateDeployRequest(payload, config.allowedCallbackOrigins);
       if (error) return send(res, 400, { error });
       const request = payload as DeployRequest;
-      if (request.type === 'cloudflare') {
+      if (request.type === 'cloudflare' || request.type === 'cloudrun') {
         const docker = await dockerAvailable();
         if (!docker.ok) return send(res, 503, { error: 'Docker required for deploy execution', detail: docker.detail });
       }
@@ -173,6 +173,7 @@ server.listen(config.port, async () => {
   console.log(`CI image: ${config.ciImage}, max concurrent jobs: ${config.maxConcurrentJobs}`);
   console.log(`Callback origins: ${config.allowedCallbackOrigins.join(', ') || '(any — set ALLOWED_CALLBACK_ORIGINS)'}`);
   console.log(`CLOUDFLARE_API_TOKEN: ${config.cloudflareApiToken ? 'set' : 'not set (Cloudflare deploys disabled)'}`);
+  console.log(`GCP_SERVICE_ACCOUNT_KEY: ${config.gcpServiceAccountKey ? 'set' : 'not set (Cloud Run targets need their own key)'} — image ${config.cloudRunImage}`);
   const docker = await dockerAvailable();
   if (docker.ok) {
     console.log(`Docker: ${docker.detail}`);

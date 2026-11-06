@@ -5,13 +5,16 @@
  *              status or the deadline.
  * Cloudflare:  job container → clone → install (no credentials) →
  *              `wrangler deploy` with CLOUDFLARE_* injected into that one exec.
+ * Cloud Run:   job container (gcloud image) → clone → `gcloud run deploy
+ *              --source .` with the service-account key injected into that one
+ *              exec (written to a temp file for `gcloud auth`, removed after).
  */
 import { config } from './config.js';
 import { cloneInJob, createJobContainer, dockerAvailable, execInJob, killJob, LogCollector, removeJob, type JobContainer } from './docker.js';
 import type { DeployRequest } from './protocol.js';
 import { jobSlots, sendCallback } from './worker-client.js';
 
-type Outcome = { status: 'success' | 'failed'; error?: string; coolifyDeploymentId?: string };
+type Outcome = { status: 'success' | 'failed'; error?: string; coolifyDeploymentId?: string; serviceUrl?: string };
 
 // ─── Coolify ────────────────────────────────────────────────────
 
@@ -163,6 +166,102 @@ async function runCloudflare(req: DeployRequest, logs: LogCollector): Promise<Ou
   }
 }
 
+// ─── Google Cloud Run ───────────────────────────────────────────
+
+const SERVICE_URL_MARKER = 'GITFLARE_SERVICE_URL=';
+
+/**
+ * Source deploy: gcloud uploads the workspace, Cloud Build builds it
+ * (buildpacks or Dockerfile) and the resulting revision is rolled out. The
+ * key file lives only for the duration of this exec and is removed on exit.
+ */
+const CLOUDRUN_SCRIPT = [
+  'set -eu',
+  'command -v gcloud >/dev/null 2>&1 || { echo "gcloud is not installed in the Cloud Run image (CLOUDRUN_IMAGE)" >&2; exit 127; }',
+  'export CLOUDSDK_CONFIG="$(mktemp -d)"',
+  'KEY_FILE="$CLOUDSDK_CONFIG/sa.json"',
+  'trap \'rm -rf "$CLOUDSDK_CONFIG"\' EXIT',
+  'printf \'%s\' "$GCP_SERVICE_ACCOUNT_KEY" > "$KEY_FILE"',
+  'unset GCP_SERVICE_ACCOUNT_KEY',
+  'gcloud auth activate-service-account --key-file="$KEY_FILE" --quiet',
+  'gcloud run deploy "$1" --source . --project "$2" --region "$3" --quiet',
+  'URL="$(gcloud run services describe "$1" --project "$2" --region "$3" --format=\'value(status.url)\' 2>/dev/null || true)"',
+  `[ -n "$URL" ] && echo "${SERVICE_URL_MARKER}$URL"`,
+  'exit 0',
+].join('\n');
+
+async function runCloudRun(req: DeployRequest, logs: LogCollector): Promise<Outcome> {
+  const cr = req.cloudrun!;
+  const serviceAccountKey = cr.serviceAccountKey || config.gcpServiceAccountKey;
+  if (!serviceAccountKey) {
+    return { status: 'failed', error: 'No GCP service-account key: set one on the deploy target or GCP_SERVICE_ACCOUNT_KEY on the runner' };
+  }
+  const docker = await dockerAvailable();
+  if (!docker.ok) return { status: 'failed', error: `Docker required for deploy execution: ${docker.detail}` };
+
+  const release = await jobSlots.acquire();
+  let job: JobContainer | null = null;
+  let timedOut = false;
+  let serviceUrl: string | undefined;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    if (job) void killJob(job);
+  }, req.deadlineMs);
+  const push = (stream: 'stdout' | 'stderr', line: string) => {
+    if (line.startsWith(SERVICE_URL_MARKER)) {
+      serviceUrl = line.slice(SERVICE_URL_MARKER.length).trim();
+      logs.note(`Service URL: ${serviceUrl}`);
+      return;
+    }
+    logs.push(stream, line);
+  };
+
+  try {
+    job = await createJobContainer('deploy', req.deploymentId, push, config.cloudRunImage);
+    const clone = await cloneInJob(job, cr.checkout, push);
+    if (clone.code !== 0) return { status: 'failed', error: `checkout failed (exit ${clone.code})` };
+
+    // Credentials exist only in this exec's environment. Identifiers are
+    // validated and passed as positional arguments, never interpolated.
+    logs.note(`Deploying ${cr.service} to Cloud Run (${cr.projectId}/${cr.region}) from source`);
+    const deploy = await execInJob(
+      job,
+      ['sh', '-c', CLOUDRUN_SCRIPT, 'cloudrun', cr.service, cr.projectId, cr.region],
+      {
+        CI: 'true',
+        GITFLARE_REPO: cr.repoName,
+        GITFLARE_BRANCH: cr.checkout.branch,
+        GITFLARE_COMMIT_SHA: cr.checkout.commitSha,
+        CLOUDSDK_CORE_DISABLE_PROMPTS: '1',
+        GCP_SERVICE_ACCOUNT_KEY: serviceAccountKey,
+      },
+      { onLine: push }
+    );
+    if (timedOut) return { status: 'failed', error: `Deploy did not finish within ${Math.round(req.deadlineMs / 1000)}s` };
+    if (deploy.code !== 0) return { status: 'failed', error: `gcloud run deploy failed (exit ${deploy.code})` };
+    return { status: 'success', serviceUrl };
+  } catch (err) {
+    return { status: 'failed', error: err instanceof Error ? err.message : String(err) };
+  } finally {
+    clearTimeout(timer);
+    if (job) await removeJob(job).catch(err => console.error(`deploy ${req.deploymentId}: cleanup failed`, err));
+    release();
+  }
+}
+
+/** Secret strings to mask in Cloud Run logs: the key JSON and its private_key on its own. */
+function cloudRunSecrets(key: string | null | undefined): string[] {
+  if (!key) return [];
+  const out = [key];
+  try {
+    const parsed = JSON.parse(key) as { private_key?: unknown };
+    if (typeof parsed.private_key === 'string' && parsed.private_key) out.push(parsed.private_key);
+  } catch {
+    // not JSON — mask the raw value only
+  }
+  return out;
+}
+
 // ─── Entry ──────────────────────────────────────────────────────
 
 const activeDeploys = new Set<string>();
@@ -183,13 +282,21 @@ export async function executeDeploy(req: DeployRequest): Promise<void> {
 
 async function runDeploy(req: DeployRequest): Promise<void> {
   const started = Date.now();
-  const secrets = [req.coolify?.apiKey, req.cloudflare?.checkout.token, config.cloudflareApiToken].filter((s): s is string => !!s);
+  const secrets = [
+    req.coolify?.apiKey,
+    req.cloudflare?.checkout.token,
+    req.cloudrun?.checkout.token,
+    config.cloudflareApiToken,
+    ...cloudRunSecrets(req.cloudrun?.serviceAccountKey),
+    ...cloudRunSecrets(config.gcpServiceAccountKey),
+  ].filter((s): s is string => !!s);
   const logs = new LogCollector(secrets);
   console.log(`Deploy ${req.deploymentId} (${req.type}) started`);
 
   let outcome: Outcome;
   try {
-    outcome = req.type === 'coolify' ? await runCoolify(req, logs) : await runCloudflare(req, logs);
+    outcome =
+      req.type === 'coolify' ? await runCoolify(req, logs) : req.type === 'cloudrun' ? await runCloudRun(req, logs) : await runCloudflare(req, logs);
   } catch (err) {
     outcome = { status: 'failed', error: err instanceof Error ? err.message : String(err) };
   }
@@ -203,6 +310,7 @@ async function runDeploy(req: DeployRequest): Promise<void> {
       status: outcome.status,
       durationMs: Date.now() - started,
       ...(outcome.coolifyDeploymentId ? { coolifyDeploymentId: outcome.coolifyDeploymentId } : {}),
+      ...(outcome.serviceUrl ? { serviceUrl: outcome.serviceUrl } : {}),
       ...(outcome.error ? { error: outcome.error } : {}),
       logs: logs.tail(200),
     },

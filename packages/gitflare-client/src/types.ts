@@ -273,18 +273,27 @@ export interface BlobContent {
 
 // ─── Deploy Types ───────────────────────────────────────────────
 
-/** A row of `deploy_targets` (the Coolify API key is never returned). */
+export type DeployTargetType = 'coolify' | 'cloudflare' | 'cloudrun';
+
+/** A row of `deploy_targets` (stored secrets are never returned). */
 export interface DeployTarget {
   id: string;
   repo_id: string;
   name: string;
-  type: 'coolify' | 'cloudflare';
+  type: DeployTargetType;
   is_active: number;
   coolify_app_id: string | null;
   coolify_base_url: string | null;
+  /** Cloudflare: path to the wrangler config file, or null for the default. */
+  wrangler_config: string | null;
+  /** Cloud Run: GCP project id, region and service name. */
+  gcp_project_id: string | null;
+  gcp_region: string | null;
+  gcp_service: string | null;
   /** JSON-encoded array of branch patterns; null = all branches. */
   branch_filter: string | null;
   has_coolify_api_key: boolean;
+  has_gcp_service_account_key: boolean;
   created_at: string;
   updated_at: string;
   [column: string]: unknown;
@@ -292,10 +301,19 @@ export interface DeployTarget {
 
 export interface CreateDeployInput {
   name: string;
-  type: 'coolify' | 'cloudflare';
+  type: DeployTargetType;
+  /** Coolify */
   coolify_app_id?: string;
   coolify_base_url?: string;
   coolify_api_key?: string;
+  /** Cloudflare */
+  wrangler_config?: string;
+  /** Cloud Run (project, region and service are required for `cloudrun`). */
+  gcp_project_id?: string;
+  gcp_region?: string;
+  gcp_service?: string;
+  /** Service-account JSON key; omit to use the runner's GCP_SERVICE_ACCOUNT_KEY. */
+  gcp_service_account_key?: string;
   branch_filter?: string[];
 }
 

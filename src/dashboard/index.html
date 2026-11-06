@@ -766,6 +766,8 @@
             background: var(--bg-muted); border: 1px solid var(--border-default); color: var(--text-secondary); flex-shrink: 0;
         }
         .deploy-type-icon.cloudflare { color: var(--accent-flare); background: var(--accent-soft); border-color: var(--accent-ring); }
+        .deploy-type-icon.cloudrun { color: var(--status-success, #2a7f4f); }
+        .deploy-last a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
         .deploy-name { font-weight: 600; font-size: var(--text-md); letter-spacing: -0.01em; }
         .deploy-sub { font-size: var(--text-xs); color: var(--text-muted); margin-top: 2px; }
         .deploy-meta {
@@ -2441,7 +2443,7 @@
                 for (const d of history) if (!latestByTarget[d.target_id]) latestByTarget[d.target_id] = d;
 
                 if (!Array.isArray(data) || !data.length) {
-                    container.innerHTML = `<div class="card">${emptyState('<strong>No deploy targets yet.</strong> Add a Coolify or Cloudflare target via the API to deploy on push.', { iconName: 'rocket' })}</div>`;
+                    container.innerHTML = `<div class="card">${emptyState('<strong>No deploy targets yet.</strong> Add a Coolify, Cloudflare or Cloud Run target via the API or CLI to deploy on push.', { iconName: 'rocket' })}</div>`;
                     return;
                 }
 
@@ -2449,18 +2451,22 @@
                     const active = Number(t.is_active) !== 0;
                     const type = String(t.type || '').toLowerCase();
                     const last = latestByTarget[t.id];
+                    const lastTone = last ? (last.status === 'success' ? 'passed' : (last.status === 'failed' ? 'failed' : (last.status === 'running' || last.status === 'queued' || last.status === 'pending' ? 'running' : 'other'))) : 'other';
+                    const lastUrl = last && typeof last.service_url === 'string' && /^https:\/\//.test(last.service_url) ? last.service_url : null;
                     const lastHtml = last
-                        ? `<span class="${stepTone(last.status === 'success' ? 'passed' : (last.status === 'failed' ? 'failed' : (last.status === 'deploying' ? 'running' : 'other')))}" style="display:flex;">${statusIcon(last.status, 14)}</span>
-                           <span><span style="color:var(--text-secondary);">${esc(last.status)}</span> · <span class="mono">${esc(shortSha(last.commit_sha))}</span> · ${esc(timeAgo(last.finished_at || last.started_at || last.created_at))}</span>`
+                        ? `<span class="${stepTone(lastTone)}" style="display:flex;">${statusIcon(last.status, 14)}</span>
+                           <span><span style="color:var(--text-secondary);">${esc(last.status)}</span> · <span class="mono">${esc(shortSha(last.commit_sha))}</span> · ${esc(timeAgo(last.finished_at || last.started_at || last.created_at))}${lastUrl ? ` · <a href="${esc(lastUrl)}" target="_blank" rel="noopener">${esc(lastUrl.replace(/^https:\/\//, ''))}</a>` : ''}</span>`
                         : `${icon('clock', 14)}<span>Never deployed</span>`;
+                    const typeLabel = type === 'cloudflare' ? 'Cloudflare Workers' : type === 'coolify' ? 'Coolify' : type === 'cloudrun' ? 'Google Cloud Run' : esc(type);
+                    const typeIcon = type === 'cloudflare' ? 'cloud' : type === 'cloudrun' ? 'rocket' : 'server';
                     return `
                         <div class="card deploy-card">
                             <div class="deploy-card-top">
                                 <div class="deploy-card-title">
-                                    <div class="deploy-type-icon ${type === 'cloudflare' ? 'cloudflare' : ''}">${icon(type === 'cloudflare' ? 'cloud' : 'server', 18)}</div>
+                                    <div class="deploy-type-icon ${type === 'cloudflare' || type === 'cloudrun' ? type : ''}">${icon(typeIcon, 18)}</div>
                                     <div style="min-width:0;">
                                         <div class="deploy-name">${esc(t.name)}</div>
-                                        <div class="deploy-sub">${type === 'cloudflare' ? 'Cloudflare Workers' : (type === 'coolify' ? 'Coolify' : esc(type))}</div>
+                                        <div class="deploy-sub">${typeLabel}</div>
                                     </div>
                                 </div>
                                 <span class="badge ${active ? 'badge-success' : 'badge-queued'}">${active ? 'Active' : 'Paused'}</span>
@@ -2469,6 +2475,10 @@
                                 <dt>Branches</dt><dd><code>${esc(formatBranchFilter(t.branch_filter))}</code></dd>
                                 ${t.coolify_app_id ? `<dt>App</dt><dd><code>${esc(t.coolify_app_id)}</code></dd>` : ''}
                                 ${t.coolify_base_url ? `<dt>Host</dt><dd>${esc(t.coolify_base_url)}</dd>` : ''}
+                                ${type === 'cloudflare' ? `<dt>Config</dt><dd><code>${esc(t.wrangler_config || 'wrangler.jsonc')}</code></dd>` : ''}
+                                ${t.gcp_service ? `<dt>Service</dt><dd><code>${esc(t.gcp_service)}</code></dd>` : ''}
+                                ${t.gcp_project_id ? `<dt>Project</dt><dd><code>${esc(t.gcp_project_id)}</code>${t.gcp_region ? ` · ${esc(t.gcp_region)}` : ''}</dd>` : ''}
+                                ${type === 'cloudrun' ? `<dt>Credentials</dt><dd>${t.has_gcp_service_account_key ? 'Per-target key' : 'Runner key'}</dd>` : ''}
                             </dl>
                             <div class="deploy-card-foot">
                                 <div class="deploy-last">${lastHtml}</div>

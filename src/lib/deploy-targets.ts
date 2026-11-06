@@ -41,7 +41,55 @@ export async function readCoolifyApiKey(env: Env, stored: string | null | undefi
 	return stored;
 }
 
+// ─── Google Cloud Run service-account key storage ───────────────
+
+/** Encrypt a GCP service-account key (JSON) for `deploy_targets.gcp_service_account_key_encrypted`. */
+export function encryptGcpServiceAccountKey(env: Env, plaintext: string): Promise<string> {
+	return encryptSecret(plaintext, env.ENCRYPTION_KEY);
+}
+
+/** Strict reader: Cloud Run targets were introduced after `v1:` encryption, so there is no legacy shape. */
+export async function readGcpServiceAccountKey(env: Env, stored: string | null | undefined): Promise<string | null> {
+	if (!stored) return null;
+	return decryptSecret(stored, env.ENCRYPTION_KEY);
+}
+
+/**
+ * A service-account key must be a JSON object of `type: "service_account"`
+ * with the fields gcloud needs. Returns the normalised JSON or null.
+ */
+export function normaliseGcpServiceAccountKey(raw: string): string | null {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(raw);
+	} catch {
+		return null;
+	}
+	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+	const key = parsed as Record<string, unknown>;
+	if (key.type !== 'service_account') return null;
+	for (const field of ['project_id', 'client_email', 'private_key']) {
+		if (typeof key[field] !== 'string' || !key[field]) return null;
+	}
+	return JSON.stringify(key);
+}
+
 // ─── Validation ─────────────────────────────────────────────────
+
+/** GCP project id: 6–30 chars, lowercase letters, digits, hyphens; starts with a letter. */
+export function isValidGcpProjectId(value: string): boolean {
+	return /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(value);
+}
+
+/** Cloud Run region, e.g. `us-central1`, `europe-west4`, `asia-northeast1`. */
+export function isValidGcpRegion(value: string): boolean {
+	return /^[a-z]+-[a-z]+[0-9]$/.test(value) && value.length <= 40;
+}
+
+/** Cloud Run service name: 1–49 chars, lowercase letters, digits, hyphens; starts with a letter, no trailing hyphen. */
+export function isValidCloudRunService(value: string): boolean {
+	return /^[a-z]([a-z0-9-]{0,47}[a-z0-9])?$/.test(value);
+}
 
 /**
  * Wrangler config path: relative, no traversal, no leading dash (would be read
@@ -57,7 +105,7 @@ export function isValidWranglerConfig(path: string): boolean {
 	);
 }
 
-export const DEPLOY_TARGET_TYPES = ['coolify', 'cloudflare'] as const;
+export const DEPLOY_TARGET_TYPES = ['coolify', 'cloudflare', 'cloudrun'] as const;
 export type DeployTargetType = (typeof DEPLOY_TARGET_TYPES)[number];
 
 export function isDeployTargetType(value: unknown): value is DeployTargetType {

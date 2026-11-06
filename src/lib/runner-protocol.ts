@@ -17,7 +17,7 @@
  */
 import type { LogLine } from './ci-logs.ts';
 
-export const RUNNER_PROTOCOL_VERSION = 2;
+export const RUNNER_PROTOCOL_VERSION = 3;
 export const RUNNER_PROTOCOL_HEADER = 'X-GitFlare-Runner-Protocol';
 
 // ─── Worker → Runner ────────────────────────────────────────────
@@ -59,12 +59,25 @@ export interface RunnerDeployRequest {
 	protocolVersion: number;
 	deploymentId: string;
 	ciRunId: string | null;
-	type: 'coolify' | 'cloudflare';
+	type: 'coolify' | 'cloudflare' | 'cloudrun';
 	callbackUrl: string;
 	/** Poll / execution deadline for the deploy. */
 	deadlineMs: number;
 	coolify?: { baseUrl: string; apiKey: string; appId: string };
 	cloudflare?: { checkout: RunnerCheckout; repoName: string; wranglerConfig: string | null };
+	/**
+	 * Google Cloud Run source deploy (`gcloud run deploy --source .`).
+	 * `serviceAccountKey` is the per-target JSON key; null means the runner
+	 * uses its own GCP_SERVICE_ACCOUNT_KEY.
+	 */
+	cloudrun?: {
+		checkout: RunnerCheckout;
+		repoName: string;
+		projectId: string;
+		region: string;
+		service: string;
+		serviceAccountKey: string | null;
+	};
 }
 
 /**
@@ -161,6 +174,8 @@ export interface RunnerDeployCallback {
 	deploymentId: string;
 	status: 'running' | 'success' | 'failed';
 	coolifyDeploymentId?: string;
+	/** Cloud Run: the service URL reported by gcloud after a successful deploy. */
+	serviceUrl?: string;
 	error?: string;
 	durationMs?: number;
 	logs?: LogLine[];

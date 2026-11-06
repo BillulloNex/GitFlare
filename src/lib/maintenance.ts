@@ -12,7 +12,7 @@
  * `datetime('now')` format (column defaults), which don't sort as strings.
  */
 import type { Env } from '../env.ts';
-import { maxCIDurationMs, DEPLOY_DEADLINE_MS } from '../queue/ci-consumer.ts';
+import { maxCIDurationMs, MAX_DEPLOY_DEADLINE_MS } from '../queue/ci-consumer.ts';
 import { cancelRunnerRun } from './runner-client.ts';
 import { cleanExpiredSessions } from './session.ts';
 
@@ -20,8 +20,8 @@ import { cleanExpiredSessions } from './session.ts';
 const RUNNING_GRACE_MS = 5 * 60 * 1000;
 /** Queue retries with backoff finish well within this. */
 const QUEUED_TIMEOUT_MS = 60 * 60 * 1000;
-/** Cloudflare deploys clone + install + deploy; give them more than the Coolify poll deadline. */
-const DEPLOY_RUNNING_TIMEOUT_MS = DEPLOY_DEADLINE_MS * 2 + RUNNING_GRACE_MS;
+/** Container deploys clone + install + deploy; give them more than the largest runner deadline. */
+const DEPLOY_RUNNING_TIMEOUT_MS = MAX_DEPLOY_DEADLINE_MS * 2 + RUNNING_GRACE_MS;
 
 function cutoff(msAgo: number): string {
 	return new Date(Date.now() - msAgo).toISOString();
