@@ -3,806 +3,683 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>GitFlare — GitHub on Cloudflare</title>
+    <title>gitflare — Git hosting on Cloudflare</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
+        /* ─── Tokens ─────────────────────────────────────────────────
+           Warm near-black neutrals, one accent (flare orange) reserved
+           for actions and brand. Status colours only ever mean status. */
         :root {
-            --bg-canvas: #0d1117;
-            --bg-subtle: #161b22;
-            --bg-muted: #21262d;
-            --bg-hover: #292e36;
-            --border-default: #30363d;
-            --border-muted: #21262d;
-            --text-primary: #e6edf3;
-            --text-secondary: #848d97;
-            --text-muted: #6e7681;
+            --bg-canvas: #0c0c0b;
+            --bg-subtle: #131312;
+            --bg-muted: #1b1b19;
+            --bg-hover: #232320;
+            --bg-code: #0a0a09;
+            --border-default: #2a2a27;
+            --border-strong: #3a3a36;
+            --border-muted: #1f1f1d;
+            --text-primary: #f2f1ee;
+            --text-secondary: #b0afa8;
+            --text-muted: #8f8e87;          /* ≥5:1 on canvas */
+            --text-faint: #5f5e59;          /* decorative only (line numbers) */
             --accent-flare: #f6821f;
-            --accent-hover: #ff983f;
-            --accent-blue: #58a6ff;
-            --success-fg: #3fb950;
-            --success-bg: rgba(46, 160, 67, 0.15);
-            --success-border: rgba(63, 185, 80, 0.4);
-            --danger-fg: #f85149;
-            --danger-bg: rgba(248, 81, 73, 0.15);
-            --danger-border: rgba(248, 81, 73, 0.4);
-            --warning-fg: #d29922;
-            --diff-add-bg: rgba(46, 160, 67, 0.18);
-            --diff-add-text: #3fb950;
-            --diff-del-bg: rgba(248, 81, 73, 0.18);
-            --diff-del-text: #f85149;
-            --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-            --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
+            --accent-hover: #ff9a45;
+            --accent-soft: rgba(246, 130, 31, 0.14);
+            --accent-ring: rgba(246, 130, 31, 0.45);
+            --success-fg: #5fd38d;
+            --success-bg: rgba(95, 211, 141, 0.12);
+            --success-border: rgba(95, 211, 141, 0.32);
+            --danger-fg: #ff7a6b;
+            --danger-bg: rgba(255, 122, 107, 0.12);
+            --danger-border: rgba(255, 122, 107, 0.34);
+            --warning-fg: #f2c14e;
+            --warning-bg: rgba(242, 193, 78, 0.12);
+            --warning-border: rgba(242, 193, 78, 0.34);
+            --diff-add-bg: rgba(95, 211, 141, 0.10);
+            --diff-add-text: #8fe3b0;
+            --diff-del-bg: rgba(255, 122, 107, 0.10);
+            --diff-del-text: #ffab9f;
+
+            --font-display: "Bricolage Grotesque", "Geist", -apple-system, sans-serif;
+            --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+            --text-xs: 12px;
+            --text-sm: 13px;
+            --text-base: 14px;
+            --text-md: 16px;
+            --text-lg: 20px;
+            --text-xl: 26px;
+
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-pill: 999px;
+
+            --container: 1280px;
+            --gutter: 32px;
         }
 
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        html, body { height: 100%; }
 
         body {
             font-family: var(--font-sans);
             background-color: var(--bg-canvas);
             color: var(--text-primary);
-            height: 100vh;
             display: flex;
             flex-direction: column;
             overflow: hidden;
-            font-size: 14px;
+            font-size: var(--text-base);
             line-height: 1.5;
+            -webkit-font-smoothing: antialiased;
+            font-feature-settings: "ss01", "cv11";
         }
 
-        /* ─── Top Navbar ─────────────────────────────────────────── */
-        header {
-            background-color: var(--bg-subtle);
-            border-bottom: 1px solid var(--border-default);
+        button { font-family: inherit; }
+        code, .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+        :focus-visible {
+            outline: 2px solid var(--accent-flare);
+            outline-offset: 2px;
+            border-radius: var(--radius-sm);
+        }
+
+        .i {
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 1.75;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            flex-shrink: 0;
+            vertical-align: middle;
+        }
+        .i-spin { animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .container {
+            width: 100%;
+            max-width: var(--container);
+            margin: 0 auto;
+            padding: 0 var(--gutter);
+        }
+
+        /* ─── Top bar ────────────────────────────────────────────── */
+        .topbar {
+            border-bottom: 1px solid var(--border-muted);
+            flex-shrink: 0;
+            z-index: 100;
+            background: var(--bg-canvas);
+        }
+        .topbar-inner {
             height: 56px;
-            padding: 0 20px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            flex-shrink: 0;
-            z-index: 100;
-        }
-
-        .header-left {
-            display: flex;
-            align-items: center;
             gap: 16px;
         }
+        .topbar-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+        .topbar-right { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 
-        .brand-logo {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 17px;
-            font-weight: 600;
-            color: var(--text-primary);
-            text-decoration: none;
-            cursor: pointer;
-        }
-
-        .brand-logo span {
-            color: var(--accent-flare);
-        }
-
-        .header-repo-selector {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            background: var(--bg-muted);
-            border: 1px solid var(--border-default);
-            padding: 4px 10px;
-            border-radius: 6px;
-            font-size: 13px;
-            color: var(--text-primary);
-        }
-
-        .header-repo-selector select {
-            background: transparent;
-            border: none;
-            color: var(--text-primary);
-            font-size: 13px;
-            font-weight: 600;
-            outline: none;
-            cursor: pointer;
-        }
-
-        .header-repo-selector select option {
-            background: var(--bg-subtle);
-            color: var(--text-primary);
-        }
-
-        .header-right {
+        .brand {
             display: flex;
             align-items: center;
             gap: 10px;
+            color: var(--text-primary);
+            text-decoration: none;
+            cursor: pointer;
+            background: none;
+            border: 0;
+            padding: 0;
         }
+        .brand-mark { display: block; flex-shrink: 0; margin-top: -3px; }
+        .brand-word { font-family: var(--font-display); font-size: 21px; font-weight: 800; letter-spacing: -0.045em; line-height: 1; font-variation-settings: "opsz" 32; color: var(--text-primary); }
+
+        .topbar-sep { color: var(--border-strong); font-size: 20px; font-weight: 300; }
+
+        .repo-switch {
+            position: relative;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            height: 32px;
+            padding: 0 30px 0 10px;
+            border-radius: var(--radius-sm);
+            color: var(--text-primary);
+            min-width: 0;
+            transition: background 0.15s;
+        }
+        .repo-switch:hover { background: var(--bg-muted); }
+        .repo-switch .i { color: var(--text-muted); }
+        .repo-switch select {
+            appearance: none;
+            -webkit-appearance: none;
+            background: transparent;
+            border: none;
+            color: var(--text-primary);
+            font: 600 var(--text-sm)/1 var(--font-sans);
+            outline: none;
+            cursor: pointer;
+            min-width: 0;
+            max-width: 220px;
+            text-overflow: ellipsis;
+        }
+        .repo-switch select option { background: var(--bg-subtle); color: var(--text-primary); }
+        .repo-switch .chev { position: absolute; right: 10px; pointer-events: none; }
+        .repo-switch:focus-within { outline: 2px solid var(--accent-flare); outline-offset: 2px; }
+
+        .user-menu { position: relative; }
+        .avatar-btn {
+            width: 32px; height: 32px;
+            border-radius: 50%;
+            border: 1px solid var(--border-default);
+            background: var(--bg-muted);
+            color: var(--text-secondary);
+            font-size: 11px; font-weight: 600;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+            overflow: hidden;
+            padding: 0;
+        }
+        .avatar-btn:hover { border-color: var(--border-strong); }
+        .avatar-btn img { width: 100%; height: 100%; object-fit: cover; }
 
         /* ─── Buttons ────────────────────────────────────────────── */
         .btn {
             display: inline-flex;
             align-items: center;
+            justify-content: center;
             gap: 6px;
-            padding: 5px 12px;
-            font-size: 13px;
+            height: 32px;
+            padding: 0 14px;
+            font-size: var(--text-sm);
             font-weight: 500;
-            border-radius: 6px;
+            border-radius: var(--radius-pill);
             border: 1px solid var(--border-default);
-            background-color: var(--bg-muted);
+            background-color: transparent;
             color: var(--text-primary);
             cursor: pointer;
-            transition: all 0.15s ease;
+            transition: background-color 0.15s, border-color 0.15s, color 0.15s;
             text-decoration: none;
             user-select: none;
+            white-space: nowrap;
         }
-
-        .btn:hover {
-            background-color: var(--bg-hover);
-            border-color: #8b949e;
-        }
-
+        .btn:hover { background-color: var(--bg-muted); border-color: var(--border-strong); }
+        .btn .i { color: var(--text-secondary); }
         .btn-primary {
             background-color: var(--accent-flare);
-            border-color: rgba(240, 246, 252, 0.1);
-            color: #ffffff;
+            border-color: var(--accent-flare);
+            color: #170b02;
             font-weight: 600;
         }
+        .btn-primary .i { color: currentColor; }
+        .btn-primary:hover { background-color: var(--accent-hover); border-color: var(--accent-hover); }
+        .btn-sm { height: 28px; padding: 0 11px; font-size: var(--text-xs); }
+        .btn-icon { width: 32px; padding: 0; }
+        .btn-icon.btn-sm { width: 28px; }
+        .btn-ghost { border-color: transparent; }
+        .btn-danger:hover { color: var(--danger-fg); border-color: var(--danger-border); background: var(--danger-bg); }
 
-        .btn-primary:hover {
-            background-color: var(--accent-hover);
-            border-color: rgba(240, 246, 252, 0.2);
+        .segmented {
+            display: inline-flex;
+            padding: 2px;
+            gap: 2px;
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-pill);
         }
-
-        .btn-success {
-            background-color: #238636;
-            border-color: rgba(240, 246, 252, 0.1);
-            color: #ffffff;
+        .segmented button {
+            height: 24px;
+            padding: 0 10px;
+            border: 0;
+            border-radius: var(--radius-pill);
+            background: transparent;
+            color: var(--text-muted);
+            font-size: var(--text-xs);
+            font-weight: 500;
+            cursor: pointer;
         }
+        .segmented button:hover { color: var(--text-primary); }
+        .segmented button.is-active { background: var(--bg-hover); color: var(--text-primary); }
 
-        .btn-success:hover {
-            background-color: #2ea043;
-        }
-
-        .btn-sm {
-            padding: 3px 8px;
-            font-size: 12px;
-        }
-
+        /* ─── Badges ─────────────────────────────────────────────── */
         .badge {
             display: inline-flex;
             align-items: center;
-            padding: 2px 7px;
-            border-radius: 20px;
+            gap: 4px;
+            height: 20px;
+            padding: 0 8px;
+            border-radius: var(--radius-pill);
             font-size: 11px;
             font-weight: 500;
-            line-height: 14px;
+            line-height: 1;
+            white-space: nowrap;
+            border: 1px solid var(--border-default);
+            color: var(--text-secondary);
+            background: transparent;
         }
+        .badge .i { width: 12px; height: 12px; }
+        .badge-success { background: var(--success-bg); color: var(--success-fg); border-color: var(--success-border); }
+        .badge-danger { background: var(--danger-bg); color: var(--danger-fg); border-color: var(--danger-border); }
+        .badge-running { background: var(--warning-bg); color: var(--warning-fg); border-color: var(--warning-border); }
+        .badge-queued, .badge-public, .badge-private { color: var(--text-secondary); }
 
-        .badge-success { background: var(--success-bg); color: var(--success-fg); border: 1px solid var(--success-border); }
-        .badge-danger { background: var(--danger-bg); color: var(--danger-fg); border: 1px solid var(--danger-border); }
-        .badge-running { background: rgba(210, 153, 34, 0.15); color: var(--warning-fg); border: 1px solid rgba(210, 153, 34, 0.4); }
-        .badge-queued { background: var(--bg-muted); color: var(--text-secondary); border: 1px solid var(--border-default); }
-        .badge-public { border: 1px solid var(--border-default); color: var(--text-secondary); background: transparent; }
-        .badge-private { border: 1px solid var(--border-default); color: var(--text-primary); background: transparent; }
+        /* ─── Layout ─────────────────────────────────────────────── */
+        .app-body { display: flex; flex: 1; overflow: hidden; }
+        .main-stage { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 
-        /* ─── App Body Layout ────────────────────────────────────── */
-        .app-body {
-            display: flex;
-            flex: 1;
-            overflow: hidden;
-        }
-
-
-        /* ─── Main Content Area ──────────────────────────────────── */
-        .main-stage {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            background-color: var(--bg-canvas);
-        }
-
-        /* ─── Repo Sub-header & Navigation Tabs ──────────────────── */
+        /* ─── The flare ─────────────────────────────────────────────
+           The repo header carries the one bit of drama in the UI: an
+           ambient glow + fading pixel grid whose colour tracks build
+           health, and a pixel skyline drawn from real CI history. */
         .repo-sub-header {
-            background-color: var(--bg-subtle);
-            border-bottom: 1px solid var(--border-default);
-            padding: 16px 24px 0 24px;
+            --flare: 246, 130, 31;
             flex-shrink: 0;
+            border-bottom: 1px solid var(--border-muted);
+            position: relative;
+            overflow: hidden;
+            isolation: isolate;
         }
+        .repo-sub-header[data-health="failed"] { --flare: 255, 106, 90; }
+        .repo-sub-header[data-health="running"] { --flare: 242, 193, 78; }
+        .repo-sub-header[data-health="none"] { --flare: 143, 142, 135; }
+        .repo-sub-header::before {
+            content: '';
+            position: absolute;
+            right: max(-120px, calc((100% - var(--container)) / 2 - 160px));
+            bottom: -260px;
+            width: 820px;
+            height: 520px;
+            background: radial-gradient(closest-side, rgba(var(--flare), 0.20), rgba(var(--flare), 0.07) 50%, transparent 78%);
+            z-index: -1;
+            pointer-events: none;
+            transition: background 0.8s ease;
+        }
+        .repo-sub-header[data-health="running"]::before { animation: flare-breathe 2.4s ease-in-out infinite; }
+        .repo-sub-header::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background-image: radial-gradient(rgba(var(--flare), 0.30) 1px, transparent 1.3px);
+            background-size: 10px 10px;
+            -webkit-mask-image: radial-gradient(ellipse 34% 115% at 82% 100%, #000 0%, transparent 72%);
+            mask-image: radial-gradient(ellipse 34% 115% at 82% 100%, #000 0%, transparent 72%);
+            z-index: -1;
+            pointer-events: none;
+            transition: background-image 0.8s ease;
+        }
+        @keyframes flare-breathe { 50% { opacity: 0.45; } }
 
+        .health-chip {
+            display: inline-flex; align-items: center; gap: 7px;
+            height: 22px; padding: 0 9px 0 8px;
+            border-radius: var(--radius-pill);
+            border: 1px solid rgba(var(--flare), 0.35);
+            background: rgba(var(--flare), 0.10);
+            color: rgb(var(--flare));
+            font: 500 11px/1 var(--font-mono);
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .health-chip:hover { background: rgba(var(--flare), 0.18); }
+        .health-chip .dot { width: 6px; height: 6px; border-radius: 1.5px; background: currentColor; box-shadow: 0 0 8px rgba(var(--flare), 0.9); }
+        .repo-sub-header[data-health="running"] .health-chip .dot { animation: blink 1s steps(2) infinite; }
+        .repo-sub-header[data-health="none"] .health-chip { color: var(--text-muted); }
+
+        .tabs-row { position: relative; }
+        .pulse { position: absolute; right: 0; bottom: 0; display: flex; align-items: flex-end; gap: 14px; }
+        .pulse-legend { font: 400 11px/1 var(--font-mono); color: var(--text-muted); white-space: nowrap; padding-bottom: 8px; }
+        .pulse-legend b { color: var(--text-primary); font-weight: 500; }
+        .pulse-bars { display: flex; align-items: flex-end; gap: 3px; }
+        .pulse-col {
+            display: flex; flex-direction: column-reverse; gap: 2px;
+            padding: 0 0 7px;
+            cursor: pointer;
+            border: 0; background: none;
+            transition: transform 0.15s ease;
+        }
+        .pulse-col:hover { transform: translateY(-3px); }
+        .pulse-col i { display: block; width: 8px; height: 5px; border-radius: 1.5px; }
+        .pulse-col.running i { animation: blink 1s steps(2) infinite; }
+        .pulse-col.is-new { animation: rise 0.5s cubic-bezier(.2,.8,.2,1.2) both; }
+        @keyframes blink { 50% { opacity: 0.3; } }
+        @keyframes rise { from { transform: translateY(14px); opacity: 0; } }
         .repo-title-row {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 16px;
+            gap: 16px;
+            padding: 26px 0 26px;
+            flex-wrap: wrap;
         }
-
-        .repo-breadcrumbs {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 18px;
-            font-weight: 600;
+        .repo-breadcrumbs { display: flex; align-items: center; gap: 12px; min-width: 0; }
+        .repo-breadcrumbs h1 {
+            font-family: var(--font-display);
+            font-size: 32px;
+            font-weight: 800;
+            letter-spacing: -0.045em;
+            font-variation-settings: "opsz" 32;
+            line-height: 1.15;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
-
-        .repo-breadcrumbs a {
-            color: var(--accent-blue);
-            text-decoration: none;
-        }
-
-        .repo-breadcrumbs a:hover {
-            text-decoration: underline;
-        }
-
-        .repo-actions-top {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
+        .repo-breadcrumbs h1 a { color: inherit; text-decoration: none; }
+        .repo-actions-top { display: flex; align-items: center; gap: 8px; position: relative; }
 
         .nav-tabs {
             display: flex;
-            gap: 4px;
+            gap: 2px;
             margin-bottom: -1px;
             overflow-x: auto;
+            scrollbar-width: none;
+            position: relative;
         }
-
+        .tab-ink {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            height: 2px;
+            width: 0;
+            border-radius: 2px 2px 0 0;
+            background: var(--accent-flare);
+            box-shadow: 0 -2px 10px rgba(246, 130, 31, 0.55);
+            transition: transform 0.28s cubic-bezier(.3,.7,.2,1), width 0.28s cubic-bezier(.3,.7,.2,1);
+            pointer-events: none;
+        }
+        .nav-tabs::-webkit-scrollbar { display: none; }
         .nav-tab {
             display: flex;
             align-items: center;
             gap: 8px;
-            padding: 8px 14px;
+            padding: 10px 12px 12px;
+            border: 0;
             border-bottom: 2px solid transparent;
-            color: var(--text-secondary);
-            font-size: 13px;
+            background: none;
+            color: var(--text-muted);
+            font-size: var(--text-sm);
             font-weight: 500;
             cursor: pointer;
-            transition: all 0.15s;
-            user-select: none;
+            transition: color 0.15s, border-color 0.15s;
             white-space: nowrap;
+            border-radius: 0;
         }
-
-        .nav-tab:hover {
-            color: var(--text-primary);
-            border-bottom-color: var(--border-default);
-        }
-
-        .nav-tab.active {
-            color: var(--text-primary);
-            border-bottom-color: var(--accent-flare);
-            font-weight: 600;
-        }
-
+        .nav-tab:hover { color: var(--text-primary); }
+        .nav-tab.active { color: var(--text-primary); }
+        .nav-tabs:not(.has-ink) .nav-tab.active { border-bottom-color: var(--accent-flare); }
+        .nav-tab .i { width: 16px; height: 16px; }
         .nav-tab .tab-badge {
-            background-color: var(--bg-muted);
-            color: var(--text-secondary);
-            padding: 1px 6px;
-            border-radius: 10px;
-            font-size: 11px;
+            font: 500 11px/1 var(--font-mono);
+            color: var(--text-muted);
+            background: var(--bg-muted);
+            padding: 3px 6px;
+            border-radius: var(--radius-pill);
         }
 
-        /* ─── Tab View Stage Container ───────────────────────────── */
-        .view-container {
-            flex: 1;
-            overflow-y: auto;
-            padding: 24px;
+        .view-container { flex: 1; overflow-y: auto; padding: 28px 0 64px; }
+
+        .page-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 18px;
+            flex-wrap: wrap;
+        }
+        .page-head-left { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+        .page-title { font-family: var(--font-display); font-size: 22px; font-weight: 700; letter-spacing: -0.03em; }
+        .page-actions { display: flex; gap: 8px; align-items: center; }
+
+        .card {
+            background: var(--bg-subtle);
+            border: 1px solid var(--border-default);
+            border-radius: var(--radius-md);
+            overflow: hidden;
         }
 
-        /* ─── Feature 1: Codebase View (GitHub Style) ─────────────── */
+        /* ─── Code view ──────────────────────────────────────────── */
         .codebase-toolbar {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 16px;
+            margin-bottom: 14px;
             gap: 12px;
             flex-wrap: wrap;
         }
-
-        .toolbar-left {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
+        .toolbar-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+        .tree-stats { font-size: var(--text-xs); color: var(--text-muted); }
 
         .branch-btn {
-            background: var(--bg-muted);
+            height: 32px;
+            background: transparent;
             border: 1px solid var(--border-default);
             color: var(--text-primary);
-            padding: 5px 12px;
-            border-radius: 6px;
+            padding: 0 12px;
+            border-radius: var(--radius-pill);
             display: flex;
             align-items: center;
             gap: 6px;
-            font-size: 13px;
-            font-weight: 600;
+            font: 500 var(--text-sm)/1 var(--font-mono);
             cursor: pointer;
         }
+        .branch-btn:hover { background: var(--bg-muted); border-color: var(--border-strong); }
+        .branch-btn .i { color: var(--text-muted); }
 
-        .path-crumbs {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            font-size: 14px;
-            color: var(--text-secondary);
-        }
+        .path-crumbs { display: flex; align-items: center; gap: 6px; font-size: var(--text-sm); color: var(--text-muted); min-width: 0; flex-wrap: wrap; }
+        .path-crumb-item { color: var(--text-secondary); cursor: pointer; text-decoration: none; }
+        .path-crumb-item:hover { color: var(--text-primary); text-decoration: underline; text-underline-offset: 3px; }
+        .path-crumb-current { color: var(--text-primary); font-weight: 600; }
 
-        .path-crumb-item {
-            color: var(--accent-blue);
-            cursor: pointer;
-            text-decoration: none;
-        }
-
-        .path-crumb-item:hover {
-            text-decoration: underline;
-        }
-
-        .path-crumb-current {
-            color: var(--text-primary);
-            font-weight: 600;
-        }
-
-        .file-box {
-            background-color: var(--bg-canvas);
-            border: 1px solid var(--border-default);
-            border-radius: 6px;
-            overflow: hidden;
-            margin-bottom: 24px;
-        }
+        .file-box { margin-bottom: 24px; }
 
         .latest-commit-strip {
-            background-color: var(--bg-subtle);
             border-bottom: 1px solid var(--border-default);
-            padding: 10px 16px;
+            padding: 12px 16px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 13px;
+            gap: 12px;
+            font-size: var(--text-sm);
         }
-
-        .commit-strip-left {
-            display: flex;
-            align-items: center;
-            gap: 10px;
+        .commit-strip-left { display: flex; align-items: center; gap: 10px; overflow: hidden; min-width: 0; }
+        .commit-strip-author { font-weight: 600; white-space: nowrap; }
+        .commit-strip-message {
+            color: var(--text-secondary);
             overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
+        .commit-strip-right { display: flex; align-items: center; gap: 12px; color: var(--text-muted); font-size: var(--text-xs); flex-shrink: 0; }
 
         .avatar-circle {
             width: 24px;
             height: 24px;
             border-radius: 50%;
-            background: linear-gradient(135deg, #f6821f, #eb5424);
-            color: #fff;
+            background: var(--bg-hover);
+            border: 1px solid var(--border-strong);
+            color: var(--text-secondary);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 11px;
-            font-weight: 700;
-            flex-shrink: 0;
-        }
-
-        .commit-strip-message {
+            font-size: 10px;
             font-weight: 600;
-            color: var(--text-primary);
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .commit-strip-right {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            color: var(--text-secondary);
-            font-size: 12px;
             flex-shrink: 0;
+            letter-spacing: 0.02em;
         }
 
         .sha-pill {
-            font-family: var(--font-mono);
-            background: var(--bg-muted);
-            border: 1px solid var(--border-default);
-            padding: 2px 7px;
-            border-radius: 4px;
-            color: var(--text-primary);
+            font: 400 var(--text-xs)/1 var(--font-mono);
+            padding: 4px 7px;
+            border-radius: var(--radius-sm);
+            color: var(--text-secondary);
             cursor: pointer;
             display: inline-flex;
             align-items: center;
-            gap: 4px;
+            gap: 5px;
+            border: 1px solid transparent;
+            background: transparent;
         }
+        .sha-pill:hover { border-color: var(--border-default); color: var(--text-primary); background: var(--bg-muted); }
 
-        .sha-pill:hover {
-            border-color: var(--accent-blue);
-            color: var(--accent-blue);
-        }
+        .file-table { width: 100%; border-collapse: collapse; }
+        .file-table tr { border-bottom: 1px solid var(--border-muted); transition: background 0.1s; }
+        .file-table tr:last-child { border-bottom: none; }
+        .file-table tbody tr:hover { background-color: var(--bg-muted); }
+        .file-table td { padding: 9px 16px; vertical-align: middle; font-size: var(--text-sm); }
+        .col-icon { width: 36px; padding-right: 0 !important; color: var(--text-muted); }
+        .col-icon .is-dir { color: var(--accent-flare); }
+        .col-name { font-weight: 500; width: 32%; }
+        .file-link { color: var(--text-primary); text-decoration: none; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
+        .file-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+        .col-commit { color: var(--text-muted); max-width: 0; width: 48%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); }
+        .col-time { color: var(--text-muted); text-align: right; width: 20%; white-space: nowrap; font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
 
-        /* File Explorer Table */
-        .file-table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-
-        .file-table tr {
-            border-bottom: 1px solid var(--border-default);
-            transition: background 0.1s;
-        }
-
-        .file-table tr:last-child {
-            border-bottom: none;
-        }
-
-        .file-table tr:hover {
-            background-color: var(--bg-subtle);
-        }
-
-        .file-table td {
-            padding: 8px 16px;
-            vertical-align: middle;
-            font-size: 13px;
-        }
-
-        .col-icon {
-            width: 24px;
-            padding-right: 0 !important;
-            color: var(--text-secondary);
-        }
-
-        .col-name {
-            font-weight: 500;
-            width: 35%;
-        }
-
-        .file-link {
-            color: var(--text-primary);
-            text-decoration: none;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .file-link:hover {
-            color: var(--accent-blue);
-            text-decoration: underline;
-        }
-
-        .col-commit {
-            color: var(--text-secondary);
-            width: 45%;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            font-size: 12px;
-        }
-
-        .col-time {
-            color: var(--text-muted);
-            text-align: right;
-            width: 20%;
-            white-space: nowrap;
-            font-size: 12px;
-        }
-
-        /* File Viewer Mode */
-        .file-viewer-box {
-            background: var(--bg-canvas);
-            border: 1px solid var(--border-default);
-            border-radius: 6px;
-            overflow: hidden;
-            margin-bottom: 24px;
-        }
-
+        /* File viewer */
+        .file-viewer-box { margin-bottom: 24px; }
         .file-viewer-header {
-            background: var(--bg-subtle);
             border-bottom: 1px solid var(--border-default);
-            padding: 10px 16px;
+            padding: 10px 12px 10px 16px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-        }
-
-        .file-viewer-meta {
-            display: flex;
-            align-items: center;
             gap: 12px;
-            font-size: 13px;
-            color: var(--text-secondary);
+            flex-wrap: wrap;
         }
-
-        .file-viewer-actions {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
+        .file-viewer-meta { display: flex; align-items: center; gap: 12px; font-size: var(--text-xs); color: var(--text-muted); }
+        .file-viewer-meta strong { color: var(--text-primary); font: 500 var(--text-sm)/1 var(--font-mono); }
+        .file-viewer-actions { display: flex; align-items: center; gap: 6px; }
 
         .code-display {
             display: flex;
-            background: #090d13;
+            background: var(--bg-code);
             font-family: var(--font-mono);
             font-size: 12.5px;
             line-height: 20px;
             overflow-x: auto;
-            max-height: 700px;
+            max-height: 70vh;
         }
+        .line-numbers { padding: 14px 12px 14px 16px; text-align: right; color: var(--text-faint); user-select: none; border-right: 1px solid var(--border-muted); font-variant-numeric: tabular-nums; }
+        .code-lines { padding: 14px 16px; flex: 1; white-space: pre; color: #dcdad3; }
 
-        .line-numbers {
-            padding: 12px 10px 12px 16px;
-            text-align: right;
-            color: #484f58;
-            user-select: none;
-            border-right: 1px solid var(--border-muted);
-            background: rgba(0, 0, 0, 0.15);
-        }
-
-        .code-lines {
-            padding: 12px 16px;
-            flex: 1;
-            white-space: pre;
-            color: #c9d1d9;
-        }
-
-        /* Rendered Markdown Preview */
-        .markdown-body {
-            padding: 24px 32px;
-            color: var(--text-primary);
-            line-height: 1.6;
-        }
-
-        .markdown-body h1 { font-size: 24px; border-bottom: 1px solid var(--border-default); padding-bottom: 8px; margin-bottom: 16px; }
-        .markdown-body h2 { font-size: 19px; border-bottom: 1px solid var(--border-default); padding-bottom: 6px; margin: 20px 0 12px 0; }
-        .markdown-body h3 { font-size: 16px; margin: 16px 0 8px 0; }
-        .markdown-body p { margin-bottom: 14px; }
-        .markdown-body ul, .markdown-body ol { margin-bottom: 14px; padding-left: 24px; }
-        .markdown-body li { margin-bottom: 4px; }
-        .markdown-body pre { background: var(--bg-subtle); border: 1px solid var(--border-default); padding: 12px 16px; border-radius: 6px; overflow-x: auto; margin-bottom: 14px; font-family: var(--font-mono); font-size: 12px; }
-        .markdown-body code { background: rgba(110, 118, 129, 0.2); padding: 2px 5px; border-radius: 4px; font-family: var(--font-mono); font-size: 12px; }
-        .markdown-body pre code { background: transparent; padding: 0; }
-        .markdown-body hr { border: none; border-top: 1px solid var(--border-default); margin: 20px 0; }
-        .markdown-body blockquote { border-left: 3px solid var(--border-default); padding-left: 12px; color: var(--text-secondary); margin-bottom: 14px; }
-
-        /* ─── Feature 2: Commit View (GitHub Style) ───────────────── */
-        .commit-group-header {
-            font-size: 13px;
-            font-weight: 600;
-            color: var(--text-secondary);
-            margin: 16px 0 8px 0;
+        /* README */
+        .readme-head {
             display: flex;
             align-items: center;
             gap: 8px;
-        }
-
-        .commit-timeline-list {
-            background: var(--bg-canvas);
-            border: 1px solid var(--border-default);
-            border-radius: 6px;
-            overflow: hidden;
-            margin-bottom: 24px;
-        }
-
-        .commit-row {
             padding: 12px 16px;
             border-bottom: 1px solid var(--border-default);
+            font: 500 var(--text-sm)/1 var(--font-mono);
+            color: var(--text-secondary);
+        }
+        .markdown-body { padding: 32px 40px; color: var(--text-primary); line-height: 1.7; max-width: 84ch; }
+        .markdown-body h1 { font-size: 28px; letter-spacing: -0.03em; line-height: 1.2; margin-bottom: 16px; }
+        .markdown-body h2 { font-size: 19px; letter-spacing: -0.02em; padding-bottom: 8px; border-bottom: 1px dashed var(--border-default); margin: 28px 0 12px; }
+        .markdown-body h3 { font-size: 16px; margin: 20px 0 8px; }
+        .markdown-body p { margin-bottom: 14px; color: var(--text-secondary); }
+        .markdown-body ul, .markdown-body ol { margin-bottom: 14px; padding-left: 22px; color: var(--text-secondary); }
+        .markdown-body li { margin-bottom: 4px; }
+        .markdown-body li::marker { color: var(--accent-flare); }
+        .markdown-body pre { background: var(--bg-code); border: 1px solid var(--border-default); padding: 14px 16px; border-radius: var(--radius-sm); overflow-x: auto; margin-bottom: 16px; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6; }
+        .markdown-body code { background: var(--bg-muted); padding: 2px 6px; border-radius: 4px; font-family: var(--font-mono); font-size: 12.5px; }
+        .markdown-body pre code { background: transparent; padding: 0; }
+        .markdown-body a { color: var(--text-primary); text-decoration: underline; text-decoration-color: var(--accent-flare); text-underline-offset: 3px; }
+        .markdown-body hr { border: none; border-top: 1px dashed var(--border-default); margin: 24px 0; }
+        .markdown-body blockquote { border-left: 2px solid var(--accent-flare); padding-left: 14px; color: var(--text-secondary); margin-bottom: 14px; }
+
+        /* ─── Commits ────────────────────────────────────────────── */
+        .commit-timeline-list { margin-bottom: 24px; }
+        .commit-row {
+            padding: 14px 16px;
+            border-bottom: 1px solid var(--border-muted);
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 16px;
             transition: background 0.15s;
             cursor: pointer;
         }
+        .commit-row:last-child { border-bottom: none; }
+        .commit-row:hover { background: var(--bg-muted); }
+        .commit-row-left { display: flex; gap: 12px; align-items: flex-start; flex: 1; min-width: 0; }
+        .commit-row-content { min-width: 0; }
+        .commit-title { font-size: var(--text-base); font-weight: 500; color: var(--text-primary); margin-bottom: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .commit-desc { font-size: var(--text-xs); color: var(--text-secondary); margin-bottom: 4px; white-space: pre-wrap; }
+        .commit-meta { font-size: var(--text-xs); color: var(--text-muted); display: flex; align-items: center; gap: 6px; }
+        .commit-meta strong { color: var(--text-secondary); font-weight: 500; }
+        .commit-row-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
-        .commit-row:last-child {
-            border-bottom: none;
-        }
-
-        .commit-row:hover {
-            background: var(--bg-subtle);
-        }
-
-        .commit-row-left {
-            display: flex;
-            gap: 12px;
-            align-items: flex-start;
-            flex: 1;
-            overflow: hidden;
-        }
-
-        .commit-row-content {
-            overflow: hidden;
-        }
-
-        .commit-title {
-            font-size: 14px;
-            font-weight: 600;
-            color: var(--text-primary);
-            margin-bottom: 3px;
-            text-decoration: none;
-        }
-
-        .commit-row:hover .commit-title {
-            color: var(--accent-blue);
-        }
-
-        .commit-desc {
-            font-size: 12px;
-            color: var(--text-secondary);
-            margin-bottom: 4px;
-            white-space: pre-wrap;
-        }
-
-        .commit-meta {
-            font-size: 12px;
-            color: var(--text-muted);
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .commit-row-right {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            flex-shrink: 0;
-        }
-
-        /* Commit Diff View */
-        .diff-header-card {
-            background: var(--bg-subtle);
-            border: 1px solid var(--border-default);
-            border-radius: 6px;
-            padding: 16px 20px;
-            margin-bottom: 20px;
-        }
-
-        .diff-file-card {
-            background: var(--bg-canvas);
-            border: 1px solid var(--border-default);
-            border-radius: 6px;
-            overflow: hidden;
-            margin-bottom: 18px;
-        }
-
+        .diff-header-card { padding: 20px 24px; margin-bottom: 20px; }
+        .diff-file-card { margin-bottom: 16px; }
         .diff-file-header {
-            background: var(--bg-subtle);
             border-bottom: 1px solid var(--border-default);
             padding: 10px 16px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 13px;
+            gap: 12px;
+            font-size: var(--text-sm);
         }
+        .diff-content { font-family: var(--font-mono); font-size: 12px; line-height: 20px; overflow-x: auto; background: var(--bg-code); }
+        .diff-line { display: flex; white-space: pre; }
+        .diff-line.chunk-header { background: var(--bg-muted); color: var(--text-muted); padding: 4px 12px; }
+        .diff-line.added { background: var(--diff-add-bg); color: var(--diff-add-text); }
+        .diff-line.deleted { background: var(--diff-del-bg); color: var(--diff-del-text); }
+        .diff-line-num { width: 48px; flex-shrink: 0; padding: 0 8px; text-align: right; color: var(--text-faint); user-select: none; border-right: 1px solid var(--border-muted); }
+        .diff-line-code { padding: 0 12px; flex: 1; }
 
-        .diff-content {
-            font-family: var(--font-mono);
-            font-size: 12px;
-            line-height: 19px;
-            overflow-x: auto;
-            background: #090d13;
-        }
-
-        .diff-line {
-            display: flex;
-            white-space: pre;
-        }
-
-        .diff-line.chunk-header {
-            background: rgba(56, 139, 253, 0.15);
-            color: #79c0ff;
-            padding: 4px 12px;
-        }
-
-        .diff-line.added {
-            background: var(--diff-add-bg);
-            color: var(--diff-add-text);
-        }
-
-        .diff-line.deleted {
-            background: var(--diff-del-bg);
-            color: var(--diff-del-text);
-        }
-
-        .diff-line-num {
-            width: 44px;
-            padding: 0 8px;
-            text-align: right;
-            color: #484f58;
-            user-select: none;
-            border-right: 1px solid var(--border-muted);
-        }
-
-        .diff-line-code {
-            padding: 0 12px;
-            flex: 1;
-        }
-
-        /* ─── Feature 3: Detailed CI/CD View (GitHub Actions Style) ─ */
-        .ci-runs-list {
-            background: var(--bg-canvas);
-            border: 1px solid var(--border-default);
-            border-radius: 6px;
-            overflow: hidden;
-        }
+        /* ─── CI / Actions ───────────────────────────────────────── */
 
         .ci-run-row {
             padding: 14px 18px;
-            border-bottom: 1px solid var(--border-default);
+            border-bottom: 1px solid var(--border-muted);
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 16px;
             cursor: pointer;
             transition: background 0.15s;
         }
-
-        .ci-run-row:last-child {
-            border-bottom: none;
-        }
-
-        .ci-run-row:hover {
-            background: var(--bg-subtle);
-        }
-
-        .ci-run-left {
-            display: flex;
-            align-items: center;
-            gap: 14px;
-            flex: 1;
-        }
+        .ci-run-row:last-child { border-bottom: none; }
+        .ci-run-row:hover { background: var(--bg-muted); }
+        .ci-run-left { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
 
         .ci-status-icon {
-            width: 22px;
-            height: 22px;
+            width: 24px;
+            height: 24px;
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 12px;
             flex-shrink: 0;
-        }
-
-        .ci-status-icon.passed { background: var(--success-fg); color: #fff; }
-        .ci-status-icon.failed { background: var(--danger-fg); color: #fff; }
-        .ci-status-icon.running { background: var(--warning-fg); color: #fff; animation: spin 1.5s linear infinite; }
-        .ci-status-icon.queued { background: #6e7681; color: #fff; }
-
-        @keyframes spin { 100% { transform: rotate(360deg); } }
-
-        .ci-run-info {
-            overflow: hidden;
-        }
-
-        .ci-run-title {
-            font-size: 14px;
-            font-weight: 600;
-            color: var(--text-primary);
-            margin-bottom: 3px;
-        }
-
-        .ci-run-row:hover .ci-run-title {
-            color: var(--accent-blue);
-        }
-
-        .ci-run-subtext {
-            font-size: 12px;
-            color: var(--text-secondary);
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-
-        .ci-run-right {
-            display: flex;
-            flex-direction: column;
-            align-items: flex-end;
-            gap: 4px;
-            font-size: 12px;
-            color: var(--text-muted);
-            flex-shrink: 0;
-        }
-
-        /* Detailed Run Page */
-        .ci-detail-banner {
-            background: var(--bg-subtle);
             border: 1px solid var(--border-default);
-            border-radius: 6px;
-            padding: 18px 24px;
+            color: var(--text-muted);
+        }
+        .ci-status-icon .i { width: 14px; height: 14px; stroke-width: 2.25; }
+        .ci-status-icon.passed { color: var(--success-fg); background: var(--success-bg); border-color: var(--success-border); }
+        .ci-status-icon.failed { color: var(--danger-fg); background: var(--danger-bg); border-color: var(--danger-border); }
+        .ci-status-icon.running { color: var(--warning-fg); background: var(--warning-bg); border-color: var(--warning-border); }
+        .ci-status-icon.lg { width: 36px; height: 36px; }
+        .ci-status-icon.lg .i { width: 18px; height: 18px; }
+
+        .ci-run-info { min-width: 0; }
+        .ci-run-title { font-size: var(--text-base); font-weight: 500; color: var(--text-primary); margin-bottom: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .ci-run-subtext { font-size: var(--text-xs); color: var(--text-muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .ci-run-subtext .dot { color: var(--border-strong); }
+        .ci-run-right { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: var(--text-xs); color: var(--text-muted); flex-shrink: 0; }
+        .ci-duration { font: 500 var(--text-sm)/1.3 var(--font-mono); color: var(--text-secondary); }
+        .ci-duration.slow { color: var(--warning-fg); }
+
+        .back-link {
+            display: inline-flex; align-items: center; gap: 6px;
+            color: var(--text-muted); font-size: var(--text-sm);
+            background: none; border: 0; cursor: pointer; margin-bottom: 16px; padding: 0;
+        }
+        .back-link:hover { color: var(--text-primary); }
+
+        .ci-detail-banner {
+            padding: 20px 24px;
             margin-bottom: 20px;
             display: flex;
             justify-content: space-between;
@@ -810,439 +687,523 @@
             flex-wrap: wrap;
             gap: 16px;
         }
+        .ci-detail-title-group { display: flex; align-items: center; gap: 14px; min-width: 0; }
+        .ci-detail-title { font-size: var(--text-lg); font-weight: 600; letter-spacing: -0.02em; }
+        .ci-detail-meta { font-size: var(--text-sm); color: var(--text-muted); margin-top: 4px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+        .ci-detail-meta strong { color: var(--text-secondary); font-weight: 500; }
 
-        .ci-detail-title-group {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-        }
-
-        .ci-layout-split {
-            display: flex;
-            gap: 20px;
-            height: 640px;
-        }
-
-        .ci-jobs-tree {
-            width: 340px;
-            background: var(--bg-subtle);
-            border: 1px solid var(--border-default);
-            border-radius: 6px;
-            overflow-y: auto;
-            flex-shrink: 0;
-        }
-
+        .ci-layout-split { display: flex; gap: 16px; height: 640px; }
+        .ci-jobs-tree { width: 300px; overflow-y: auto; flex-shrink: 0; }
         .ci-job-header {
-            padding: 10px 14px;
+            padding: 12px 14px;
             border-bottom: 1px solid var(--border-default);
-            background: var(--bg-muted);
             font-weight: 600;
-            font-size: 13px;
+            font-size: var(--text-sm);
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
-
         .ci-step-item {
-            padding: 9px 16px;
+            padding: 9px 14px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            border-bottom: 1px solid var(--border-muted);
-            font-size: 12.5px;
-            cursor: pointer;
-            transition: background 0.15s;
-        }
-
-        .ci-step-item:hover {
-            background: var(--bg-muted);
-        }
-
-        .ci-step-item.active {
-            background: rgba(88, 166, 255, 0.15);
-            color: var(--accent-blue);
-            font-weight: 600;
-        }
-
-        .ci-step-left {
-            display: flex;
-            align-items: center;
             gap: 8px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+            font-size: var(--text-sm);
+            cursor: pointer;
+            border-left: 2px solid transparent;
+            transition: background 0.15s;
+            color: var(--text-secondary);
         }
+        .ci-step-item:hover { background: var(--bg-muted); color: var(--text-primary); }
+        .ci-step-item.active { background: var(--accent-soft); border-left-color: var(--accent-flare); color: var(--text-primary); }
+        .ci-step-left { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+        .ci-step-left .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .step-dur { font: 400 11px/1 var(--font-mono); color: var(--text-muted); white-space: nowrap; }
+        .st-passed { color: var(--success-fg); }
+        .st-failed { color: var(--danger-fg); }
+        .st-running { color: var(--warning-fg); }
+        .st-other { color: var(--text-muted); }
 
-        /* Interactive Terminal Console */
         .ci-terminal-pane {
             flex: 1;
-            background: #05080c;
+            min-width: 0;
+            background: var(--bg-code);
             border: 1px solid var(--border-default);
-            border-radius: 6px;
+            border-radius: var(--radius-md);
             display: flex;
             flex-direction: column;
             overflow: hidden;
         }
-
         .terminal-header {
-            background: #0d1117;
             border-bottom: 1px solid var(--border-default);
-            padding: 8px 16px;
+            padding: 8px 10px 8px 16px;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 12px;
-            color: var(--text-secondary);
-        }
-
-        .terminal-body {
-            flex: 1;
-            padding: 16px;
-            overflow-y: auto;
-            font-family: var(--font-mono);
-            font-size: 12px;
-            line-height: 20px;
-            color: #d1d7e0;
-        }
-
-        .term-line {
-            display: flex;
-            align-items: flex-start;
             gap: 12px;
-            font-family: var(--font-mono);
-            font-size: 12px;
-            line-height: 20px;
-        }
-
-        .term-time {
-            color: #6e7681;
-            user-select: none;
-            white-space: nowrap;
-            flex-shrink: 0;
-            font-variant-numeric: tabular-nums;
-            font-size: 11.5px;
-            min-width: 82px;
-            line-height: 20px;
-        }
-
-        .term-text {
-            flex: 1;
-            min-width: 0;
-            white-space: pre-wrap;
-            word-break: break-word;
-            overflow-wrap: anywhere;
-            line-height: 20px;
-        }
-
-        .term-text.stdout { color: #e6edf3; }
-        .term-text.stderr { color: var(--danger-fg); }
-        .term-text.highlight { color: var(--accent-flare); font-weight: bold; }
-
-        /* Deploy Target Card */
-        .deploy-card {
+            font-size: var(--text-xs);
+            color: var(--text-secondary);
             background: var(--bg-subtle);
-            border: 1px solid var(--border-default);
-            border-radius: 6px;
-            padding: 16px 20px;
-            margin-bottom: 16px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
         }
+        .terminal-header strong { color: var(--text-primary); font: 500 var(--text-sm)/1.3 var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .terminal-body { flex: 1; padding: 14px 16px; overflow-y: auto; font-family: var(--font-mono); font-size: 12px; line-height: 20px; color: #d1cfc8; }
+        .term-line { display: flex; align-items: flex-start; gap: 14px; font-family: var(--font-mono); font-size: 12px; line-height: 20px; }
+        .term-time { color: var(--text-faint); user-select: none; white-space: nowrap; flex-shrink: 0; font-variant-numeric: tabular-nums; font-size: 11.5px; min-width: 82px; }
+        .term-text { flex: 1; min-width: 0; white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere; }
+        .term-text.stdout { color: #e6e4dd; }
+        .term-text.stderr { color: var(--danger-fg); }
+        .term-text.highlight { color: var(--accent-flare); font-weight: 600; }
 
-        /* Modal Dialog */
+        /* ─── Deploys ────────────────────────────────────────────── */
+        .deploy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 16px; }
+        .deploy-card { padding: 0; display: flex; flex-direction: column; }
+        .deploy-card-top { padding: 18px 20px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+        .deploy-card-title { display: flex; align-items: center; gap: 12px; min-width: 0; }
+        .deploy-type-icon {
+            width: 36px; height: 36px; border-radius: var(--radius-sm);
+            display: flex; align-items: center; justify-content: center;
+            background: var(--bg-muted); border: 1px solid var(--border-default); color: var(--text-secondary); flex-shrink: 0;
+        }
+        .deploy-type-icon.cloudflare { color: var(--accent-flare); background: var(--accent-soft); border-color: var(--accent-ring); }
+        .deploy-name { font-weight: 600; font-size: var(--text-md); letter-spacing: -0.01em; }
+        .deploy-sub { font-size: var(--text-xs); color: var(--text-muted); margin-top: 2px; }
+        .deploy-meta {
+            border-top: 1px dashed var(--border-default);
+            padding: 14px 20px;
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 8px 16px;
+            font-size: var(--text-xs);
+        }
+        .deploy-meta dt { color: var(--text-muted); }
+        .deploy-meta dd { color: var(--text-secondary); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .deploy-meta code { font-size: var(--text-xs); color: var(--text-primary); }
+        .deploy-card-foot {
+            margin-top: auto;
+            border-top: 1px solid var(--border-muted);
+            padding: 12px 20px;
+            display: flex; justify-content: space-between; align-items: center; gap: 12px;
+        }
+        .deploy-last { display: flex; align-items: center; gap: 8px; font-size: var(--text-xs); color: var(--text-muted); min-width: 0; }
+
+        /* ─── Dialogs & menus ────────────────────────────────────── */
         dialog {
             margin: auto;
             background: var(--bg-subtle);
             border: 1px solid var(--border-default);
-            border-radius: 8px;
+            border-radius: 14px;
             color: var(--text-primary);
-            padding: 24px;
-            width: 100%;
-            max-width: 480px;
-            box-shadow: 0 16px 32px rgba(0, 0, 0, 0.6);
+            padding: 28px;
+            width: calc(100% - 32px);
+            max-width: 460px;
+            box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
         }
+        dialog::backdrop { background: rgba(5, 5, 4, 0.72); backdrop-filter: blur(3px); }
+        dialog h3 { font-family: var(--font-display); font-size: 22px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 6px; }
+        .dialog-lead { color: var(--text-muted); font-size: var(--text-sm); margin-bottom: 20px; }
+        .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 
-        dialog::backdrop {
-            background: rgba(0, 0, 0, 0.75);
-            backdrop-filter: blur(2px);
-        }
-
-        .form-group {
-            margin-bottom: 16px;
-        }
-
-        .form-group label {
-            display: block;
-            font-size: 12.5px;
-            font-weight: 600;
-            color: var(--text-secondary);
-            margin-bottom: 6px;
-        }
-
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; font-size: var(--text-xs); font-weight: 500; color: var(--text-secondary); margin-bottom: 6px; }
         .form-control {
             width: 100%;
+            height: 38px;
             background: var(--bg-canvas);
             border: 1px solid var(--border-default);
-            border-radius: 6px;
-            padding: 8px 12px;
+            border-radius: var(--radius-sm);
+            padding: 0 12px;
             color: var(--text-primary);
-            font-size: 13px;
+            font-size: var(--text-sm);
             font-family: inherit;
         }
-
-        .form-control:focus {
-            outline: none;
-            border-color: var(--accent-blue);
-            box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.2);
+        select.form-control {
+            font-family: var(--font-mono);
+            appearance: none;
+            -webkit-appearance: none;
+            padding-right: 36px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238f8e87' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 12px center;
         }
+        .form-control:focus { outline: none; border-color: var(--accent-flare); box-shadow: 0 0 0 3px var(--accent-soft); }
 
-        /* Clone dropdown menu */
         .dropdown-menu {
             position: absolute;
             top: 100%;
             right: 0;
-            margin-top: 6px;
+            margin-top: 8px;
             background: var(--bg-subtle);
             border: 1px solid var(--border-default);
-            border-radius: 6px;
-            padding: 14px;
-            width: 340px;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+            border-radius: var(--radius-md);
+            padding: 16px;
+            width: 360px;
+            max-width: calc(100vw - 32px);
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
             z-index: 50;
             display: none;
         }
-
-        .dropdown-menu.show {
-            display: block;
-        }
+        .dropdown-menu.show { display: block; }
+        .dropdown-title { font-weight: 600; font-size: var(--text-sm); margin-bottom: 2px; }
+        .dropdown-sub { font-size: var(--text-xs); color: var(--text-muted); margin-bottom: 10px; }
+        .dropdown-hint { margin-top: 12px; font-size: var(--text-xs); color: var(--text-muted); line-height: 1.6; }
+        .dropdown-hint code { color: var(--text-secondary); background: var(--bg-muted); padding: 1px 5px; border-radius: 4px; }
 
         .copy-input-box {
             display: flex;
+            align-items: center;
             background: var(--bg-canvas);
             border: 1px solid var(--border-default);
-            border-radius: 6px;
+            border-radius: var(--radius-sm);
             overflow: hidden;
-            margin-top: 8px;
+            padding-right: 4px;
         }
-
         .copy-input-box input {
             background: transparent;
             border: none;
             color: var(--text-primary);
-            padding: 6px 10px;
+            padding: 8px 10px;
             font-family: var(--font-mono);
-            font-size: 12px;
+            font-size: var(--text-xs);
             flex: 1;
+            min-width: 0;
             outline: none;
         }
 
-        /* Branch picker */
-        .branch-picker {
-            position: relative;
+        .menu { width: 240px; padding: 6px; }
+        .menu-head { padding: 8px 10px 10px; border-bottom: 1px solid var(--border-muted); margin-bottom: 4px; }
+        .menu-head strong { display: block; font-size: var(--text-sm); font-weight: 600; }
+        .menu-head span { display: block; font-size: var(--text-xs); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; }
+        .menu-item {
+            width: 100%;
+            display: flex; align-items: center; gap: 8px;
+            padding: 8px 10px;
+            border: 0; border-radius: var(--radius-sm);
+            background: none; color: var(--text-secondary);
+            font-size: var(--text-sm); text-align: left; cursor: pointer;
         }
+        .menu-item:hover { background: var(--bg-muted); color: var(--text-primary); }
+        .menu-foot { padding: 8px 10px 4px; font: 400 11px/1 var(--font-mono); color: var(--text-faint); border-top: 1px solid var(--border-muted); margin-top: 4px; }
 
-        .branch-menu {
-            left: 0;
-            right: auto;
-            width: 280px;
-            padding: 6px 0;
-            max-height: 320px;
-            overflow-y: auto;
-        }
-
-        .branch-menu-header {
-            padding: 4px 12px 8px;
-            font-size: 12px;
-            font-weight: 600;
-            color: var(--text-secondary);
-            border-bottom: 1px solid var(--border-default);
-            margin-bottom: 4px;
-        }
-
+        .branch-picker { position: relative; }
+        .branch-menu { left: 0; right: auto; width: 280px; padding: 6px; max-height: 320px; overflow-y: auto; }
+        .branch-menu-header { padding: 6px 10px 8px; font-size: var(--text-xs); font-weight: 500; color: var(--text-muted); }
         .branch-option {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 8px;
-            padding: 6px 12px;
-            font-size: 13px;
-            cursor: pointer;
-            color: var(--text-primary);
+            display: flex; align-items: center; justify-content: space-between; gap: 8px;
+            padding: 7px 10px; font-size: var(--text-sm); cursor: pointer; color: var(--text-secondary);
+            border-radius: var(--radius-sm);
         }
+        .branch-option:hover { background: var(--bg-muted); color: var(--text-primary); }
+        .branch-option.current { color: var(--text-primary); }
+        .branch-option .branch-name { display: flex; align-items: center; gap: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: var(--text-xs); }
+        .branch-option .check { width: 14px; color: var(--accent-flare); }
+        .branch-menu-empty { padding: 8px 10px; font-size: var(--text-xs); color: var(--text-muted); }
 
-        .branch-option:hover {
-            background: var(--bg-muted);
-        }
-
-        .branch-option.current {
-            font-weight: 600;
-        }
-
-        .branch-option .branch-name {
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            font-family: var(--font-mono);
-        }
-
-        .branch-menu-empty {
-            padding: 8px 12px;
-            font-size: 12px;
-            color: var(--text-muted);
-        }
-
+        /* ─── Empty, loading, toasts ─────────────────────────────── */
         .empty-state {
-            padding: 24px;
+            padding: 48px 24px;
             text-align: center;
             color: var(--text-muted);
+            font-size: var(--text-sm);
+            background-image: radial-gradient(var(--border-default) 1px, transparent 1px);
+            background-size: 14px 14px;
+            background-position: center;
+        }
+        .empty-state .empty-inner {
+            display: inline-flex; flex-direction: column; align-items: center; gap: 10px;
+            background: var(--bg-subtle); padding: 16px 20px; border-radius: var(--radius-md);
+        }
+        .empty-state .i { color: var(--text-faint); }
+        .empty-state.is-error { color: var(--danger-fg); }
+        .empty-state strong { color: var(--text-primary); font-weight: 600; }
+
+        .skeleton {
+            display: block;
+            height: 10px;
+            border-radius: 4px;
+            background: linear-gradient(90deg, var(--bg-muted) 0%, var(--bg-hover) 50%, var(--bg-muted) 100%);
+            background-size: 200% 100%;
+            animation: shimmer 1.4s ease-in-out infinite;
+        }
+        @keyframes shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+        .skeleton-row { padding: 16px; border-bottom: 1px solid var(--border-muted); display: flex; gap: 14px; align-items: center; }
+        .skeleton-row:last-child { border-bottom: 0; }
+
+        .toaster {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 1000;
+            pointer-events: none;
+            align-items: center;
+        }
+        .toast {
+            display: flex; align-items: center; gap: 10px;
+            background: var(--bg-hover);
+            border: 1px solid var(--border-strong);
+            color: var(--text-primary);
+            padding: 10px 16px;
+            border-radius: var(--radius-pill);
+            font-size: var(--text-sm);
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+            animation: toast-in 0.2s ease-out;
+            pointer-events: auto;
+            max-width: min(560px, calc(100vw - 32px));
+        }
+        .toast.success .i { color: var(--success-fg); }
+        .toast.error .i { color: var(--danger-fg); }
+        .toast.info .i { color: var(--accent-flare); }
+        .toast.leaving { opacity: 0; transform: translateY(6px); transition: all 0.2s; }
+        @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
+
+        /* ─── Responsive ─────────────────────────────────────────── */
+        @media (max-width: 900px) {
+            .ci-layout-split { flex-direction: column; height: auto; }
+            .ci-jobs-tree { width: 100%; max-height: 260px; }
+            .ci-terminal-pane { height: 480px; }
+        }
+        @media (max-width: 720px) {
+            :root { --gutter: 16px; --text-xl: 22px; }
+            .hide-sm { display: none !important; }
+            .topbar-sep { display: none; }
+            .repo-switch select { max-width: 140px; }
+            .repo-title-row { padding: 18px 0 12px; }
+            .col-commit { display: none; }
+            .nav-tabs { -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent); mask-image: linear-gradient(90deg, #000 85%, transparent); padding-right: 24px; }
+            .col-name { width: auto; }
+            .commit-strip-message { display: none; }
+            .markdown-body { padding: 20px; }
+            .commit-row-right .btn, .commit-row-right .sha-pill { display: none; }
+            .ci-run-subtext .hide-xs { display: none; }
+            .deploy-grid { grid-template-columns: 1fr; }
+            .pulse { display: none; }
+            .repo-breadcrumbs h1 { font-size: 26px; }
+            .file-viewer-actions .btn-label { display: none; }
         }
     </style>
 </head>
 <body>
+    <!-- Icon sprite (Lucide paths). Render with icon('name'). -->
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+        <symbol id="i-code" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></symbol>
+        <symbol id="i-commit" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><line x1="3" y1="12" x2="9" y2="12"/><line x1="15" y1="12" x2="21" y2="12"/></symbol>
+        <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"/></symbol>
+        <symbol id="i-rocket" viewBox="0 0 24 24"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/></symbol>
+        <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+        <symbol id="i-folder-up" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/><path d="M12 10v6"/><path d="m9 13 3-3 3 3"/></symbol>
+        <symbol id="i-file" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></symbol>
+        <symbol id="i-file-code" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="m10 13-2 2 2 2"/><path d="m14 17 2-2-2-2"/></symbol>
+        <symbol id="i-file-text" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></symbol>
+        <symbol id="i-braces" viewBox="0 0 24 24"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/></symbol>
+        <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></symbol>
+        <symbol id="i-branch" viewBox="0 0 24 24"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></symbol>
+        <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+        <symbol id="i-chevrons" viewBox="0 0 24 24"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></symbol>
+        <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></symbol>
+        <symbol id="i-book-open" viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></symbol>
+        <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+        <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+        <symbol id="i-loader" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></symbol>
+        <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></symbol>
+        <symbol id="i-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/></symbol>
+        <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></symbol>
+        <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+        <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+        <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
+        <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
+        <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+        <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></symbol>
+        <symbol id="i-log-out" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></symbol>
+        <symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+        <symbol id="i-terminal" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></symbol>
+        <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></symbol>
+        <symbol id="i-server" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></symbol>
+        <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></symbol>
+        <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
+        <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/></symbol>
+    </svg>
 
-    <!-- ─── Top Header ─────────────────────────────────────────── -->
-    <header>
-        <div class="header-left">
-            <div class="brand-logo" onclick="switchMainTab('code')">
-                <img src="/logo.png" alt="GitFlare" width="28" height="28" style="border-radius: 4px;">
-                Git<span>Flare</span>
+    <!-- ─── Top bar ────────────────────────────────────────────── -->
+    <header class="topbar">
+        <div class="container topbar-inner">
+            <div class="topbar-left">
+                <button class="brand" onclick="switchMainTab('code')" aria-label="gitflare home">
+                    <svg class="brand-mark" width="17" height="22" aria-hidden="true" viewBox="0 0 68.4 88.4"><rect x="40" y="0" width="8.4" height="8.4" rx="1.9" fill="#f6821f"/><rect x="30" y="10" width="8.4" height="8.4" rx="1.9" fill="#f6821f"/><rect x="40" y="10" width="8.4" height="8.4" rx="1.9" fill="#f6821f"/><rect x="10" y="20" width="8.4" height="8.4" rx="1.9" fill="#f6821f"/><rect x="30" y="20" width="8.4" height="8.4" rx="1.9" fill="#f6821f"/><rect x="40" y="20" width="8.4" height="8.4" rx="1.9" fill="#f99a47"/><rect x="50" y="20" width="8.4" height="8.4" rx="1.9" fill="#f6821f"/><rect x="10" y="30" width="8.4" height="8.4" rx="1.9" fill="#f6821f"/><rect x="20" y="30" width="8.4" height="8.4" rx="1.9" fill="#f6821f"/><rect x="30" y="30" width="8.4" height="8.4" rx="1.9" fill="#f99a47"/><rect x="40" y="30" width="8.4" height="8.4" rx="1.9" fill="#f99a47"/><rect x="50" y="30" width="8.4" height="8.4" rx="1.9" fill="#f6821f"/><rect x="0" y="40" width="8.4" height="8.4" rx="1.9" fill="#f6821f"/><rect x="10" y="40" width="8.4" height="8.4" rx="1.9" fill="#f6821f"/><rect x="20" y="40" width="8.4" height="8.4" rx="1.9" fill="#f99a47"/><rect x="30" y="40" width="8.4" height="8.4" rx="1.9" fill="#fbb26f"/><rect x="40" y="40" width="8.4" height="8.4" rx="1.9" fill="#fbb26f"/><rect x="50" y="40" width="8.4" height="8.4" rx="1.9" fill="#f99a47"/><rect x="60" y="40" width="8.4" height="8.4" rx="1.9" fill="#f6821f"/><rect x="0" y="50" width="8.4" height="8.4" rx="1.9" fill="#e8650a"/><rect x="10" y="50" width="8.4" height="8.4" rx="1.9" fill="#f99a47"/><rect x="20" y="50" width="8.4" height="8.4" rx="1.9" fill="#fbb26f"/><rect fill="#ffd98a" x="30" y="50" width="8.4" height="8.4" rx="1.9"/><rect fill="#ffd98a" x="40" y="50" width="8.4" height="8.4" rx="1.9"/><rect x="50" y="50" width="8.4" height="8.4" rx="1.9" fill="#fbb26f"/><rect x="60" y="50" width="8.4" height="8.4" rx="1.9" fill="#f6821f"/><rect x="0" y="60" width="8.4" height="8.4" rx="1.9" fill="#e8650a"/><rect x="10" y="60" width="8.4" height="8.4" rx="1.9" fill="#f99a47"/><rect fill="#ffd98a" x="20" y="60" width="8.4" height="8.4" rx="1.9"/><rect fill="#fff3dc" x="30" y="60" width="8.4" height="8.4" rx="1.9"/><rect fill="#fff3dc" x="40" y="60" width="8.4" height="8.4" rx="1.9"/><rect fill="#ffd98a" x="50" y="60" width="8.4" height="8.4" rx="1.9"/><rect x="60" y="60" width="8.4" height="8.4" rx="1.9" fill="#f99a47"/><rect x="10" y="70" width="8.4" height="8.4" rx="1.9" fill="#f6821f"/><rect fill="#ffd98a" x="20" y="70" width="8.4" height="8.4" rx="1.9"/><rect fill="#fff3dc" x="30" y="70" width="8.4" height="8.4" rx="1.9"/><rect fill="#fff3dc" x="40" y="70" width="8.4" height="8.4" rx="1.9"/><rect fill="#ffd98a" x="50" y="70" width="8.4" height="8.4" rx="1.9"/><rect x="60" y="70" width="8.4" height="8.4" rx="1.9" fill="#f6821f"/><rect x="20" y="80" width="8.4" height="8.4" rx="1.9" fill="#e8650a"/><rect x="30" y="80" width="8.4" height="8.4" rx="1.9" fill="#f6821f"/><rect x="40" y="80" width="8.4" height="8.4" rx="1.9" fill="#f6821f"/><rect x="50" y="80" width="8.4" height="8.4" rx="1.9" fill="#e8650a"/></svg>
+                    <span class="brand-word">gitflare</span>
+                </button>
+                <span class="topbar-sep" aria-hidden="true">/</span>
+                <label class="repo-switch" title="Switch repository">
+                    <svg class="i" width="16" height="16" aria-hidden="true"><use href="#i-book"/></svg>
+                    <select id="repoSelect" onchange="onSelectRepoChange(this.value)" aria-label="Repository">
+                        <option value="">Loading…</option>
+                    </select>
+                    <svg class="i chev" width="14" height="14" aria-hidden="true"><use href="#i-chevrons"/></svg>
+                </label>
             </div>
-            <div class="header-repo-selector">
-                <span style="color:var(--text-secondary)">repo:</span>
-                <select id="repoSelect" onchange="onSelectRepoChange(this.value)">
-                    <option value="">Loading repos...</option>
-                </select>
+            <div class="topbar-right">
+                <button class="btn btn-primary" onclick="showNewRepoModal()">
+                    <svg class="i" width="16" height="16" aria-hidden="true"><use href="#i-plus"/></svg>
+                    <span class="hide-sm">New repository</span>
+                </button>
+                <div class="user-menu">
+                    <button class="avatar-btn" id="userMenuBtn" onclick="toggleUserMenu()" aria-haspopup="menu" aria-expanded="false" aria-label="Account menu">··</button>
+                    <div class="dropdown-menu menu" id="userMenu" role="menu">
+                        <div class="menu-head">
+                            <strong id="userName">Signed in</strong>
+                            <span id="userEmail"></span>
+                        </div>
+                        <button class="menu-item" role="menuitem" onclick="logout()">
+                            <svg class="i" width="16" height="16" aria-hidden="true"><use href="#i-log-out"/></svg>
+                            Sign out
+                        </button>
+                        <div class="menu-foot">GitFlare v1.0.0</div>
+                    </div>
+                </div>
             </div>
-        </div>
-        <div class="header-right">
-            <button class="btn btn-sm" onclick="logout()">Sign out</button>
-            <button class="btn btn-sm btn-primary" onclick="showNewRepoModal()">+ New Repo</button>
-            <span class="badge badge-queued" style="font-family:var(--font-mono)">v1.0.0</span>
         </div>
     </header>
 
     <!-- ─── App Body ───────────────────────────────────────────── -->
     <div class="app-body">
-
-        <!-- Main Content -->
         <main class="main-stage">
-            <!-- Repo Header & Tab bar -->
-            <div class="repo-sub-header">
-                <div class="repo-title-row">
-                    <div class="repo-breadcrumbs">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1-2.5-2.5Z"/></svg>
-                        <a href="javascript:void(0)" onclick="switchMainTab('code')" id="currentRepoNameDisplay"></a>
-                        <span class="badge badge-public" id="repoVisibilityBadge" style="display:none;"></span>
-                    </div>
-                    <div class="repo-actions-top" style="position:relative;">
-                        <button class="btn btn-sm" onclick="triggerManualWorkflow()">▶ Run Workflow</button>
-                        <button class="btn btn-sm btn-success" onclick="toggleCloneDropdown()">
-                            <span>&lt;&gt; Code</span>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
-                        </button>
+            <!-- Repo header & tabs -->
+            <div class="repo-sub-header" id="repoHeader" data-health="none">
+                <div class="container">
+                    <div class="repo-title-row">
+                        <div class="repo-breadcrumbs">
+                            <h1><a href="javascript:void(0)" onclick="switchMainTab('code')" id="currentRepoNameDisplay"></a></h1>
+                            <span class="badge badge-public" id="repoVisibilityBadge" style="display:none;"></span>
+                            <button class="health-chip" id="healthChip" style="display:none;" onclick="openLatestRun()" title="Latest workflow run">
+                                <span class="dot"></span><span id="healthChipText"></span>
+                            </button>
+                        </div>
+                        <div class="repo-actions-top">
+                            <button class="btn" onclick="triggerManualWorkflow()">
+                                <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-play"/></svg>
+                                <span class="hide-sm">Run workflow</span>
+                            </button>
+                            <button class="btn" onclick="toggleCloneDropdown()" aria-haspopup="true">
+                                <svg class="i" width="16" height="16" aria-hidden="true"><use href="#i-terminal"/></svg>
+                                Clone
+                                <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-chevron-down"/></svg>
+                            </button>
 
-                        <!-- Clone Dropdown Menu -->
-                        <div class="dropdown-menu" id="cloneDropdown">
-                            <div style="font-weight:600; font-size:13px; margin-bottom:4px;">Clone with HTTPS</div>
-                            <p style="font-size:12px; color:var(--text-secondary); margin-bottom:8px;">Use Git or checkout with your credentials.</p>
-                            <div class="copy-input-box">
-                                <input type="text" id="cloneUrlInput" readonly value="">
-                                <button class="btn btn-sm" onclick="copyCloneUrl()">Copy</button>
-                            </div>
-                            <div style="margin-top:12px; font-size:11px; color:var(--text-muted);">
-                                <code>git push gitflare main</code> (Username: anything, Password: API Key)
+                            <div class="dropdown-menu" id="cloneDropdown">
+                                <div class="dropdown-title">Clone over HTTPS</div>
+                                <div class="dropdown-sub">Use Git with your API key as the password.</div>
+                                <div class="copy-input-box">
+                                    <input type="text" id="cloneUrlInput" readonly value="" aria-label="Clone URL">
+                                    <button class="btn btn-sm btn-ghost btn-icon" onclick="copyCloneUrl()" aria-label="Copy clone URL">
+                                        <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-copy"/></svg>
+                                    </button>
+                                </div>
+                                <div class="dropdown-hint">
+                                    <code>git push gitflare main</code><br>Username: anything · Password: API key
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
 
-                <!-- GitHub Tabs -->
-                <div class="nav-tabs">
-                    <div class="nav-tab active" id="tab-btn-code" onclick="switchMainTab('code')">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-                        Code
+                    <div class="tabs-row">
+                    <nav class="nav-tabs has-ink" id="navTabs" role="tablist" aria-label="Repository sections">
+                        <span class="tab-ink" id="tabInk" aria-hidden="true"></span>
+                        <button class="nav-tab active" id="tab-btn-code" role="tab" aria-selected="true" onclick="switchMainTab('code')">
+                            <svg class="i" aria-hidden="true"><use href="#i-code"/></svg>
+                            Code
+                        </button>
+                        <button class="nav-tab" id="tab-btn-commits" role="tab" aria-selected="false" onclick="switchMainTab('commits')">
+                            <svg class="i" aria-hidden="true"><use href="#i-commit"/></svg>
+                            Commits
+                            <span class="tab-badge" id="commitsCountBadge" style="display:none;"></span>
+                        </button>
+                        <button class="nav-tab" id="tab-btn-ci" role="tab" aria-selected="false" onclick="switchMainTab('ci')">
+                            <svg class="i" aria-hidden="true"><use href="#i-play"/></svg>
+                            Actions
+                            <span class="tab-badge" id="runsCountBadge" style="display:none;"></span>
+                        </button>
+                        <button class="nav-tab" id="tab-btn-deploys" role="tab" aria-selected="false" onclick="switchMainTab('deploys')">
+                            <svg class="i" aria-hidden="true"><use href="#i-rocket"/></svg>
+                            Deployments
+                        </button>
+                    </nav>
+                    <div class="pulse" id="repoPulse" style="display:none;">
+                        <span class="pulse-legend" id="pulseLegend"></span>
+                        <div class="pulse-bars" id="pulseBars" role="list" aria-label="Recent CI runs, oldest to newest"></div>
                     </div>
-                    <div class="nav-tab" id="tab-btn-commits" onclick="switchMainTab('commits')">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><line x1="1.05" y1="12" x2="7" y2="12"/><line x1="17.01" y1="12" x2="22.96" y2="12"/></svg>
-                        Commits
-                        <span class="tab-badge" id="commitsCountBadge" style="display:none;"></span>
-                    </div>
-                    <div class="nav-tab" id="tab-btn-ci" onclick="switchMainTab('ci')">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                        Actions (CI/CD)
-                        <span class="tab-badge" id="runsCountBadge" style="display:none;"></span>
-                    </div>
-                    <div class="nav-tab" id="tab-btn-deploys" onclick="switchMainTab('deploys')">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/></svg>
-                        Deploy Targets
                     </div>
                 </div>
             </div>
 
-            <!-- View Stage -->
+            <!-- View stage -->
             <div class="view-container">
-                <!-- TAB 1: CODEBASE VIEW -->
+              <div class="container">
+                <!-- TAB 1: CODE -->
                 <div id="view-code" style="display:block;">
                     <div class="codebase-toolbar">
                         <div class="toolbar-left">
                             <div class="branch-picker">
                                 <button class="branch-btn" onclick="toggleBranchMenu()" aria-haspopup="listbox" aria-expanded="false" id="branchMenuButton">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+                                    <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-branch"/></svg>
                                     <span id="currentBranchName"></span>
-                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>
+                                    <svg class="i" width="12" height="12" aria-hidden="true"><use href="#i-chevron-down"/></svg>
                                 </button>
                                 <div class="dropdown-menu branch-menu" id="branchMenu" role="listbox">
                                     <div class="branch-menu-header">Switch branch</div>
-                                    <div id="branchMenuList"><div class="branch-menu-empty">Loading branches...</div></div>
+                                    <div id="branchMenuList"><div class="branch-menu-empty">Loading branches…</div></div>
                                 </div>
                             </div>
-                            <div class="path-crumbs" id="pathBreadcrumbs">
-                                <!-- Populated dynamically -->
-                            </div>
+                            <div class="path-crumbs" id="pathBreadcrumbs"></div>
                         </div>
-                        <div style="font-size:12px; color:var(--text-secondary);" id="treeStats">
-                            Loading tree...
-                        </div>
+                        <div class="tree-stats" id="treeStats"></div>
                     </div>
 
-                    <!-- File Explorer Tree Box -->
-                    <div class="file-box" id="fileTreeBox">
+                    <div class="card file-box" id="fileTreeBox">
                         <div class="latest-commit-strip" id="latestCommitStrip" style="display:none;">
                             <div class="commit-strip-left">
                                 <div class="avatar-circle" id="latestCommitAvatar"></div>
-                                <span style="font-weight:600;" id="latestCommitAuthor"></span>
+                                <span class="commit-strip-author" id="latestCommitAuthor"></span>
                                 <span class="commit-strip-message" id="latestCommitMessage"></span>
                             </div>
                             <div class="commit-strip-right">
-                                <span class="sha-pill" id="latestCommitSha" onclick="copyText(this.dataset.fullSha)"></span>
-                                <span id="latestCommitTime"></span>
-                                <button class="btn btn-sm" onclick="switchMainTab('commits')">History</button>
+                                <span class="sha-pill" id="latestCommitSha" title="Copy full SHA" onclick="copyText(this.dataset.fullSha)"></span>
+                                <span id="latestCommitTime" class="hide-sm"></span>
+                                <button class="btn btn-sm" onclick="switchMainTab('commits')">
+                                    <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-clock"/></svg>
+                                    History
+                                </button>
                             </div>
                         </div>
 
                         <table class="file-table">
-                            <tbody id="fileTableBody">
-                                <tr><td colspan="4" style="text-align:center; padding:24px; color:var(--text-muted)">Loading codebase files...</td></tr>
-                            </tbody>
+                            <tbody id="fileTableBody"></tbody>
                         </table>
                     </div>
 
-                    <!-- File Viewer (shown when viewing a file) -->
-                    <div class="file-viewer-box" id="fileViewerBox" style="display:none;">
+                    <!-- File viewer -->
+                    <div class="card file-viewer-box" id="fileViewerBox" style="display:none;">
                         <div class="file-viewer-header">
                             <div class="file-viewer-meta">
-                                <strong id="viewerFileName" style="color:var(--text-primary); font-size:14px;">file</strong>
+                                <strong id="viewerFileName">file</strong>
                                 <span id="viewerFileMeta">0 lines · 0 KB</span>
                             </div>
                             <div class="file-viewer-actions">
-                                <div id="viewerModeToggle" style="display:none; gap:4px;">
-                                    <button class="btn btn-sm" id="btnPreviewMode" onclick="toggleMarkdownPreview('preview')">Preview</button>
-                                    <button class="btn btn-sm" id="btnCodeMode" onclick="toggleMarkdownPreview('code')">Code</button>
+                                <div id="viewerModeToggle" class="segmented" style="display:none;">
+                                    <button id="btnPreviewMode" onclick="toggleMarkdownPreview('preview')">Preview</button>
+                                    <button id="btnCodeMode" onclick="toggleMarkdownPreview('code')">Code</button>
                                 </div>
-                                <button class="btn btn-sm" onclick="copyViewerContent()">Copy raw</button>
-                                <button class="btn btn-sm" onclick="openRawFile()">Raw</button>
-                                <button class="btn btn-sm" onclick="closeFileViewer()">Close</button>
+                                <button class="btn btn-sm" onclick="copyViewerContent()">
+                                    <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-copy"/></svg><span class="btn-label">Copy</span>
+                                </button>
+                                <button class="btn btn-sm" onclick="openRawFile()">
+                                    <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-external"/></svg><span class="btn-label">Raw</span>
+                                </button>
+                                <button class="btn btn-sm btn-icon" onclick="closeFileViewer()" aria-label="Close file">
+                                    <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-x"/></svg>
+                                </button>
                             </div>
                         </div>
                         <div id="fileContentCode" class="code-display">
@@ -1252,133 +1213,136 @@
                         <div id="fileContentPreview" class="markdown-body" style="display:none;"></div>
                     </div>
 
-                    <!-- README Card (shown at directory root) -->
-                    <div class="file-box" id="readmeCard" style="display:none;">
-                        <div class="latest-commit-strip" style="font-weight:600; font-size:13px; gap:8px;">
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+                    <!-- README -->
+                    <div class="card file-box" id="readmeCard" style="display:none;">
+                        <div class="readme-head">
+                            <svg class="i" width="16" height="16" aria-hidden="true"><use href="#i-book-open"/></svg>
                             <span id="readmeFileName">README.md</span>
                         </div>
                         <div class="markdown-body" id="readmeContent"></div>
                     </div>
                 </div>
 
-                <!-- TAB 2: COMMITS VIEW -->
+                <!-- TAB 2: COMMITS -->
                 <div id="view-commits" style="display:none;">
-                    <!-- Commits List Mode -->
                     <div id="commitsListMode">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-                            <div style="font-size:16px; font-weight:600;">Commit History</div>
-                            <button class="btn btn-sm" onclick="fetchCommits()">Refresh</button>
+                        <div class="page-head">
+                            <div class="page-title">Commits</div>
+                            <button class="btn btn-sm btn-icon" onclick="fetchCommits()" aria-label="Refresh commits">
+                                <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-refresh"/></svg>
+                            </button>
                         </div>
-                        <div id="commitsContainer">
-                            <!-- Populated dynamically -->
-                        </div>
+                        <div id="commitsContainer"></div>
                     </div>
 
-                    <!-- Single Commit Detail Mode -->
                     <div id="commitDetailMode" style="display:none;">
-                        <button class="btn btn-sm" onclick="exitCommitDetail()" style="margin-bottom:16px;">← Back to commits</button>
-                        <div class="diff-header-card" id="commitDetailHeader">
-                            <!-- Populated dynamically -->
-                        </div>
-                        <div id="commitDiffsList">
-                            <!-- Populated with unified file diffs -->
-                        </div>
+                        <button class="back-link" onclick="exitCommitDetail()">
+                            <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-arrow-left"/></svg> All commits
+                        </button>
+                        <div class="card diff-header-card" id="commitDetailHeader"></div>
+                        <div id="commitDiffsList"></div>
                     </div>
                 </div>
 
-                <!-- TAB 3: CI/CD ACTIONS VIEW -->
+                <!-- TAB 3: ACTIONS -->
                 <div id="view-ci" style="display:none;">
-                    <!-- Runs List Mode -->
                     <div id="ciRunsListMode">
-                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
-                            <div style="display:flex; align-items:center; gap:10px;">
-                                <div style="font-size:16px; font-weight:600;">Workflow Runs</div>
-                                <div style="display:flex; gap:4px;">
-                                    <button class="btn btn-sm" onclick="filterCIRuns('all')">All</button>
-                                    <button class="btn btn-sm" onclick="filterCIRuns('passed')">Passed</button>
-                                    <button class="btn btn-sm" onclick="filterCIRuns('failed')">Failed</button>
+                        <div class="page-head">
+                            <div class="page-head-left">
+                                <div class="page-title">Workflow runs</div>
+                                <div class="segmented" id="ciFilter" role="group" aria-label="Filter runs">
+                                    <button class="is-active" data-filter="all" onclick="filterCIRuns('all')">All</button>
+                                    <button data-filter="passed" onclick="filterCIRuns('passed')">Passed</button>
+                                    <button data-filter="failed" onclick="filterCIRuns('failed')">Failed</button>
                                 </div>
                             </div>
-                            <div style="display:flex; gap:8px;">
-                                <button class="btn btn-sm btn-primary" onclick="triggerManualWorkflow()">▶ Run workflow</button>
-                                <button class="btn btn-sm" onclick="fetchCIRuns()">Refresh</button>
+                            <div class="page-actions">
+                                <button class="btn btn-sm btn-icon" onclick="fetchCIRuns()" aria-label="Refresh runs">
+                                    <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-refresh"/></svg>
+                                </button>
+                                <button class="btn btn-sm btn-primary" onclick="triggerManualWorkflow()">
+                                    <svg class="i" width="12" height="12" aria-hidden="true"><use href="#i-play"/></svg>
+                                    Run workflow
+                                </button>
                             </div>
                         </div>
 
-                        <div class="ci-runs-list" id="ciRunsTable">
-                            <div style="padding:24px; text-align:center; color:var(--text-muted)">Loading pipeline runs...</div>
-                        </div>
+                        <div class="card ci-runs-list" id="ciRunsTable"></div>
                     </div>
 
-                    <!-- Single Run Detailed View -->
                     <div id="ciRunDetailMode" style="display:none;">
-                        <button class="btn btn-sm" onclick="exitRunDetail()" style="margin-bottom:16px;">← All workflow runs</button>
-                        <div class="ci-detail-banner" id="ciRunBanner">
-                            <!-- Populated dynamically -->
-                        </div>
+                        <button class="back-link" onclick="exitRunDetail()">
+                            <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-arrow-left"/></svg> All workflow runs
+                        </button>
+                        <div class="card ci-detail-banner" id="ciRunBanner"></div>
 
-                        <!-- Split Stage: Jobs Tree on Left, Terminal Console on Right -->
                         <div class="ci-layout-split">
-                            <!-- Jobs / Steps Hierarchy -->
-                            <div class="ci-jobs-tree" id="ciJobsTree">
-                                <!-- Populated dynamically -->
-                            </div>
-
-                            <!-- Live Terminal Console -->
+                            <div class="card ci-jobs-tree" id="ciJobsTree"></div>
                             <div class="ci-terminal-pane">
                                 <div class="terminal-header">
-                                    <div style="display:flex; align-items:center; gap:8px; min-width:0; flex:1; overflow:hidden;">
-                                        <strong id="termStepTitle" style="color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">Terminal</strong>
+                                    <div style="display:flex; align-items:center; gap:10px; min-width:0; flex:1; overflow:hidden;">
+                                        <strong id="termStepTitle">Terminal</strong>
                                         <span class="badge badge-queued" id="termStepBadge" style="flex-shrink:0;">ready</span>
                                     </div>
-                                    <div style="display:flex; gap:8px; flex-shrink:0;">
-                                        <button class="btn btn-sm" onclick="copyTerminalLogs()">Copy log</button>
-                                    </div>
+                                    <button class="btn btn-sm" onclick="copyTerminalLogs()">
+                                        <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-copy"/></svg> Copy log
+                                    </button>
                                 </div>
-                                <div class="terminal-body" id="terminalLogBody">
-                                    <!-- Log lines -->
-                                </div>
+                                <div class="terminal-body" id="terminalLogBody"></div>
                             </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- TAB 4: DEPLOY TARGETS VIEW -->
+                <!-- TAB 4: DEPLOYMENTS -->
                 <div id="view-deploys" style="display:none;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
-                        <div style="font-size:16px; font-weight:600;">Coolify & Cloudflare Deployment Targets</div>
-                        <button class="btn btn-sm" onclick="fetchDeployTargets()">Refresh</button>
+                    <div class="page-head">
+                        <div class="page-title">Deployments</div>
+                        <button class="btn btn-sm btn-icon" onclick="fetchDeployTargets()" aria-label="Refresh deployments">
+                            <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-refresh"/></svg>
+                        </button>
                     </div>
-                    <div id="deployTargetsListContainer">
-                        <div style="padding:24px; text-align:center; color:var(--text-muted)">Loading deployment targets...</div>
-                    </div>
+                    <div id="deployTargetsListContainer"></div>
                 </div>
+              </div>
             </div>
         </main>
     </div>
 
-    <!-- ─── Modals ─────────────────────────────────────────────── -->
-
-    <!-- New Repo Modal -->
+    <!-- ─── Dialogs ────────────────────────────────────────────── -->
     <dialog id="newRepoModal">
-        <h3 style="margin-bottom:12px; font-size:16px;">Create a new repository</h3>
-        <p style="color:var(--text-secondary); font-size:13px; margin-bottom:16px;">
-            Creates a Git-native repository backed by Cloudflare Artifacts & D1.
-        </p>
+        <h3>Create a repository</h3>
+        <p class="dialog-lead">A Git-native repository backed by Cloudflare Artifacts and D1.</p>
         <div class="form-group">
-            <label>Repository name</label>
-            <input type="text" id="newRepoNameInput" class="form-control" placeholder="my-awesome-service">
+            <label for="newRepoNameInput">Repository name</label>
+            <input type="text" id="newRepoNameInput" class="form-control" placeholder="my-awesome-service" autocomplete="off">
         </div>
         <div class="form-group">
-            <label>Description (optional)</label>
-            <input type="text" id="newRepoDescInput" class="form-control" placeholder="Service description...">
+            <label for="newRepoDescInput">Description <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label>
+            <input type="text" id="newRepoDescInput" class="form-control" placeholder="What does it do?">
         </div>
-        <div style="display:flex; justify-content:flex-end; gap:8px;">
+        <div class="dialog-actions">
             <button class="btn" onclick="document.getElementById('newRepoModal').close()">Cancel</button>
             <button class="btn btn-primary" onclick="submitCreateRepo()">Create repository</button>
         </div>
     </dialog>
+
+    <dialog id="runWorkflowModal">
+        <h3>Run workflow</h3>
+        <p class="dialog-lead">Queue a CI run against the tip of a branch.</p>
+        <div class="form-group">
+            <label for="runWorkflowBranch">Branch</label>
+            <select id="runWorkflowBranch" class="form-control"></select>
+        </div>
+        <div class="dialog-actions">
+            <button class="btn" onclick="document.getElementById('runWorkflowModal').close()">Cancel</button>
+            <button class="btn btn-primary" onclick="submitRunWorkflow()">
+                <svg class="i" width="12" height="12" aria-hidden="true"><use href="#i-play"/></svg> Run
+            </button>
+        </div>
+    </dialog>
+
+    <div class="toaster" id="toaster" aria-live="polite"></div>
 
     <script>
         // ─── Application State ──────────────────────────────────────────
@@ -1421,11 +1385,111 @@
             }
         }
 
+        // ─── UI helpers ─────────────────────────────────────────────────
+        /** Inline SVG from the sprite at the top of <body>. */
+        function icon(name, size = 16, cls = '') {
+            return `<svg class="i ${cls}" width="${size}" height="${size}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+        }
+
+        /** Icon for a run / step / commit status. */
+        function statusIcon(status, size = 14) {
+            if (status === 'passed' || status === 'success') return icon('check', size);
+            if (status === 'failed') return icon('x', size);
+            if (status === 'running' || status === 'deploying') return icon('loader', size, 'i-spin');
+            if (status === 'cancelled') return icon('ban', size);
+            if (status === 'queued' || status === 'pending') return icon('clock', size);
+            return icon('circle', size);
+        }
+
+        function statusBadgeClass(status) {
+            if (status === 'passed' || status === 'success') return 'badge-success';
+            if (status === 'failed') return 'badge-danger';
+            if (status === 'running' || status === 'deploying') return 'badge-running';
+            return 'badge-queued';
+        }
+
+        function initials(name) {
+            return String(name || '?').split(/\s+/).map(s => s[0] || '').join('').slice(0, 2).toUpperCase();
+        }
+
+        /** Non-blocking notification (replaces alert()). kind: info | success | error */
+        function toast(message, kind = 'info') {
+            const host = document.getElementById('toaster');
+            const el = document.createElement('div');
+            el.className = `toast ${kind}`;
+            el.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+            el.innerHTML = icon(kind === 'success' ? 'check' : (kind === 'error' ? 'alert' : 'info'), 16);
+            const text = document.createElement('span');
+            text.textContent = message;
+            el.appendChild(text);
+            host.appendChild(el);
+            setTimeout(() => {
+                el.classList.add('leaving');
+                setTimeout(() => el.remove(), 220);
+            }, kind === 'error' ? 5000 : 2600);
+        }
+
+        function emptyState(message, { iconName = 'info', error = false, colspan = 0 } = {}) {
+            const inner = `<div class="empty-state${error ? ' is-error' : ''}"><div class="empty-inner">${icon(error ? 'alert' : iconName, 22)}<span>${message}</span></div></div>`;
+            return colspan ? `<tr><td colspan="${colspan}" style="padding:0">${inner}</td></tr>` : inner;
+        }
+
+        function skeletonList(n = 5) {
+            return Array.from({ length: n }, (_, i) => `
+                <div class="skeleton-row">
+                    <span class="skeleton" style="width:24px; height:24px; border-radius:50%;"></span>
+                    <div style="flex:1; display:flex; flex-direction:column; gap:8px;">
+                        <span class="skeleton" style="width:${40 + (i * 13) % 35}%;"></span>
+                        <span class="skeleton" style="width:${18 + (i * 7) % 15}%; height:8px;"></span>
+                    </div>
+                    <span class="skeleton" style="width:56px;"></span>
+                </div>`).join('');
+        }
+
+        function skeletonRows(n = 6) {
+            return Array.from({ length: n }, (_, i) => `
+                <tr><td class="col-icon"><span class="skeleton" style="width:16px; height:16px;"></span></td>
+                <td class="col-name"><span class="skeleton" style="width:${30 + (i * 17) % 50}%;"></span></td>
+                <td class="col-commit"><span class="skeleton" style="width:${40 + (i * 11) % 40}%;"></span></td>
+                <td class="col-time"><span class="skeleton" style="width:60px; margin-left:auto;"></span></td></tr>`).join('');
+        }
+
         // ─── Init ───────────────────────────────────────────────────────
         async function init() {
             // Purge any API key an older dashboard build persisted to storage.
             try { localStorage.removeItem('gf_api_key'); } catch (e) {}
+            document.getElementById('fileTableBody').innerHTML = skeletonRows();
+            loadMe();
             await loadRepos();
+        }
+
+        /** Fill the account menu. Failure is non-fatal; the menu still offers Sign out. */
+        async function loadMe() {
+            try {
+                const res = await fetch(`${API_BASE}/auth/me`, { credentials: 'same-origin' });
+                if (!res.ok) return;
+                const { user } = await res.json();
+                if (!user) return;
+                const btn = document.getElementById('userMenuBtn');
+                if (user.avatar_url && /^https:\/\//.test(user.avatar_url)) {
+                    const img = document.createElement('img');
+                    img.src = user.avatar_url;
+                    img.alt = '';
+                    img.referrerPolicy = 'no-referrer';
+                    btn.replaceChildren(img);
+                } else {
+                    btn.textContent = initials(user.name || user.email);
+                }
+                document.getElementById('userName').textContent = user.name || 'Signed in';
+                document.getElementById('userEmail').textContent = user.email || '';
+            } catch (e) { /* ignore */ }
+        }
+
+        function toggleUserMenu() {
+            const menu = document.getElementById('userMenu');
+            const open = !menu.classList.contains('show');
+            menu.classList.toggle('show', open);
+            document.getElementById('userMenuBtn').setAttribute('aria-expanded', String(open));
         }
 
         // ─── Repositories ───────────────────────────────────────────────
@@ -1470,9 +1534,10 @@
             renderBranchMenu();
             setCountBadge('commitsCountBadge', null);
             setCountBadge('runsCountBadge', null);
+            renderPulse([]);
             document.getElementById('fileTableBody').innerHTML = loadFailed
-                ? '<tr><td colspan="4" class="empty-state" style="color:var(--danger-fg)">Failed to load repositories.</td></tr>'
-                : '<tr><td colspan="4" class="empty-state">No repositories yet. Click "+ New Repo" to create one.</td></tr>';
+                ? emptyState('Failed to load repositories.', { error: true, colspan: 4 })
+                : emptyState('<strong>No repositories yet.</strong> Use “New repository” to create one.', { iconName: 'book', colspan: 4 });
         }
 
         /** Show a tab count badge, or hide it when the count is unknown. */
@@ -1525,7 +1590,7 @@
             document.getElementById('currentRepoNameDisplay').textContent = name;
             const visibilityBadge = document.getElementById('repoVisibilityBadge');
             const isPrivate = Boolean(repo.is_private);
-            visibilityBadge.textContent = isPrivate ? 'Private' : 'Public';
+            visibilityBadge.innerHTML = `${icon(isPrivate ? 'lock' : 'globe', 12)} ${isPrivate ? 'Private' : 'Public'}`;
             visibilityBadge.classList.toggle('badge-private', isPrivate);
             visibilityBadge.classList.toggle('badge-public', !isPrivate);
             visibilityBadge.style.display = '';
@@ -1536,6 +1601,7 @@
             document.getElementById('cloneUrlInput').value = cloneUrl;
 
             loadBranches();
+            if (currentTab !== 'ci') loadRepoPulse();
             reloadCurrentTab();
         }
 
@@ -1580,7 +1646,7 @@
             list.innerHTML = branches.map(b => `
                 <div class="branch-option${b.name === currentBranch ? ' current' : ''}" role="option"
                      aria-selected="${b.name === currentBranch}" data-action="select-branch" data-branch="${esc(b.name)}">
-                    <span class="branch-name">${b.name === currentBranch ? '✓ ' : ''}${esc(b.name)}</span>
+                    <span class="branch-name"><span class="check">${b.name === currentBranch ? icon('check', 14) : ''}</span>${esc(b.name)}</span>
                     ${b.is_default ? '<span class="badge badge-queued">default</span>' : ''}
                 </div>
             `).join('');
@@ -1617,9 +1683,13 @@
             ['code', 'commits', 'ci', 'deploys'].forEach(t => {
                 const btn = document.getElementById(`tab-btn-${t}`);
                 const view = document.getElementById(`view-${t}`);
-                if (btn) btn.classList.toggle('active', t === tab);
+                if (btn) {
+                    btn.classList.toggle('active', t === tab);
+                    btn.setAttribute('aria-selected', String(t === tab));
+                }
                 if (view) view.style.display = (t === tab) ? 'block' : 'none';
             });
+            positionTabInk();
 
             if (!activeRepo) return;
             if (tab === 'code') loadTree();
@@ -1634,7 +1704,7 @@
             closeFileViewer();
 
             const tbody = document.getElementById('fileTableBody');
-            tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:20px; color:var(--text-muted)">Loading files...</td></tr>';
+            tbody.innerHTML = skeletonRows();
 
             try {
                 const res = await apiFetch(`${repoApi()}/tree?path=${encodeURIComponent(path)}&ref=${encodeURIComponent(currentBranch)}`, {
@@ -1648,8 +1718,8 @@
                     document.getElementById('pathBreadcrumbs').replaceChildren();
                     document.getElementById('treeStats').textContent = '';
                     tbody.innerHTML = res.status === 404
-                        ? '<tr><td colspan="4" class="empty-state">Nothing here yet. Push a commit to this branch to see its files.</td></tr>'
-                        : '<tr><td colspan="4" class="empty-state" style="color:var(--danger-fg)">Failed to load directory files.</td></tr>';
+                        ? emptyState('<strong>Nothing here yet.</strong> Push a commit to this branch to see its files.', { iconName: 'folder', colspan: 4 })
+                        : emptyState('Failed to load directory files.', { error: true, colspan: 4 });
                     return;
                 }
 
@@ -1660,7 +1730,7 @@
                 const lc = data.latest_commit;
                 if (lc) {
                     const authorName = lc.author?.name || 'Unknown';
-                    document.getElementById('latestCommitAvatar').textContent = lc.author?.avatar || authorName.slice(0, 2).toUpperCase();
+                    document.getElementById('latestCommitAvatar').textContent = lc.author?.avatar || initials(authorName);
                     document.getElementById('latestCommitAuthor').textContent = authorName;
                     document.getElementById('latestCommitMessage').textContent = lc.message || '';
                     const shaEl = document.getElementById('latestCommitSha');
@@ -1678,8 +1748,8 @@
                     const parentPath = currentPath.includes('/') ? currentPath.substring(0, currentPath.lastIndexOf('/')) : '';
                     rowsHtml += `
                         <tr>
-                            <td class="col-icon">📁</td>
-                            <td class="col-name"><a class="file-link" data-action="load-tree" data-path="${esc(parentPath)}">..</a></td>
+                            <td class="col-icon">${icon('folder-up', 16)}</td>
+                            <td class="col-name"><a class="file-link" href="javascript:void(0)" data-action="load-tree" data-path="${esc(parentPath)}">..</a></td>
                             <td class="col-commit"></td>
                             <td class="col-time"></td>
                         </tr>
@@ -1692,15 +1762,15 @@
                     rowsHtml += `
                         <tr>
                             <td class="col-icon">${icon}</td>
-                            <td class="col-name"><a class="file-link" data-action="${action}" data-path="${esc(entry.path)}">${esc(entry.name)}</a></td>
+                            <td class="col-name"><a class="file-link" href="javascript:void(0)" data-action="${action}" data-path="${esc(entry.path)}">${esc(entry.name)}</a></td>
                             <td class="col-commit">${esc(entry.message)}</td>
                             <td class="col-time">${esc(entry.size ? formatBytes(entry.size) : entry.updated_at)}</td>
                         </tr>
                     `;
                 });
 
-                tbody.innerHTML = rowsHtml;
-                document.getElementById('treeStats').textContent = `${data.entries.length} items`;
+                tbody.innerHTML = rowsHtml || emptyState('This directory is empty.', { iconName: 'folder', colspan: 4 });
+                document.getElementById('treeStats').textContent = `${data.entries.length} ${data.entries.length === 1 ? 'item' : 'items'}`;
 
                 // Render README if present at root or in folder
                 const readmeCard = document.getElementById('readmeCard');
@@ -1713,7 +1783,7 @@
                 }
 
             } catch (e) {
-                tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; padding:20px; color:var(--danger-fg)">Failed to load directory files.</td></tr>';
+                tbody.innerHTML = emptyState('Failed to load directory files.', { error: true, colspan: 4 });
             }
         }
 
@@ -1724,17 +1794,17 @@
                 if (isLast && crumbs.length > 1) {
                     return `<span class="path-crumb-current">${esc(c.name)}</span>`;
                 }
-                return `<a class="path-crumb-item" data-action="load-tree" data-path="${esc(c.path)}">${esc(c.name)}</a> <span style="color:var(--text-muted)">/</span>`;
+                return `<a class="path-crumb-item" href="javascript:void(0)" data-action="load-tree" data-path="${esc(c.path)}">${esc(c.name)}</a> <span style="color:var(--text-faint)">/</span>`;
             }).join(' ');
         }
 
         function getFileIcon(name, type) {
-            if (type === 'tree') return '📁';
-            if (name.endsWith('.md')) return '📝';
-            if (name.endsWith('.json') || name.endsWith('.yml') || name.endsWith('.yaml') || name.endsWith('.toml')) return '⚙️';
-            if (name.endsWith('.ts') || name.endsWith('.js') || name.endsWith('.py') || name.endsWith('.sh') || name.endsWith('.mjs')) return '📜';
-            if (name === 'Dockerfile') return '🐳';
-            return '📄';
+            if (type === 'tree') return icon('folder', 16, 'is-dir');
+            if (/\.(md|mdx|txt)$/i.test(name)) return icon('file-text', 16);
+            if (/\.(json|jsonc|ya?ml|toml)$/i.test(name)) return icon('braces', 16);
+            if (/\.(ts|tsx|js|jsx|mjs|cjs|py|sh|go|rs|rb|css|html|sql)$/i.test(name)) return icon('file-code', 16);
+            if (name === 'Dockerfile') return icon('box', 16);
+            return icon('file', 16);
         }
 
         // ─── File Viewer ────────────────────────────────────────────────
@@ -1773,7 +1843,7 @@
                 }
 
             } catch (e) {
-                alert("Error loading file: " + e.message);
+                toast("Couldn't load file: " + e.message, 'error');
             }
         }
 
@@ -1786,13 +1856,13 @@
             if (mode === 'preview') {
                 previewEl.style.display = 'block';
                 codeEl.style.display = 'none';
-                btnP.classList.add('btn-primary');
-                btnC.classList.remove('btn-primary');
+                btnP.classList.add('is-active');
+                btnC.classList.remove('is-active');
             } else {
                 previewEl.style.display = 'none';
                 codeEl.style.display = 'flex';
-                btnC.classList.add('btn-primary');
-                btnP.classList.remove('btn-primary');
+                btnC.classList.add('is-active');
+                btnP.classList.remove('is-active');
             }
         }
 
@@ -1805,7 +1875,7 @@
         function copyViewerContent() {
             if (activeViewerContent) {
                 navigator.clipboard.writeText(activeViewerContent);
-                alert("Raw code copied to clipboard!");
+                toast('File contents copied', 'success');
             }
         }
 
@@ -1818,7 +1888,7 @@
         // ─── Feature 2: Commit History & Diff View ───────────────────────
         async function fetchCommits() {
             const container = document.getElementById('commitsContainer');
-            container.innerHTML = '<div style="padding:24px; text-align:center; color:var(--text-muted)">Loading commit history...</div>';
+            container.innerHTML = `<div class="card">${skeletonList(6)}</div>`;
 
             try {
                 const res = await apiFetch(`${repoApi()}/commits?branch=${encodeURIComponent(currentBranch)}`, { headers: authHeaders() });
@@ -1828,38 +1898,36 @@
                 // The API returns at most one page, so show "N+" when the page is full.
                 setCountBadge('commitsCountBadge', list.length >= 20 ? `${list.length}+` : list.length);
                 if (!list.length) {
-                    container.innerHTML = '<div class="empty-state">No commits on this branch yet.</div>';
+                    container.innerHTML = `<div class="card">${emptyState('<strong>No commits on this branch yet.</strong>', { iconName: 'commit' })}</div>`;
                     return;
                 }
 
-                // Render commits list grouped by date
-                let html = '<div class="commit-timeline-list">';
+                let html = '<div class="card commit-timeline-list">';
                 list.forEach(c => {
                     const statusBadge = c.ci_status ? `
-                        <span class="badge badge-${c.ci_status === 'passed' ? 'success' : (c.ci_status === 'failed' ? 'danger' : 'running')}" 
-                              style="cursor:pointer;" 
+                        <span class="badge ${statusBadgeClass(c.ci_status)}" style="cursor:pointer;" title="Open CI run"
                               data-action="jump-ci-run" data-run-id="${esc(c.ci_run_id)}">
-                            ${c.ci_status === 'passed' ? '✔' : (c.ci_status === 'failed' ? '✖' : '●')} ${esc(c.ci_status)}
+                            ${statusIcon(c.ci_status, 12)} ${esc(c.ci_status)}
                         </span>
                     ` : '';
 
                     html += `
                         <div class="commit-row" data-action="open-commit" data-sha="${esc(c.sha)}">
                             <div class="commit-row-left">
-                                <div class="avatar-circle">${esc(c.author.avatar || c.author.name.slice(0, 2).toUpperCase())}</div>
+                                <div class="avatar-circle">${esc(c.author.avatar || initials(c.author.name))}</div>
                                 <div class="commit-row-content">
                                     <div class="commit-title">${esc(c.message)}</div>
                                     ${c.description ? `<div class="commit-desc">${esc(c.description)}</div>` : ''}
                                     <div class="commit-meta">
-                                        <strong style="color:var(--text-primary);">${esc(c.author.name)}</strong>
+                                        <strong>${esc(c.author.name)}</strong>
                                         <span>committed ${esc(c.time_ago)}</span>
                                     </div>
                                 </div>
                             </div>
                             <div class="commit-row-right">
                                 ${statusBadge}
-                                <span class="sha-pill" data-action="copy" data-text="${esc(c.sha)}">${esc(c.short_sha)}</span>
-                                <button class="btn btn-sm" data-action="open-commit" data-sha="${esc(c.sha)}">&lt;&gt;</button>
+                                <span class="sha-pill" title="Copy full SHA" data-action="copy" data-text="${esc(c.sha)}">${icon('copy', 12)}${esc(c.short_sha)}</span>
+                                <button class="btn btn-sm btn-icon btn-ghost" aria-label="View diff" data-action="open-commit" data-sha="${esc(c.sha)}">${icon('code', 14)}</button>
                             </div>
                         </div>
                     `;
@@ -1869,7 +1937,7 @@
                 container.innerHTML = html;
             } catch (e) {
                 setCountBadge('commitsCountBadge', null);
-                container.innerHTML = '<div style="padding:24px; text-align:center; color:var(--danger-fg)">Failed to load commits.</div>';
+                container.innerHTML = `<div class="card">${emptyState('Failed to load commits.', { error: true })}</div>`;
             }
         }
 
@@ -1883,46 +1951,44 @@
                 const detailMode = document.getElementById('commitDetailMode');
                 detailMode.style.display = 'block';
 
-                // Header
                 document.getElementById('commitDetailHeader').innerHTML = `
-                    <div style="font-size:18px; font-weight:600; margin-bottom:6px;">${esc(data.message)}</div>
-                    ${data.description ? `<p style="color:var(--text-secondary); margin-bottom:12px;">${esc(data.description)}</p>` : ''}
-                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; font-size:13px;">
+                    <div class="ci-detail-title" style="margin-bottom:6px;">${esc(data.message)}</div>
+                    ${data.description ? `<p style="color:var(--text-secondary); margin-bottom:12px; white-space:pre-wrap;">${esc(data.description)}</p>` : ''}
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; font-size:var(--text-sm); color:var(--text-muted); margin-top:12px;">
                         <div style="display:flex; align-items:center; gap:8px;">
-                            <div class="avatar-circle">${esc(data.author.avatar || data.author.name.slice(0, 2).toUpperCase())}</div>
-                            <span><strong>${esc(data.author.name)}</strong> committed on ${esc(new Date(data.date).toLocaleString())}</span>
+                            <div class="avatar-circle">${esc(data.author.avatar || initials(data.author.name))}</div>
+                            <span><strong style="color:var(--text-secondary); font-weight:500;">${esc(data.author.name)}</strong> committed ${esc(new Date(data.date).toLocaleString())}</span>
                         </div>
-                        <div style="display:flex; align-items:center; gap:10px;">
-                            <span class="sha-pill" data-action="copy" data-text="${esc(data.sha)}">commit ${esc(data.short_sha)}</span>
-                            <span style="color:var(--text-muted);">Showing ${esc(data.stats.files_changed)} changed file(s) with <span style="color:var(--success-fg)">+${esc(data.stats.additions)}</span> and <span style="color:var(--danger-fg)">-${esc(data.stats.deletions)}</span></span>
+                        <div style="display:flex; align-items:center; gap:12px;">
+                            <span>${esc(data.stats.files_changed)} ${Number(data.stats.files_changed) === 1 ? 'file' : 'files'} ·
+                                <span class="mono" style="color:var(--success-fg)">+${esc(data.stats.additions)}</span>
+                                <span class="mono" style="color:var(--danger-fg)">−${esc(data.stats.deletions)}</span></span>
+                            <span class="sha-pill" title="Copy full SHA" data-action="copy" data-text="${esc(data.sha)}">${icon('copy', 12)}${esc(data.short_sha)}</span>
                         </div>
                     </div>
                 `;
 
-                // Unified Diffs
                 const diffsList = document.getElementById('commitDiffsList');
-                diffsList.innerHTML = data.files.map(f => {
-                    return `
-                        <div class="diff-file-card">
+                diffsList.innerHTML = data.files.map(f => `
+                        <div class="card diff-file-card">
                             <div class="diff-file-header">
-                                <div style="display:flex; align-items:center; gap:8px;">
-                                    <span class="badge ${f.status === 'added' ? 'badge-success' : 'badge-queued'}">${esc(String(f.status).toUpperCase())}</span>
-                                    <strong style="font-family:var(--font-mono);">${esc(f.filename)}</strong>
+                                <div style="display:flex; align-items:center; gap:10px; min-width:0;">
+                                    <span class="badge ${f.status === 'added' ? 'badge-success' : (f.status === 'deleted' || f.status === 'removed' ? 'badge-danger' : 'badge-queued')}">${esc(String(f.status))}</span>
+                                    <span class="mono" style="font-size:var(--text-sm); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(f.filename)}</span>
                                 </div>
-                                <div>
-                                    <span style="color:var(--success-fg); font-weight:600;">+${esc(f.additions)}</span>
-                                    <span style="color:var(--danger-fg); font-weight:600; margin-left:4px;">-${esc(f.deletions)}</span>
+                                <div class="mono" style="font-size:var(--text-xs); flex-shrink:0;">
+                                    <span style="color:var(--success-fg);">+${esc(f.additions)}</span>
+                                    <span style="color:var(--danger-fg); margin-left:6px;">−${esc(f.deletions)}</span>
                                 </div>
                             </div>
                             <div class="diff-content">
                                 ${renderPatchHtml(f.patch || '')}
                             </div>
                         </div>
-                    `;
-                }).join('');
+                    `).join('');
 
             } catch (e) {
-                alert("Failed to load commit diff: " + e.message);
+                toast("Couldn't load commit diff: " + e.message, 'error');
             }
         }
 
@@ -1955,52 +2021,153 @@
             document.getElementById('commitsListMode').style.display = 'block';
         }
 
-        // ─── Feature 3: Detailed CI/CD View (GitHub Actions Style) ───────
+        // ─── Feature 3: Actions (CI) ─────────────────────────────────────
         let ciRunsData = [];
+        let ciFilter = 'all';
 
-        async function fetchCIRuns(statusFilter = '') {
+        /** Durations come back as text ("2m 14s"); parse to seconds for tinting. */
+        function durationSeconds(text) {
+            if (!text) return 0;
+            let s = 0;
+            const h = /(\d+)\s*h/.exec(text), m = /(\d+)\s*m(?!s)/.exec(text), sec = /(\d+)\s*s/.exec(text);
+            if (h) s += +h[1] * 3600;
+            if (m) s += +m[1] * 60;
+            if (sec) s += +sec[1];
+            return s;
+        }
+
+        // ─── The flare: header glow + CI skyline ────────────────────────
+        let pulseRuns = [];
+        let pulseRepo = null;
+        // Orange ramp for passed runs (base → tip); failures stay red so they read instantly.
+        const FLARE_RAMP = ['#e8650a', '#f6821f', '#f99a47', '#fbb26f', '#fdca99', '#fee0c2', '#fff0e0'];
+
+        function renderPulse(runs) {
+            const header = document.getElementById('repoHeader');
+            const wrap = document.getElementById('repoPulse');
+            const chip = document.getElementById('healthChip');
+            const prevIds = pulseRepo === activeRepo ? new Set(pulseRuns.map(r => r.id)) : null;
+            pulseRuns = runs;
+            pulseRepo = activeRepo;
+
+            const latest = runs[0];
+            const health = !latest ? 'none' : (latest.status === 'passed' ? 'passed' : latest.status === 'failed' ? 'failed' : (latest.status === 'running' || latest.status === 'queued') ? 'running' : 'none');
+            header.dataset.health = health;
+
+            if (!latest) {
+                chip.style.display = 'none';
+                wrap.style.display = 'none';
+                return;
+            }
+            chip.style.display = '';
+            document.getElementById('healthChipText').textContent =
+                health === 'passed' ? 'build passing' : health === 'failed' ? 'build failing' : health === 'running' ? 'build running' : esc(latest.status);
+
+            const recent = runs.slice(0, 28).reverse();
+            // Scale across the observed range so normal variance is visible, not just outliers.
+            const secsList = recent.map(r => durationSeconds(r.duration_text)).filter(Boolean);
+            const min = secsList.length ? Math.min(...secsList) : 0;
+            // Cap at the 85th percentile so one slow outlier doesn't flatten everything else.
+            const sorted = [...secsList].sort((a, b) => a - b);
+            const cap = sorted.length ? sorted[Math.floor((sorted.length - 1) * 0.85)] : 0;
+            const span = Math.max(1, cap - min);
+            document.getElementById('pulseBars').innerHTML = recent.map(r => {
+                const st = statusClass(r.status);
+                const secs = durationSeconds(r.duration_text);
+                const blocks = st === 'running' ? 3 : (secs ? 2 + Math.round(Math.min(1, (secs - min) / span) * 3) + (secs > cap ? 1 : 0) : 2);
+                const cells = Array.from({ length: blocks }, (_, k) => {
+                    const color = st === 'passed' ? FLARE_RAMP[Math.min(k, FLARE_RAMP.length - 1)]
+                        : st === 'failed' ? (k === blocks - 1 ? '#ffb3a8' : '#ff6a5a')
+                        : st === 'running' ? '#f2c14e' : '#3a3a36';
+                    return `<i style="background:${color}"></i>`;
+                }).join('');
+                const isNew = prevIds && !prevIds.has(r.id) ? ' is-new' : '';
+                return `<button class="pulse-col ${st}${isNew}" role="listitem" title="${esc(r.status)} · ${esc(r.short_sha)} · ${esc(r.duration_text || '–')} · ${esc(r.time_ago || '')}" aria-label="${esc(r.status)} run ${esc(r.short_sha)}" data-action="jump-ci-run" data-run-id="${esc(r.id)}">${cells}</button>`;
+            }).join('');
+
+            const finished = recent.filter(r => r.status === 'passed' || r.status === 'failed');
+            const passed = finished.filter(r => r.status === 'passed').length;
+            document.getElementById('pulseLegend').innerHTML = finished.length
+                ? `<b>${Math.round((passed / finished.length) * 100)}%</b> green · last ${recent.length}`
+                : `last ${recent.length}`;
+            wrap.style.display = '';
+        }
+
+        async function loadRepoPulse() {
+            const repoAtRequest = activeRepo;
+            try {
+                const res = await apiFetch(`${repoApi()}/ci/runs`, { headers: authHeaders() });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const { data } = await res.json();
+                if (repoAtRequest === activeRepo) renderPulse(Array.isArray(data) ? data : []);
+            } catch (e) {
+                if (repoAtRequest === activeRepo) renderPulse([]);
+            }
+        }
+
+        function openLatestRun() {
+            if (pulseRuns[0]) jumpToCIRun(pulseRuns[0].id);
+        }
+
+        /** Slide the active-tab underline to the given tab. */
+        function positionTabInk() {
+            const ink = document.getElementById('tabInk');
+            const active = document.querySelector('.nav-tab.active');
+            if (!ink || !active) return;
+            ink.style.width = `${active.offsetWidth}px`;
+            ink.style.transform = `translateX(${active.offsetLeft}px)`;
+        }
+        window.addEventListener('resize', positionTabInk);
+        document.fonts?.ready.then(positionTabInk);
+
+        async function fetchCIRuns(statusFilter = ciFilter) {
+            ciFilter = statusFilter || 'all';
+            document.querySelectorAll('#ciFilter button').forEach(b => b.classList.toggle('is-active', b.dataset.filter === ciFilter));
             const table = document.getElementById('ciRunsTable');
-            table.innerHTML = '<div style="padding:24px; text-align:center; color:var(--text-muted)">Loading pipeline runs...</div>';
+            table.innerHTML = skeletonList(5);
 
             try {
                 let url = `${repoApi()}/ci/runs`;
-                if (statusFilter && statusFilter !== 'all') url += `?status=${encodeURIComponent(statusFilter)}`;
+                if (ciFilter !== 'all') url += `?status=${encodeURIComponent(ciFilter)}`;
                 const res = await apiFetch(url, { headers: authHeaders() });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const { data } = await res.json();
                 ciRunsData = Array.isArray(data) ? data : [];
 
-                // Only an unfiltered list is a meaningful tab count. The API pages at 25.
-                if (!statusFilter || statusFilter === 'all') {
+                // Only an unfiltered list is a meaningful tab count / history. The API pages at 25.
+                if (ciFilter === 'all') {
                     setCountBadge('runsCountBadge', ciRunsData.length >= 25 ? `${ciRunsData.length}+` : ciRunsData.length);
+                    renderPulse(ciRunsData);
                 }
 
                 if (!ciRunsData.length) {
-                    table.innerHTML = '<div style="padding:32px; text-align:center; color:var(--text-muted)">No CI runs found. Push code or click "Run workflow"!</div>';
+                    table.innerHTML = emptyState(ciFilter === 'all'
+                        ? '<strong>No workflow runs yet.</strong> Push code or use “Run workflow”.'
+                        : `No ${esc(ciFilter)} runs.`, { iconName: 'play' });
                     return;
                 }
 
+                const durations = ciRunsData.map(r => durationSeconds(r.duration_text)).filter(Boolean).sort((a, b) => a - b);
+                const median = durations.length ? durations[Math.floor(durations.length / 2)] : 0;
+
                 table.innerHTML = ciRunsData.map(run => {
-                    const icon = run.status === 'passed' ? '✔' : (run.status === 'failed' ? '✖' : '●');
+                    const slow = median && durationSeconds(run.duration_text) > median * 1.5;
                     return `
                         <div class="ci-run-row" data-action="open-run" data-run-id="${esc(run.id)}">
                             <div class="ci-run-left">
-                                <div class="ci-status-icon ${statusClass(run.status)}">${icon}</div>
+                                <div class="ci-status-icon ${statusClass(run.status)}" title="${esc(run.status)}">${statusIcon(run.status)}</div>
                                 <div class="ci-run-info">
                                     <div class="ci-run-title">${esc(run.commit_message)}</div>
                                     <div class="ci-run-subtext">
-                                        <span style="font-weight:600; color:var(--text-primary);">${esc(activeRepo)}</span>
-                                        <span>·</span>
-                                        <span class="badge badge-queued">${esc(run.trigger)}</span>
-                                        <span>·</span>
-                                        <span style="font-family:var(--font-mono); color:var(--accent-blue);">${esc(run.short_sha)}</span>
-                                        <span>·</span>
-                                        <span>branch: <code style="color:var(--text-primary);">${esc(run.branch)}</code></span>
+                                        <span class="badge">${esc(run.trigger)}</span>
+                                        <span class="mono" style="display:inline-flex; align-items:center; gap:4px;">${icon('branch', 12)}${esc(run.branch)}</span>
+                                        <span class="dot hide-xs">·</span>
+                                        <span class="mono hide-xs">${esc(run.short_sha)}</span>
                                     </div>
                                 </div>
                             </div>
                             <div class="ci-run-right">
-                                <span style="font-weight:600; color:var(--text-primary);">${esc(run.duration_text || '-')}</span>
+                                <span class="ci-duration${slow ? ' slow' : ''}" title="${slow ? 'Slower than usual' : ''}">${esc(run.duration_text || '–')}</span>
                                 <span>${esc(run.time_ago)}</span>
                             </div>
                         </div>
@@ -2009,7 +2176,7 @@
 
             } catch (e) {
                 ciRunsData = [];
-                table.innerHTML = '<div style="padding:24px; text-align:center; color:var(--danger-fg)">Failed to load CI runs.</div>';
+                table.innerHTML = emptyState('Failed to load workflow runs.', { error: true });
             }
         }
 
@@ -2026,38 +2193,51 @@
                 activeRunDetail = data;
 
                 document.getElementById('ciRunsListMode').style.display = 'none';
-                const detailMode = document.getElementById('ciRunDetailMode');
-                detailMode.style.display = 'block';
+                document.getElementById('ciRunDetailMode').style.display = 'block';
 
-                // Banner
-                const statusBadge = data.status === 'passed' ? 'badge-success' : (data.status === 'failed' ? 'badge-danger' : 'badge-running');
                 document.getElementById('ciRunBanner').innerHTML = `
                     <div class="ci-detail-title-group">
-                        <div class="ci-status-icon ${statusClass(data.status)}" style="width:32px; height:32px; font-size:16px;">
-                            ${data.status === 'passed' ? '✔' : (data.status === 'failed' ? '✖' : '●')}
-                        </div>
-                        <div>
-                            <div style="font-size:18px; font-weight:600;">${esc(data.commit_message)}</div>
-                            <div style="font-size:13px; color:var(--text-secondary); margin-top:3px;">
-                                Run on <strong>${esc(data.branch)}</strong> commit <span class="sha-pill" data-action="copy" data-text="${esc(data.commit_sha)}">${esc(data.short_sha)}</span>
-                                · Triggered by <strong>${esc(data.trigger)}</strong> · Total duration <strong>${esc(data.duration_text)}</strong>
+                        <div class="ci-status-icon lg ${statusClass(data.status)}">${statusIcon(data.status, 18)}</div>
+                        <div style="min-width:0;">
+                            <div class="ci-detail-title">${esc(data.commit_message)}</div>
+                            <div class="ci-detail-meta">
+                                <span class="badge ${statusBadgeClass(data.status)}">${esc(data.status)}</span>
+                                <span class="mono" style="display:inline-flex; align-items:center; gap:4px;">${icon('branch', 12)}${esc(data.branch)}</span>
+                                <span class="sha-pill" title="Copy full SHA" data-action="copy" data-text="${esc(data.commit_sha)}">${icon('copy', 12)}${esc(data.short_sha)}</span>
+                                <span>· ${esc(data.trigger)} · <strong class="mono">${esc(data.duration_text || '–')}</strong></span>
                             </div>
                         </div>
                     </div>
                     <div style="display:flex; gap:8px;">
-                        <button class="btn btn-sm btn-primary" data-action="rerun" data-run-id="${esc(data.id)}">Re-run jobs</button>
-                        ${(data.status === 'running' || data.status === 'queued') ? `<button class="btn btn-sm" data-action="cancel-run" data-run-id="${esc(data.id)}">Cancel run</button>` : ''}
+                        ${(data.status === 'running' || data.status === 'queued') ? `<button class="btn btn-sm btn-danger" data-action="cancel-run" data-run-id="${esc(data.id)}">${icon('ban', 14)} Cancel</button>` : ''}
+                        <button class="btn btn-sm btn-primary" data-action="rerun" data-run-id="${esc(data.id)}">${icon('refresh', 14)} Re-run</button>
                     </div>
                 `;
 
-                // Render Jobs & Steps
-                renderJobsTree(data.jobs || []);
+                const jobs = data.jobs || [];
+                renderJobsTree(jobs);
 
-                // Show the first step of the last job; clear the terminal if no steps are recorded yet.
-                const lastJob = data.jobs?.[data.jobs.length - 1];
-                const targetStep = lastJob?.steps?.[0] || data.jobs?.[0]?.steps?.[0];
-                if (targetStep) {
-                    selectStepLog(targetStep);
+                // Open the step that explains the outcome: first failed, else first running, else the last job's first step.
+                let target = null;
+                for (const want of ['failed', 'running']) {
+                    jobs.some((job, j) => (job.steps || []).some((step, s) => {
+                        if (step.status === want) { target = { step, j, s }; return true; }
+                        return false;
+                    }));
+                    if (target) break;
+                }
+                if (!target && jobs.length) {
+                    const j = jobs.length - 1;
+                    if (jobs[j].steps?.length) target = { step: jobs[j].steps[0], j, s: 0 };
+                }
+
+                if (target) {
+                    const elId = `step-node-${target.j}-${target.s}`;
+                    selectStepLog(target.step, elId);
+                    // Scroll inside the jobs panel only — never move the page past the run banner.
+                    const node = document.getElementById(elId);
+                    const tree = document.getElementById('ciJobsTree');
+                    if (node && tree) tree.scrollTop = Math.max(0, node.offsetTop - tree.clientHeight / 2);
                 } else {
                     document.getElementById('termStepTitle').textContent = 'Terminal';
                     const badge = document.getElementById('termStepBadge');
@@ -2068,33 +2248,39 @@
                 }
 
             } catch (e) {
-                alert("Error loading run detail: " + e.message);
+                toast("Couldn't load run: " + e.message, 'error');
             }
+        }
+
+        function stepTone(status) {
+            if (status === 'passed') return 'st-passed';
+            if (status === 'failed') return 'st-failed';
+            if (status === 'running') return 'st-running';
+            return 'st-other';
         }
 
         function renderJobsTree(jobs) {
             const container = document.getElementById('ciJobsTree');
+            if (!jobs.length) {
+                container.innerHTML = emptyState('No jobs recorded.', { iconName: 'play' });
+                return;
+            }
             container.innerHTML = jobs.map((job, jIdx) => {
-                const jobStatusIcon = job.status === 'passed' ? '✔' : (job.status === 'failed' ? '✖' : '●');
-                const stepsHtml = (job.steps || []).map((step, sIdx) => {
-                    const stepStatusIcon = step.status === 'passed' ? '✔' : (step.status === 'failed' ? '✖' : (step.status === 'running' ? '●' : '○'));
-                    const statusColor = step.status === 'passed' ? 'var(--success-fg)' : (step.status === 'failed' ? 'var(--danger-fg)' : 'var(--text-secondary)');
-                    return `
-                        <div class="ci-step-item" id="step-node-${jIdx}-${sIdx}" data-action="select-step" data-job="${jIdx}" data-step="${sIdx}">
-                            <div class="ci-step-left" style="min-width:0; flex:1;">
-                                <span style="color:${statusColor}; font-weight:bold; font-size:12px; flex-shrink:0;">${stepStatusIcon}</span>
-                                <span style="font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(step.name)}</span>
+                const stepsHtml = (job.steps || []).map((step, sIdx) => `
+                        <div class="ci-step-item" id="step-node-${jIdx}-${sIdx}" data-action="select-step" data-job="${jIdx}" data-step="${sIdx}" tabindex="0" role="button">
+                            <div class="ci-step-left">
+                                <span class="${stepTone(step.status)}" style="display:flex;">${statusIcon(step.status, 14)}</span>
+                                <span class="name">${esc(step.name)}</span>
                             </div>
-                            <span style="font-size:11px; color:var(--text-muted); white-space:nowrap; flex-shrink:0; margin-left:8px;">${esc(step.duration || '')}</span>
+                            <span class="step-dur">${esc(step.duration || '')}</span>
                         </div>
-                    `;
-                }).join('');
+                    `).join('');
 
                 return `
-                    <div style="margin-bottom:8px;">
+                    <div style="margin-bottom:4px;">
                         <div class="ci-job-header">
-                            <span>${esc(job.name)}</span>
-                            <span class="badge ${job.status === 'passed' ? 'badge-success' : 'badge-queued'}">${esc(job.status)}</span>
+                            <span style="display:flex; align-items:center; gap:8px;"><span class="${stepTone(job.status)}" style="display:flex;">${statusIcon(job.status, 14)}</span>${esc(job.name)}</span>
+                            <span class="badge ${statusBadgeClass(job.status)}">${esc(job.status)}</span>
                         </div>
                         ${stepsHtml}
                     </div>
@@ -2109,17 +2295,20 @@
                 if (node) node.classList.add('active');
             }
 
-            document.getElementById('termStepTitle').textContent = `${step.name} — ${step.command || ''}`;
+            document.getElementById('termStepTitle').textContent = step.command ? `${step.name} — ${step.command}` : step.name;
             const badge = document.getElementById('termStepBadge');
-            badge.textContent = step.status;
-            badge.className = `badge ${step.status === 'passed' ? 'badge-success' : (step.status === 'failed' ? 'badge-danger' : 'badge-running')}`;
+            badge.innerHTML = `${statusIcon(step.status, 12)} ${esc(step.status)}`;
+            badge.className = `badge ${statusBadgeClass(step.status)}`;
 
             const term = document.getElementById('terminalLogBody');
             if (step.logs && step.logs.length) {
-                term.innerHTML = step.logs.map(l => `<div class="term-line"><span class="term-time">[${esc(l.timestamp)}]</span><span class="term-text ${l.stream === 'stderr' ? 'stderr' : 'stdout'}">${esc(l.line)}</span></div>`).join('');
+                term.innerHTML = step.logs.map(l => `<div class="term-line"><span class="term-time">${esc(l.timestamp)}</span><span class="term-text ${l.stream === 'stderr' ? 'stderr' : 'stdout'}">${esc(l.line)}</span></div>`).join('');
+                // Jump to the first error line so failures are visible without scrolling.
+                const firstErr = term.querySelector('.term-text.stderr');
+                term.scrollTop = firstErr ? Math.max(0, firstErr.offsetTop - term.offsetTop - term.clientHeight / 3) : 0;
             } else {
                 const message = (step.status === 'pending' || step.status === 'queued' || step.status === 'running')
-                    ? 'Waiting for log output...'
+                    ? 'Waiting for log output…'
                     : 'No log output was recorded for this step.';
                 term.innerHTML = `<div class="term-line"><span class="term-text stdout" style="color:var(--text-muted);">${escapeHtml(message)}</span></div>`;
             }
@@ -2138,14 +2327,14 @@
                     headers: authHeaders()
                 });
                 if (res.ok) {
-                    alert("Re-run queued successfully!");
-                    fetchCIRuns();
+                    toast('Re-run queued', 'success');
                     exitRunDetail();
+                    fetchCIRuns();
                 } else {
-                    alert("Failed to re-run workflow.");
+                    toast('Failed to re-run workflow.', 'error');
                 }
             } catch (e) {
-                alert("Error: " + e.message);
+                toast('Error: ' + e.message, 'error');
             }
         }
 
@@ -2159,20 +2348,38 @@
                 });
                 const body = await res.json().catch(() => ({}));
                 if (!res.ok) {
-                    alert(`Failed to cancel run: ${body.error || res.statusText}`);
+                    toast(`Failed to cancel run: ${body.error || res.statusText}`, 'error');
                 } else if (body.data?.runner && body.data.runner.notified === false && body.data.runner.error) {
-                    alert('Run cancelled. The runner could not be reached right now; it will stop the job on its next check-in.');
+                    toast('Run cancelled. The runner is unreachable; it will stop the job on its next check-in.', 'info');
+                } else {
+                    toast('Run cancelled', 'success');
                 }
                 // Refresh both views so the new status shows whichever the user returns to.
                 fetchCIRuns();
                 if (activeRunDetail?.id === runId) openRunDetail(runId);
             } catch (e) {
-                alert("Error: " + e.message);
+                toast('Error: ' + e.message, 'error');
             }
         }
 
+        /** Opens the Run workflow dialog with a branch picker (replaces prompt()). */
         async function triggerManualWorkflow() {
-            const branch = prompt("Enter branch to run workflow on:", currentBranch);
+            if (!activeRepo) { toast('Select a repository first.', 'info'); return; }
+            if (!branches.length) await loadBranches();
+            const select = document.getElementById('runWorkflowBranch');
+            const names = branches.length ? branches.map(b => b.name) : [currentBranch || 'main'];
+            select.replaceChildren(...names.map(n => {
+                const opt = document.createElement('option');
+                opt.value = n;
+                opt.textContent = n;
+                opt.selected = n === currentBranch;
+                return opt;
+            }));
+            document.getElementById('runWorkflowModal').showModal();
+        }
+
+        async function submitRunWorkflow() {
+            const branch = document.getElementById('runWorkflowBranch').value;
             if (!branch) return;
             try {
                 const res = await apiFetch(`${repoApi()}/ci/trigger`, {
@@ -2181,14 +2388,15 @@
                     body: JSON.stringify({ branch })
                 });
                 if (res.ok) {
-                    alert(`CI Workflow queued for ${activeRepo}@${branch}!`);
+                    document.getElementById('runWorkflowModal').close();
+                    toast(`Workflow queued for ${activeRepo}@${branch}`, 'success');
+                    exitRunDetail();
                     switchMainTab('ci');
-                    fetchCIRuns();
                 } else {
-                    alert("Failed to trigger CI.");
+                    toast('Failed to trigger CI.', 'error');
                 }
             } catch (e) {
-                alert("Error: " + e.message);
+                toast('Error: ' + e.message, 'error');
             }
         }
 
@@ -2198,41 +2406,100 @@
             openRunDetail(runId);
         }
 
-        // ─── Feature 4: Deploy Targets ──────────────────────────────────
+        // ─── Feature 4: Deployments ─────────────────────────────────────
+        function shortSha(sha) { return sha ? String(sha).slice(0, 7) : ''; }
+
+        function timeAgo(iso) {
+            if (!iso) return '';
+            const t = Date.parse(String(iso).includes('T') ? iso : String(iso).replace(' ', 'T') + 'Z');
+            if (isNaN(t)) return String(iso);
+            const s = Math.max(0, (Date.now() - t) / 1000);
+            if (s < 60) return 'just now';
+            const units = [['y', 31536000], ['mo', 2592000], ['d', 86400], ['h', 3600], ['m', 60]];
+            for (const [u, n] of units) if (s >= n) return `${Math.floor(s / n)}${u} ago`;
+            return 'just now';
+        }
+
         async function fetchDeployTargets() {
             const container = document.getElementById('deployTargetsListContainer');
-            container.innerHTML = '<div style="padding:24px; text-align:center; color:var(--text-muted)">Loading deploy targets...</div>';
+            container.innerHTML = `<div class="deploy-grid">${'<div class="card" style="padding:20px; display:flex; flex-direction:column; gap:12px;"><span class="skeleton" style="width:40%; height:14px;"></span><span class="skeleton" style="width:70%;"></span><span class="skeleton" style="width:55%;"></span></div>'.repeat(2)}</div>`;
 
             try {
-                const res = await apiFetch(`${repoApi()}/deploys`, { headers: authHeaders() });
+                const [res, histRes] = await Promise.all([
+                    apiFetch(`${repoApi()}/deploys`, { headers: authHeaders() }),
+                    apiFetch(`${repoApi()}/deployments?limit=50`, { headers: authHeaders() }).catch(() => null),
+                ]);
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const { data } = await res.json();
+                // History is best-effort: target cards still render without it.
+                let history = [];
+                if (histRes && histRes.ok) {
+                    const h = await histRes.json().catch(() => ({}));
+                    history = Array.isArray(h.data) ? h.data : [];
+                }
+                const latestByTarget = {};
+                for (const d of history) if (!latestByTarget[d.target_id]) latestByTarget[d.target_id] = d;
+
                 if (!Array.isArray(data) || !data.length) {
-                    container.innerHTML = '<div class="empty-state">No deploy targets configured for this repository.</div>';
+                    container.innerHTML = `<div class="card">${emptyState('<strong>No deploy targets yet.</strong> Add a Coolify or Cloudflare target via the API to deploy on push.', { iconName: 'rocket' })}</div>`;
                     return;
                 }
 
-                container.innerHTML = data.map(t => {
+                container.innerHTML = `<div class="deploy-grid">${data.map(t => {
                     const active = Number(t.is_active) !== 0;
-                    const details = [];
-                    if (t.coolify_app_id) details.push(`App UUID: <code>${esc(t.coolify_app_id)}</code>`);
-                    details.push(`Branches: <code>${esc(formatBranchFilter(t.branch_filter))}</code>`);
+                    const type = String(t.type || '').toLowerCase();
+                    const last = latestByTarget[t.id];
+                    const lastHtml = last
+                        ? `<span class="${stepTone(last.status === 'success' ? 'passed' : (last.status === 'failed' ? 'failed' : (last.status === 'deploying' ? 'running' : 'other')))}" style="display:flex;">${statusIcon(last.status, 14)}</span>
+                           <span><span style="color:var(--text-secondary);">${esc(last.status)}</span> · <span class="mono">${esc(shortSha(last.commit_sha))}</span> · ${esc(timeAgo(last.finished_at || last.started_at || last.created_at))}</span>`
+                        : `${icon('clock', 14)}<span>Never deployed</span>`;
                     return `
-                        <div class="deploy-card">
-                            <div>
-                                <div style="font-weight:600; font-size:15px; margin-bottom:4px;">${esc(t.name)}</div>
-                                <div style="font-size:12px; color:var(--text-secondary);">${details.join(' · ')}</div>
+                        <div class="card deploy-card">
+                            <div class="deploy-card-top">
+                                <div class="deploy-card-title">
+                                    <div class="deploy-type-icon ${type === 'cloudflare' ? 'cloudflare' : ''}">${icon(type === 'cloudflare' ? 'cloud' : 'server', 18)}</div>
+                                    <div style="min-width:0;">
+                                        <div class="deploy-name">${esc(t.name)}</div>
+                                        <div class="deploy-sub">${type === 'cloudflare' ? 'Cloudflare Workers' : (type === 'coolify' ? 'Coolify' : esc(type))}</div>
+                                    </div>
+                                </div>
+                                <span class="badge ${active ? 'badge-success' : 'badge-queued'}">${active ? 'Active' : 'Paused'}</span>
                             </div>
-                            <div style="display:flex; align-items:center; gap:8px;">
-                                <span class="badge badge-queued">${esc(String(t.type || '').toUpperCase())}</span>
-                                <span class="badge ${active ? 'badge-success' : 'badge-queued'}">${active ? 'ACTIVE' : 'INACTIVE'}</span>
+                            <dl class="deploy-meta">
+                                <dt>Branches</dt><dd><code>${esc(formatBranchFilter(t.branch_filter))}</code></dd>
+                                ${t.coolify_app_id ? `<dt>App</dt><dd><code>${esc(t.coolify_app_id)}</code></dd>` : ''}
+                                ${t.coolify_base_url ? `<dt>Host</dt><dd>${esc(t.coolify_base_url)}</dd>` : ''}
+                            </dl>
+                            <div class="deploy-card-foot">
+                                <div class="deploy-last">${lastHtml}</div>
+                                <button class="btn btn-sm" data-action="deploy-now" data-target-id="${esc(t.id)}" ${active ? '' : 'disabled style="opacity:.5; cursor:not-allowed;"'}>${icon('rocket', 14)} Deploy</button>
                             </div>
                         </div>
                     `;
-                }).join('');
+                }).join('')}</div>`;
 
             } catch (e) {
-                container.innerHTML = '<div style="padding:24px; text-align:center; color:var(--danger-fg)">Failed to load deploy targets.</div>';
+                container.innerHTML = `<div class="card">${emptyState('Failed to load deploy targets.', { error: true })}</div>`;
+            }
+        }
+
+        async function deployNow(targetId) {
+            if (!targetId) return;
+            try {
+                const res = await apiFetch(`${repoApi()}/deploys/${encodeURIComponent(targetId)}/run`, {
+                    method: 'POST',
+                    headers: authHeaders(),
+                    body: JSON.stringify({ branch: currentBranch })
+                });
+                const body = await res.json().catch(() => ({}));
+                if (res.ok) {
+                    toast(`Deploy queued from ${currentBranch}`, 'success');
+                    fetchDeployTargets();
+                } else {
+                    toast(`Deploy failed: ${body.error || res.statusText}`, 'error');
+                }
+            } catch (e) {
+                toast('Error: ' + e.message, 'error');
             }
         }
 
@@ -2266,14 +2533,14 @@
                 });
                 if (res.ok) {
                     document.getElementById('newRepoModal').close();
-                    alert(`Repository '${name}' created!`);
+                    toast(`Repository '${name}' created`, 'success');
                     await loadRepos(name);
                 } else {
                     const err = await res.json();
-                    alert(`Error: ${err.error || 'Failed to create repo'}`);
+                    toast(`Error: ${err.error || 'Failed to create repo'}`, 'error');
                 }
             } catch (e) {
-                alert("Error: " + e.message);
+                toast("Error: " + e.message, 'error');
             }
         }
 
@@ -2288,24 +2555,28 @@
             if (!e.target.closest('.branch-picker')) {
                 closeBranchMenu();
             }
+            if (!e.target.closest('.user-menu')) {
+                document.getElementById('userMenu')?.classList.remove('show');
+                document.getElementById('userMenuBtn')?.setAttribute('aria-expanded', 'false');
+            }
         };
 
         function copyCloneUrl() {
             const input = document.getElementById('cloneUrlInput');
             navigator.clipboard.writeText(input.value);
-            alert("Clone URL copied!");
+            toast('Clone URL copied', 'success');
         }
 
         function copyTerminalLogs() {
             const term = document.getElementById('terminalLogBody');
             navigator.clipboard.writeText(term.innerText);
-            alert("Terminal logs copied to clipboard!");
+            toast('Log copied', 'success');
         }
 
         function copyText(txt) {
             if (!txt) return;
             navigator.clipboard.writeText(txt);
-            alert("Copied: " + txt);
+            toast(`Copied ${txt.length > 12 ? txt.slice(0, 7) : txt}`, 'success');
         }
 
         function formatBytes(bytes) {
@@ -2381,12 +2652,25 @@
                 case 'select-branch':
                     selectBranch(d.branch);
                     break;
+                case 'deploy-now':
+                    deployNow(d.targetId);
+                    break;
                 case 'select-step': {
                     const job = activeRunDetail?.jobs?.[Number(d.job)];
                     const step = job?.steps?.[Number(d.step)];
                     if (step) selectStepLog(step, el.id);
                     break;
                 }
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('[role="button"][data-action]')) {
+                e.preventDefault();
+                e.target.click();
+            }
+            if (e.key === 'Escape') {
+                document.querySelectorAll('.dropdown-menu.show').forEach(m => m.classList.remove('show'));
             }
         });
 
@@ -2409,7 +2693,7 @@
             html = html.replace(/\[([^\]]+)\]\(([^)\s]+)\)/gim, (match, text, url) => {
                 const href = safeLinkHref(url);
                 return href
-                    ? `<a href="${href}" target="_blank" rel="noopener noreferrer nofollow" style="color:var(--accent-blue);">${text}</a>`
+                    ? `<a href="${href}" target="_blank" rel="noopener noreferrer nofollow">${text}</a>`
                     : text;
             });
             // Paragraph breaks

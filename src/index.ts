@@ -26,7 +26,7 @@ import { handleMirrorSyncBatch } from './lib/github-mirror.ts';
 import type { MirrorSyncMessage } from './env.ts';
 import { runScheduledMaintenance } from './lib/maintenance.ts';
 import dashboardHtml from './dashboard/index.html';
-import logoPng from '../assets/octopus-on-fire.png';
+import { LOGO_SVG, FAVICON_SVG, WORDMARK_SVG } from './lib/brand';
 
 // ─── Re-export Durable Objects ──────────────────────────────────
 export { RepoCoordinator } from './do/repo-coordinator.ts';
@@ -66,15 +66,20 @@ app.use('/api/*', logger());
 
 // ─── Public Routes (no auth required) ───────────────────────────
 
-// Serve the app logo
-app.get('/logo.png', (c) => {
-	return new Response(logoPng, {
+// Brand marks: pixel-flame logo, favicon, outlined wordmark
+const svgResponse = (svg: string) =>
+	new Response(svg, {
 		headers: {
-			'Content-Type': 'image/png',
+			'Content-Type': 'image/svg+xml; charset=utf-8',
 			'Cache-Control': 'public, max-age=86400',
 		},
 	});
-});
+app.get('/logo.svg', () => svgResponse(LOGO_SVG));
+app.get('/favicon.svg', () => svgResponse(FAVICON_SVG));
+app.get('/wordmark.svg', () => svgResponse(WORDMARK_SVG));
+app.get('/favicon.ico', () => svgResponse(FAVICON_SVG));
+// Old raster logo URL — keep working for anything that linked to it.
+app.get('/logo.png', (c) => c.redirect('/logo.svg', 301));
 
 app.get('/health', (c) => {
 	return c.json({
