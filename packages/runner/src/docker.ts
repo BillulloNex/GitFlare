@@ -149,7 +149,9 @@ export async function createJobContainer(kind: 'ci' | 'deploy', id: string, onLi
     '--cpus', config.jobCpus,
     '--network', config.jobNetwork,
     '-v', `${job.volume}:${WORKSPACE}`,
-    '-w', WORKSPACE,
+    // No `-w WORKSPACE` here: on Docker 29 (containerd snapshotter) a run-time
+    // workdir that is also a volume mount resets the volume root to root:root,
+    // undoing the chown above. Steps get the workdir from `docker exec -w`.
     // Allowlisted base env only; PATH etc. come from the image.
     '-e', `HOME=${JOB_HOME}`, '-e', 'TMPDIR=/tmp', '-e', 'LANG=C.UTF-8', '-e', 'CI=true',
     '--entrypoint', 'sh',

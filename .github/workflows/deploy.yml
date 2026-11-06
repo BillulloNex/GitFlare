@@ -131,3 +131,71 @@ jobs:
           done
           echo "::error::https://git.beenex.company/health did not return 200 after deploy"
           exit 1
+
+  # The runner (packages/runner) is hosted on Coolify. It speaks a versioned
+  # protocol with the Worker, so it ships from the same workflow, right after
+  # the Worker. Skipped when nothing runner-related changed, so in-flight CI
+  # jobs aren't killed by a needless restart.
+  runner:
+    runs-on: ubuntu-latest
+    name: Deploy CI runner (Coolify)
+    needs: deploy
+    env:
+      COOLIFY_BASE_URL: ${{ secrets.COOLIFY_BASE_URL }}
+      COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+      RUNNER_APP_UUID: o3qsphlnof4yg43wj7i4zawe
+      RUNNER_HEALTH_URL: https://runner.beenex.org/health
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Did the runner change?
+        id: changed
+        run: |
+          set -euo pipefail
+          before="${{ github.event.before }}"
+          if [ "${{ github.event_name }}" != "push" ] || ! git cat-file -e "$before^{commit}" 2>/dev/null; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if git diff --quiet "$before" HEAD -- packages/runner src/lib/runner-protocol.ts; then
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+            echo "Runner unchanged; skipping."
+          else
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy runner on Coolify
+        if: steps.changed.outputs.deploy == 'true'
+        run: |
+          set -euo pipefail
+          auth=(-H "Authorization: Bearer $COOLIFY_API_TOKEN")
+          dep=$(curl -fsS "${auth[@]}" -X POST "$COOLIFY_BASE_URL/api/v1/deploy?uuid=$RUNNER_APP_UUID" \
+            | jq -r '.deployments[0].deployment_uuid')
+          echo "Coolify deployment: $dep"
+          for i in $(seq 1 60); do
+            status=$(curl -fsS "${auth[@]}" "$COOLIFY_BASE_URL/api/v1/deployments/$dep" | jq -r '.status')
+            echo "status: $status"
+            case "$status" in
+              finished) break ;;
+              failed|cancelled*) echo "::error::Runner deployment $status"; exit 1 ;;
+            esac
+            sleep 10
+          done
+          [ "$status" = finished ] || { echo "::error::Runner deployment timed out"; exit 1; }
+
+      - name: Runner health check
+        if: steps.changed.outputs.deploy == 'true'
+        # Must match the Worker's protocol and be able to start job containers.
+        run: |
+          set -euo pipefail
+          want=$(grep -oE 'RUNNER_PROTOCOL_VERSION = [0-9]+' src/lib/runner-protocol.ts | grep -oE '[0-9]+$')
+          for i in $(seq 1 12); do
+            if h=$(curl -fsS --max-time 10 "$RUNNER_HEALTH_URL"); then
+              echo "$h"
+              if [ "$(jq -r .protocolVersion <<<"$h")" = "$want" ] && [ "$(jq -r .docker <<<"$h")" = true ]; then exit 0; fi
+            fi
+            sleep 10
+          done
+          echo "::error::Runner is not healthy (want protocol v$want with Docker available)"
+          exit 1
