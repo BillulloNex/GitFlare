@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Deploy GitFlare Worker
     env:
-      # Token needs: Workers Scripts edit, D1 edit, R2 edit (for backups).
+      # Token needs: Workers Scripts edit, D1 edit. R2 edit is optional (extra backup copy).
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
       D1_DATABASE: gitflare-db
@@ -81,15 +81,34 @@ jobs:
             echo "pending=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Back up D1 to R2
-        # Rollback safety. Stored in R2 (not as a workflow artifact) because the
-        # dump contains sessions, key hashes and encrypted tokens.
+      - name: Record D1 restore point
+        # Rollback safety via D1 Time Travel (point-in-time restore, 30 days).
+        # Needs only D1 permission. To undo a bad migration:
+        #   npx wrangler d1 time-travel restore gitflare-db --bookmark=<bookmark>
         if: steps.pending.outputs.pending == 'true'
+        run: |
+          set -euo pipefail
+          bookmark=$(npx wrangler d1 time-travel info "$D1_DATABASE" --json | jq -r '.bookmark')
+          test -n "$bookmark" && test "$bookmark" != "null"
+          echo "Restore point before migrations: $bookmark"
+          printf '### D1 restore point\n\n`npx wrangler d1 time-travel restore %s --bookmark=%s`\n' "$D1_DATABASE" "$bookmark" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Back up D1 to R2 (best effort)
+        # Extra copy. Stored in R2 (not as a workflow artifact) because the dump
+        # contains sessions, key hashes and encrypted tokens. Needs R2 edit on
+        # the API token; failure only warns, the Time Travel bookmark above is
+        # the guaranteed restore point.
+        if: steps.pending.outputs.pending == 'true'
+        continue-on-error: true
         run: |
           set -euo pipefail
           file="d1-backup-$(date -u +%Y%m%dT%H%M%SZ)-${GITHUB_SHA::12}.sql"
           npx wrangler d1 export "$D1_DATABASE" --remote --output="$file"
-          npx wrangler r2 object put "$BACKUP_BUCKET/d1-backups/$file" --file="$file" --content-type=application/sql --remote
+          if ! npx wrangler r2 object put "$BACKUP_BUCKET/d1-backups/$file" --file="$file" --content-type=application/sql --remote; then
+            rm -f "$file"
+            echo "::warning::R2 backup skipped: API token lacks R2 edit. Time Travel bookmark is the restore point."
+            exit 1
+          fi
           rm -f "$file"
           echo "Backup: r2://$BACKUP_BUCKET/d1-backups/$file"
 
