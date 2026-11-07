@@ -20,27 +20,20 @@ import { triggerGitHubMirror } from '../lib/github-mirror.ts';
 import { getArtifactsRemoteUrl } from '../lib/artifacts-url.ts';
 import { getArtifactFileContent, CI_CONFIG_PATH } from '../lib/artifact-reader.ts';
 import { hashKey } from '../lib/crypto.ts';
-import { checkRepoAccess, isValidPermission, type AccessLevel } from '../lib/access.ts';
-import { principalFrom } from '../middleware/auth.ts';
+import { isValidPermission } from '../lib/access.ts';
+import { looksLikeLfsToken, verifyLfsToken } from '../lib/lfs-token.ts';
+import { ARTIFACTS_MAX_BLOB_BYTES, lfsFixRecipe, looksLikeSizeLimitError } from '../lib/lfs.ts';
+import { scanPackForLargeBlobs } from '../lib/pack-scan.ts';
+import lfsApp, { lfsDocsUrl, publicOrigin } from './lfs.ts';
+import { denyGitAccess, findGitRepo, repoNameParam, unauthorized, type GitAuthVariables, type GitRepoRow } from './git-shared.ts';
 
-const app = new Hono<{ Bindings: Env; Variables: { apiKey: ApiKey } }>();
+const app = new Hono<{ Bindings: Env; Variables: GitAuthVariables }>();
 
 /**
  * Artifacts write-token lifetime for a push. The RepoCoordinator push lock
  * uses the same lifetime (PUSH_LOCK_TTL_MS in src/do/repo-coordinator.ts).
  */
 const PUSH_TOKEN_TTL_SECONDS = 300;
-
-type GitRepoRow = { id: string; name: string; is_private: number; default_branch: string | null };
-
-/** `/:repo` param minus one trailing `.git` ("foo.git" → "foo", "a.github" unchanged). */
-function repoNameParam(raw: string): string {
-	return raw.replace(/\.git$/, '');
-}
-
-function findRepo(db: D1Database, name: string): Promise<GitRepoRow | null> {
-	return db.prepare('SELECT id, name, is_private, default_branch FROM repositories WHERE name = ?').bind(name).first<GitRepoRow>();
-}
 
 /** Headers from the git client that must reach Artifacts unchanged. */
 function forwardedGitHeaders(req: Request): Record<string, string> {
@@ -55,16 +48,26 @@ function isGitDebug(env: Env): boolean {
 	return flag === '1' || flag === 'true' || flag === 'yes';
 }
 
-function unauthorized(): Response {
-	return new Response('Unauthorized', {
-		status: 401,
-		headers: { 'WWW-Authenticate': 'Basic realm="GitFlare"' },
-	});
+/** LFS routes (src/api/lfs.ts) additionally accept minted LFS bearer tokens. */
+function isLfsPath(path: string): boolean {
+	return path.includes('/info/lfs/');
 }
 
 // ─── Git-specific Basic Auth ────────────────────────────────────
+// Git Smart HTTP: `Basic` with an API key as the password.
+// Git LFS:        the same, or `Bearer lfs1.…` (a short-lived token the batch
+//                 endpoint / CI dispatcher minted) — only on /info/lfs/ paths.
 app.use('*', async (c, next) => {
 	const authHeader = c.req.header('Authorization');
+	if (authHeader && authHeader.startsWith('Bearer ') && isLfsPath(c.req.path)) {
+		const token = authHeader.slice(7).trim();
+		if (!looksLikeLfsToken(token)) return unauthorized();
+		const claims = await verifyLfsToken(c.env.ENCRYPTION_KEY, token);
+		if (!claims) return unauthorized();
+		c.set('lfsToken', claims);
+		await next();
+		return;
+	}
 	if (!authHeader || !authHeader.startsWith('Basic ')) {
 		return unauthorized();
 	}
@@ -100,30 +103,10 @@ app.use('*', async (c, next) => {
 	await next();
 });
 
-/**
- * Check the authenticated key may perform `level` on the repo, via the shared
- * checkRepoAccess (permission level, key scope, is_private, repo_members).
- * Callers who can't even read the repo get a 404 so private names don't leak;
- * readers lacking `level` get a 403. Returns null when allowed.
- */
-async function denyGitAccess(
-	db: D1Database,
-	apiKey: ApiKey,
-	repo: { id: string; is_private: boolean | number },
-	level: AccessLevel
-): Promise<Response | null> {
-	const principal = principalFrom(null, apiKey);
-	if (!principal) {
-		return new Response('Forbidden: API key has an invalid permission level', { status: 403 });
-	}
-	if (!(await checkRepoAccess(principal, repo.id, repo.is_private, 'read', db))) {
-		return new Response('Repository not found', { status: 404 });
-	}
-	if (level !== 'read' && !(await checkRepoAccess(principal, repo.id, repo.is_private, level, db))) {
-		return new Response(`Forbidden: ${level} access to this repository required`, { status: 403 });
-	}
-	return null;
-}
+// ─── Git LFS ────────────────────────────────────────────────────
+// /:repo/info/lfs/* — see src/api/lfs.ts. Mounted here so it shares the auth
+// middleware above and the /git/<repo>.git URL git-lfs derives from the remote.
+app.route('/', lfsApp);
 
 /**
  * Helper: get a scoped Artifacts token. Remote URLs come from
@@ -160,15 +143,17 @@ app.get('/:repo/info/refs', async (c) => {
 	}
 
 	const repoName = repoNameParam(c.req.param('repo'));
+	const apiKey = c.get('apiKey');
+	if (!apiKey) return unauthorized();
 
 	const { DB } = c.env;
-	const repoRecord = await findRepo(DB, repoName);
+	const repoRecord = await findGitRepo(DB, repoName);
 	if (!repoRecord) {
 		return c.text('Repository not found', 404);
 	}
 
 	const permission = service === 'git-receive-pack' ? 'write' : 'read';
-	const denied = await denyGitAccess(DB, c.get('apiKey'), repoRecord, permission);
+	const denied = await denyGitAccess(DB, apiKey, repoRecord, permission);
 	if (denied) return denied;
 
 	try {
@@ -208,14 +193,16 @@ app.get('/:repo/info/refs', async (c) => {
  */
 app.post('/:repo/git-upload-pack', async (c) => {
 	const repoName = repoNameParam(c.req.param('repo'));
+	const apiKey = c.get('apiKey');
+	if (!apiKey) return unauthorized();
 
 	const { DB } = c.env;
-	const repoRecord = await findRepo(DB, repoName);
+	const repoRecord = await findGitRepo(DB, repoName);
 	if (!repoRecord) {
 		return c.text('Repository not found', 404);
 	}
 
-	const denied = await denyGitAccess(DB, c.get('apiKey'), repoRecord, 'read');
+	const denied = await denyGitAccess(DB, apiKey, repoRecord, 'read');
 	if (denied) return denied;
 
 	try {
@@ -523,13 +510,15 @@ app.post('/:repo/git-receive-pack', async (c) => {
 	const repoName = repoNameParam(c.req.param('repo'));
 	const debug = isGitDebug(c.env);
 
+	const apiKey = c.get('apiKey');
+	if (!apiKey) return unauthorized();
+
 	const { DB } = c.env;
-	const repoRecord = await findRepo(DB, repoName);
+	const repoRecord = await findGitRepo(DB, repoName);
 	if (!repoRecord) {
 		return c.text('Repository not found', 404);
 	}
 
-	const apiKey = c.get('apiKey');
 	const denied = await denyGitAccess(DB, apiKey, repoRecord, 'write');
 	if (denied) return denied;
 	const pusher = apiKey.id;
@@ -617,6 +606,22 @@ app.post('/:repo/git-receive-pack', async (c) => {
 		return rejectPush(parsed, violations, 'push rejected — another ref in this push is protected');
 	}
 
+	// ── Step 2b: Large-blob guard (best effort) ─────────────────
+	// Artifacts caps a blob at 32 MB and fails the whole push with an opaque
+	// error. Walk the pack first so the pusher gets a Git LFS recipe instead.
+	// Deltas and scan failures fall through to Artifacts (see pack-scan.ts).
+	const docsUrl = lfsDocsUrl(c.env, publicOrigin(c.env, c.req.url));
+	if (requestBody.length > parsed.commandSectionLength) {
+		const scan = scanPackForLargeBlobs(requestBody.subarray(parsed.commandSectionLength), { limitBytes: ARTIFACTS_MAX_BLOB_BYTES });
+		if (scan.oversized.length > 0) {
+			const sizes = scan.oversized.map((b) => b.size);
+			console.log(`[git-push] rejecting push to ${repoName}: blob(s) over ${ARTIFACTS_MAX_BLOB_BYTES} bytes: ${sizes.join(', ')}`);
+			auditRejection({ reason: 'blob_too_large', sizes, limit: ARTIFACTS_MAX_BLOB_BYTES });
+			return gitFatal(parsed.capabilities, lfsFixRecipe({ docsUrl, sizes }));
+		}
+		if (!scan.complete && debug) console.log(`[git-push] pack scan for ${repoName} stopped early: ${scan.reason}`);
+	}
+
 	// ── Step 3: Acquire push lock (reject if unavailable) ───────
 	const lock = await acquirePushLock(c.env, repoRecord.id, pusher, parsed.refs.map(r => r.refName));
 	if ('error' in lock) {
@@ -645,6 +650,11 @@ app.post('/:repo/git-receive-pack', async (c) => {
 
 		if (!response.ok) {
 			console.error(`[git-push] Artifacts rejected push to ${repoName}: HTTP ${response.status}`);
+			const text = new TextDecoder().decode(responseBody.subarray(0, 2048)).trim();
+			if (looksLikeSizeLimitError(text)) {
+				// A blob the pack scan could not size (delta) or a repo over 1 GB.
+				return gitFatal(parsed.capabilities, lfsFixRecipe({ docsUrl, sizes: [], reason: `storage rejected the push: ${text}` }));
+			}
 			return new Response(responseBody, { status: response.status, headers: RECEIVE_PACK_RESULT_HEADERS });
 		}
 
@@ -659,6 +669,10 @@ app.post('/:repo/git-receive-pack', async (c) => {
 			);
 		} else if (!report.unpackOk) {
 			console.error(`[git-push] unpack failed for ${repoName}: ${report.unpackError}`);
+			const problems = [report.unpackError ?? '', ...report.errors].join('\n').trim();
+			if (looksLikeSizeLimitError(problems)) {
+				return gitFatal(parsed.capabilities, lfsFixRecipe({ docsUrl, sizes: [], reason: `storage rejected the push: ${problems}` }));
+			}
 		} else {
 			for (const result of report.refResults) {
 				if (!result.success) {

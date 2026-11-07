@@ -110,7 +110,7 @@ export async function executeCIRun(req: CIRunRequest): Promise<void> {
     startedAt: null,
     finishedAt: null,
     durationMs: null,
-    logs: new LogCollector([req.checkout.token]),
+    logs: new LogCollector([req.checkout.token, req.checkout.lfs?.token ?? '']),
   }));
   // Setup (pull, clone) output is shown on the first step.
   const setupLog = steps[0].logs;

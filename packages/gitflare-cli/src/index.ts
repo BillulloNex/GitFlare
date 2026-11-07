@@ -4,7 +4,7 @@ import * as readline from 'node:readline';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { saveConfig, getClient, getConfigOrEnv } from './config.js';
 import { GitFlareClient, GitFlareError, type DeployTarget } from '@gitflare/client';
 
@@ -51,6 +51,23 @@ function formatBranchFilter(target: DeployTarget): string {
  * GITFLARE_ASKPASS_TOKEN env var (the key itself is never written to disk).
  * The directory is created 0700 by mkdtemp.
  */
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let v = n / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${v.toFixed(v >= 100 ? 0 : 1)} ${units[i]}`;
+}
+
+function hasGitLfs(): boolean {
+  try {
+    return spawnSync('git', ['lfs', 'version'], { stdio: 'ignore' }).status === 0;
+  } catch {
+    return false;
+  }
+}
+
 function createAskPass(): { script: string; cleanup: () => void } {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gitflare-askpass-'));
   const isWindows = process.platform === 'win32';
@@ -414,13 +431,81 @@ files.command('tree')
 files.command('cat')
   .argument('<repo>', 'Repository name')
   .argument('<path>', 'File path')
-  .description('Read file content')
+  .description('Read file content (a Git LFS pointer prints a summary; use --download to fetch the bytes)')
   .option('--ref <ref>', "Git reference (default: the repo's default branch)")
-  .action(async (repoName: string, filePath: string, options: { ref?: string }) => {
+  .option('--download <out>', 'For LFS files: write the real object to this path')
+  .action(async (repoName: string, filePath: string, options: { ref?: string; download?: string }) => {
     try {
       const client = getClient();
       const blob = await client.files.blob(repoName, options.ref, filePath);
+      if (blob.lfs) {
+        if (options.download) {
+          const res = await client.lfs.download(repoName, blob.lfs.oid, blob.name);
+          if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`);
+          fs.writeFileSync(options.download, Buffer.from(await res.arrayBuffer()));
+          console.log(chalk.green(`✓ Wrote ${formatBytes(blob.lfs.size)} to ${options.download}`));
+          return;
+        }
+        console.error(chalk.cyan(`Git LFS file · ${formatBytes(blob.lfs.size)} · ${blob.lfs.state} · oid ${blob.lfs.oid.slice(0, 12)}…`));
+        console.error(chalk.dim('Pointer text follows. Re-run with --download <path> to fetch the object.'));
+        process.stdout.write(blob.content);
+        return;
+      }
       console.log(blob.content);
+    } catch (err) {
+      handleError(err);
+    }
+  });
+
+// --- Git LFS Commands ---
+const lfs = program.command('lfs').description('Large files stored in Git LFS (R2)');
+
+lfs.command('status')
+  .argument('<repo>', 'Repository name')
+  .description('LFS policy, usage and tracked patterns')
+  .action(async (repoName: string) => {
+    try {
+      const s = await getClient().lfs.status(repoName);
+      console.log(`${chalk.bold('Uploads:')}        ${s.enabled ? 'enabled' : 'disabled'}`);
+      console.log(`${chalk.bold('Transfer mode:')}  ${s.transfer_mode}`);
+      console.log(`${chalk.bold('Max object:')}     ${formatBytes(s.max_object_bytes)}`);
+      console.log(`${chalk.bold('Stored:')}         ${s.object_count} object(s), ${formatBytes(s.total_bytes)}${s.pending_count ? ` (+${s.pending_count} pending)` : ''}`);
+      console.log(`${chalk.bold('Tracked:')}        ${s.tracked_patterns.length ? s.tracked_patterns.join(', ') : chalk.dim('(nothing in .gitattributes)')}`);
+      console.log(`${chalk.bold('Endpoint:')}       ${s.endpoint}`);
+      console.log(chalk.dim(s.note));
+    } catch (err) {
+      handleError(err);
+    }
+  });
+
+lfs.command('ls')
+  .argument('<repo>', 'Repository name')
+  .description('List stored LFS objects')
+  .option('--limit <n>', 'Max results (default 50)', '50')
+  .option('--offset <n>', 'Pagination offset', '0')
+  .action(async (repoName: string, options: { limit: string; offset: string }) => {
+    try {
+      const page = await getClient().lfs.list(repoName, { limit: Number(options.limit), offset: Number(options.offset) });
+      if (page.data.length === 0) {
+        console.log(chalk.yellow('No LFS objects.'));
+        return;
+      }
+      console.table(page.data.map(o => ({ OID: o.oid.slice(0, 16) + '…', Size: formatBytes(o.size), State: o.state, Created: o.created_at })));
+      if (page.has_more) console.log(chalk.dim(`More available: --offset ${page.offset + page.limit}`));
+    } catch (err) {
+      handleError(err);
+    }
+  });
+
+lfs.command('token')
+  .argument('<repo>', 'Repository name')
+  .description('Mint a short-lived LFS bearer token for scripts (prints JSON)')
+  .option('--scope <scope>', 'read or write', 'read')
+  .option('--ttl <seconds>', 'Lifetime in seconds (60–86400)', '900')
+  .action(async (repoName: string, options: { scope: string; ttl: string }) => {
+    try {
+      const t = await getClient().lfs.token(repoName, { scope: options.scope === 'write' ? 'write' : 'read', ttl_seconds: Number(options.ttl) });
+      console.log(JSON.stringify(t, null, 2));
     } catch (err) {
       handleError(err);
     }
@@ -550,6 +635,20 @@ program.command('clone')
       // via GIT_ASKPASS so it never appears in argv, the remote URL, or .git/config.
       const url = new URL(client.gitRemoteUrl(repoName));
       url.username = 'x-api-key';
+
+      // Large files: say so up front, and warn when git-lfs is missing (the
+      // clone still succeeds, with pointer files in place of the content).
+      try {
+        const info = await client.repos.get(repoName);
+        if (info.lfs && info.lfs.object_count > 0) {
+          console.log(chalk.cyan(`This repo uses Git LFS (${info.lfs.object_count} objects, ${formatBytes(info.lfs.total_bytes)}).`));
+          if (!hasGitLfs()) {
+            console.log(chalk.yellow('git-lfs is not installed: large files will be checked out as pointer files. Install git-lfs and run `git lfs pull` in the clone.'));
+          }
+        }
+      } catch {
+        /* informational only */
+      }
 
       // `-c credential.helper=` clears configured helpers for this command so
       // the key isn't persisted to the keychain / credential store.

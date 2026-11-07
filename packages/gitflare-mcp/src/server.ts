@@ -40,7 +40,15 @@ function run<A>(fn: (args: A) => Promise<unknown> | unknown) {
 const refDescription = "Branch, tag or SHA (default: the repo's default branch)";
 
 export function createServer(client: GitFlareClient): McpServer {
-  const server = new McpServer({ name: 'gitflare', version: '1.0.0' });
+  const server = new McpServer(
+    { name: 'gitflare', version: '1.0.0' },
+    {
+      instructions:
+        'GitFlare is a git host. Repos are cloned/pushed with ordinary git over HTTPS using an API key as the password. ' +
+        'Files over 32 MB must be committed through Git LFS (git lfs track "<pattern>"); GitFlare rejects oversized blobs with a fix recipe. ' +
+        'Use gitflare_lfs_status before committing large artifacts. gitflare_files_read returns a structured `lfs` object for LFS pointer files — fetch bytes via its download_url, never edit the pointer text.',
+    }
+  );
 
   // ── Health ──
   server.tool('gitflare_health', 'Check GitFlare health', {}, run(() => client.health()));
@@ -183,9 +191,28 @@ export function createServer(client: GitFlareClient): McpServer {
 
   server.tool(
     'gitflare_files_read',
-    'Read a file',
+    'Read a file. For a Git LFS pointer the result has is_lfs=true and an `lfs` object (oid, size, state, download_url, note): the real bytes are not in `content`.',
     { repo: z.string(), path: z.string(), ref: z.string().optional().describe(refDescription) },
     run(({ repo, path, ref }) => client.files.blob(repo, ref, path)),
+  );
+
+  // ── Git LFS ──
+  server.tool(
+    'gitflare_lfs_status',
+    'Git LFS status for a repo: whether uploads are enabled, transfer mode, max object size, object count/bytes, tracked patterns from .gitattributes, endpoint. Files over 32 MB must go through LFS.',
+    { repo: z.string() },
+    run(({ repo }) => client.lfs.status(repo)),
+  );
+
+  server.tool(
+    'gitflare_lfs_list',
+    'List Git LFS objects stored for a repo (oid, size, state, created_at), newest first',
+    {
+      repo: z.string(),
+      limit: z.number().int().min(1).max(200).optional().describe('Default 50'),
+      offset: z.number().int().min(0).optional(),
+    },
+    run(({ repo, limit, offset }) => client.lfs.list(repo, { limit, offset })),
   );
 
   // ── Commits ──

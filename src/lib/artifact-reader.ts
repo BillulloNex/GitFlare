@@ -2,6 +2,7 @@ import type { ArtifactCommit, ArtifactRepo, Env } from '../env.ts';
 import type { BlobResult, CommitDetail, CommitSummary, TreeResult } from '../types.ts';
 import { getArtifactsRemoteUrl } from './artifacts-url.ts';
 import { parseInfoRefs } from './git-protocol.ts';
+import { LFS_POINTER_MAX_BYTES, parseLfsPointer } from './lfs.ts';
 import { timeAgo } from './time.ts';
 
 const isoDate = (seconds: number) => new Date(seconds * 1000).toISOString();
@@ -165,6 +166,9 @@ export async function getArtifactBlob(env: Env, name: string, filePath: string, 
   }
   const [commit] = await repo.log({ ref, limit: 1 });
   const latest = commit ? summary(commit) : null;
+  // A Git LFS pointer is what git stores for a tracked large file. Callers
+  // (src/api/files.ts) resolve the pointer against lfs_objects.
+  const pointer = !isBinary && bytes.length <= LFS_POINTER_MAX_BYTES ? parseLfsPointer(content) : null;
   return {
     repo: name,
     ref,
@@ -174,6 +178,7 @@ export async function getArtifactBlob(env: Env, name: string, filePath: string, 
     lines: isBinary ? 0 : content.split('\n').length,
     content,
     is_binary: isBinary,
+    ...(pointer ? { is_lfs: true, lfs: { ...pointer, state: 'missing' as const, download_url: '', note: '' } } : {}),
     latest_commit: {
       sha: latest?.sha ?? '',
       short_sha: latest?.short_sha ?? '',

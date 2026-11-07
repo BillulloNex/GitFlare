@@ -6,6 +6,9 @@ import { audit } from '../lib/audit.ts';
 import { isValidPermission, readableReposFilter, VALID_PERMISSIONS } from '../lib/access.ts';
 import { isValidRefName, isValidRepoName } from '../lib/repo-validation.ts';
 import { isOptionalBoolean, isOptionalString, readJsonObject } from '../lib/request.ts';
+import { deleteRepoLfsObjects } from '../lib/lfs-storage.ts';
+import { lfsSummary } from './lfs-api.ts';
+import { publicOrigin } from './lfs.ts';
 
 // Routes under /:repo run behind repoAccess (src/index.ts), which sets
 // `repoRecord` + `principal` and enforces read (GET) / write (other methods).
@@ -125,14 +128,25 @@ app.post('/', requirePermission('write'), async (c) => {
 app.patch('/:repo', async (c) => {
   const repo = c.get('repoRecord');
 
-  const body = await readJsonObject<{ description?: string | null; is_private?: boolean }>(c);
+  const body = await readJsonObject<{
+    description?: string | null;
+    is_private?: boolean;
+    lfs_enabled?: boolean;
+    lfs_max_object_bytes?: number | null;
+  }>(c);
   if (!body) return c.json({ error: 'Invalid JSON body' }, 400);
   if ((body.description !== null && !isOptionalString(body.description)) || !isOptionalBoolean(body.is_private)) {
     return c.json({ error: 'description must be a string and is_private a boolean' }, 400);
   }
+  if (!isOptionalBoolean(body.lfs_enabled)) return c.json({ error: 'lfs_enabled must be a boolean' }, 400);
+  const lfsMax = body.lfs_max_object_bytes;
+  if (lfsMax !== undefined && lfsMax !== null && !(Number.isInteger(lfsMax) && (lfsMax as number) > 0)) {
+    return c.json({ error: 'lfs_max_object_bytes must be a positive integer or null' }, 400);
+  }
 
-  if (body.is_private !== undefined && !(await hasRepoLevel(c, 'admin'))) {
-    return c.json({ error: 'Forbidden: changing visibility requires admin access to this repository' }, 403);
+  const adminOnly = body.is_private !== undefined || body.lfs_enabled !== undefined || lfsMax !== undefined;
+  if (adminOnly && !(await hasRepoLevel(c, 'admin'))) {
+    return c.json({ error: 'Forbidden: changing visibility or LFS policy requires admin access to this repository' }, 403);
   }
 
   const sets: string[] = [];
@@ -145,6 +159,14 @@ app.patch('/:repo', async (c) => {
   if (body.is_private !== undefined) {
     sets.push('is_private = ?');
     values.push(body.is_private ? 1 : 0);
+  }
+  if (body.lfs_enabled !== undefined) {
+    sets.push('lfs_enabled = ?');
+    values.push(body.lfs_enabled ? 1 : 0);
+  }
+  if (lfsMax !== undefined) {
+    sets.push('lfs_max_object_bytes = ?');
+    values.push(lfsMax as number | null as any);
   }
 
   if (sets.length === 0) {
@@ -165,7 +187,7 @@ app.patch('/:repo', async (c) => {
     repoId: repo.id,
     actor: ctx.actor,
     action: 'repo.update',
-    details: { description: body.description, is_private: body.is_private },
+    details: { description: body.description, is_private: body.is_private, lfs_enabled: body.lfs_enabled, lfs_max_object_bytes: lfsMax },
     ipAddress: ctx.ipAddress
   });
 
@@ -188,7 +210,8 @@ app.get('/:repo', async (c) => {
     // Remote URL is informational; a lookup failure just leaves it null
   }
 
-  return c.json({ ...repo, remote: remoteUrl });
+  const lfs = await lfsSummary(c.env, publicOrigin(c.env, c.req.url), repo);
+  return c.json({ ...repo, remote: remoteUrl, lfs });
 });
 
 /**
@@ -213,6 +236,13 @@ app.delete('/:repo', requireRepoLevel('admin'), async (c) => {
     .prepare('DELETE FROM repositories WHERE id = ?')
     .bind(repo.id)
     .run();
+
+  // LFS objects live under one R2 prefix per repo; remove them after the
+  // response (best effort — maintenance can't see them any more, but re-running
+  // deleteRepoLfsObjects for the id is safe if it ever needs to be redone).
+  c.executionCtx.waitUntil(
+    deleteRepoLfsObjects(c.env, repo.id).catch((err) => console.error(`LFS cleanup failed for ${repo.name} (${repo.id}):`, err))
+  );
 
   const ctx = auditContext(c);
   await audit(c.env.DB, {

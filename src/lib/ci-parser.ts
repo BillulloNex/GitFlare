@@ -18,6 +18,15 @@ export function parseCIConfig(yamlContent: string): CIPipelineConfig {
 		}
 	}
 
+	if (config.checkout !== undefined) {
+		const checkout: unknown = config.checkout;
+		if (!checkout || typeof checkout !== 'object') throw new Error("'checkout' must be a mapping");
+		const lfs = (checkout as { lfs?: unknown }).lfs;
+		if (lfs !== undefined && lfs !== 'auto' && typeof lfs !== 'boolean') {
+			throw new Error("'checkout.lfs' must be auto, true or false");
+		}
+	}
+
 	return config as CIPipelineConfig;
 }
 

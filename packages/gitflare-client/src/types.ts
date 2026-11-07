@@ -36,6 +36,59 @@ export interface Repo {
   updated_at: string;
   /** Only present on `repos.get`. */
   remote?: string | null;
+  /** Only present on `repos.get`: Git LFS policy and usage. */
+  lfs?: LfsSummary;
+}
+
+// ─── Git LFS Types ──────────────────────────────────────────────
+
+/** `GET /api/repos/:repo/lfs` — everything a client needs to handle large files in a repo. */
+export interface LfsSummary {
+  enabled: boolean;
+  /** presigned = bytes go straight to R2 (up to 5 GiB); proxy = through the Worker (zone body limit, 100 MB on Free/Pro). */
+  transfer_mode: 'presigned' | 'proxy';
+  max_object_bytes: number;
+  object_count: number;
+  total_bytes: number;
+  pending_count: number;
+  /** Patterns with `filter=lfs` in .gitattributes on the default branch. */
+  tracked_patterns: string[];
+  /** The LFS server URL git-lfs derives from the clone URL. */
+  endpoint: string;
+  docs_url: string;
+  note: string;
+}
+
+export interface LfsObject {
+  oid: string;
+  size: number;
+  state: 'pending' | 'ready';
+  created_at: string;
+}
+
+export interface LfsObjectPage {
+  data: LfsObject[];
+  limit: number;
+  offset: number;
+  has_more: boolean;
+}
+
+export interface LfsToken {
+  token: string;
+  scope: 'read' | 'write';
+  expires_at: string;
+  endpoint: string;
+  usage: string;
+}
+
+/** Present on a blob that is a Git LFS pointer. */
+export interface LfsBlobInfo {
+  oid: string;
+  /** Size of the real object (from the pointer), not of the pointer text. */
+  size: number;
+  state: 'ready' | 'pending' | 'missing';
+  download_url: string;
+  note: string;
 }
 
 export interface CreateRepoInput {
@@ -268,6 +321,9 @@ export interface BlobContent {
   lines: number;
   content: string;
   is_binary: boolean;
+  /** True when `content` is a Git LFS pointer; see `lfs` for the real object. */
+  is_lfs?: boolean;
+  lfs?: LfsBlobInfo;
   latest_commit: LatestCommit;
 }
 

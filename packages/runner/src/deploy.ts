@@ -285,7 +285,9 @@ async function runDeploy(req: DeployRequest): Promise<void> {
   const secrets = [
     req.coolify?.apiKey,
     req.cloudflare?.checkout.token,
+    req.cloudflare?.checkout.lfs?.token,
     req.cloudrun?.checkout.token,
+    req.cloudrun?.checkout.lfs?.token,
     config.cloudflareApiToken,
     ...cloudRunSecrets(req.cloudrun?.serviceAccountKey),
     ...cloudRunSecrets(config.gcpServiceAccountKey),

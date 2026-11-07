@@ -28,6 +28,13 @@ export interface RunnerCheckout {
 	token: string;
 	branch: string;
 	commitSha: string;
+	/**
+	 * Git LFS (optional; absent = leave pointer files). `url` is the Worker's
+	 * LFS endpoint for the repo, `token` a read-scoped LFS bearer token
+	 * (lib/lfs-token.ts). `auto` pulls only when .gitattributes tracks LFS
+	 * paths and git-lfs is in the job image; `always` fails without git-lfs.
+	 */
+	lfs?: { url: string; token: string; mode: 'auto' | 'always' };
 }
 
 export interface RunnerCIStep {

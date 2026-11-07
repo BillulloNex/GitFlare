@@ -27,6 +27,13 @@ CLOUDFLARE_ACCOUNT_ID=
 COOLIFY_BASE_URL=
 COOLIFY_API_KEY=
 
+# R2 API token (Object Read & Write on the STORAGE bucket). When both are set,
+# Git LFS uploads/downloads use presigned R2 URLs (objects up to 5 GiB) instead
+# of streaming through the Worker (100 MB cap). Create one in the Cloudflare
+# dashboard: R2 → Manage R2 API Tokens.
+R2_ACCESS_KEY_ID=
+R2_SECRET_ACCESS_KEY=
+
 # Comma-separated email domains allowed to sign in with Google,
 # e.g. "example.com,example.org". When set, other domains are rejected
 # and in-domain users get the `user` role (write).

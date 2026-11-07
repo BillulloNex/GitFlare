@@ -32,7 +32,8 @@ import {
 	dispatchDeploy,
 	mintReadToken,
 } from '../lib/runner-client.ts';
-import { RUNNER_PROTOCOL_VERSION, type RunnerCIStep, type RunnerDeployRequest } from '../lib/runner-protocol.ts';
+import { RUNNER_PROTOCOL_VERSION, type RunnerCheckout, type RunnerCIStep, type RunnerDeployRequest } from '../lib/runner-protocol.ts';
+import { mintLfsToken } from '../lib/lfs-token.ts';
 import { notifyMergeQueueCI } from '../api/internal-merge.ts';
 
 /** Must match max_retries in wrangler.jsonc (+1 for the first delivery). */
@@ -58,6 +59,37 @@ export interface QueueDelivery {
 
 /** Thrown for failures worth retrying (runner down, Artifacts hiccup, protocol skew). */
 export class TransientError extends Error {}
+
+/**
+ * Checkout credentials for the runner: an Artifacts read token for the clone
+ * plus, unless the pipeline sets `checkout.lfs: false`, an LFS read token so
+ * `git lfs pull` can fetch large files through the Worker (lib/lfs-token.ts).
+ */
+async function buildCheckout(
+	env: Env,
+	repo: { id: string; name: string },
+	branch: string,
+	commitSha: string,
+	lfsSetting: 'auto' | boolean | undefined = 'auto'
+): Promise<RunnerCheckout> {
+	const checkout: RunnerCheckout = {
+		url: getArtifactsRemoteUrl(env, repo.name),
+		token: await mintReadToken(env, repo.name, CHECKOUT_TOKEN_TTL_S),
+		branch,
+		commitSha,
+	};
+	if (lfsSetting === false) return checkout;
+	if (!env.ENCRYPTION_KEY) {
+		console.warn(`[ci] ENCRYPTION_KEY unset — no LFS token for ${repo.name}; pointer files will be left in place`);
+		return checkout;
+	}
+	checkout.lfs = {
+		url: `${env.APP_URL}/git/${encodeURIComponent(repo.name)}.git/info/lfs`,
+		token: await mintLfsToken(env.ENCRYPTION_KEY, { repoId: repo.id, scope: 'read', ttlSeconds: CHECKOUT_TOKEN_TTL_S }),
+		mode: lfsSetting === true ? 'always' : 'auto',
+	};
+	return checkout;
+}
 
 export function maxCIDurationMs(env: Env): number {
 	const n = Number(env.MAX_CI_DURATION_MS);
@@ -231,11 +263,9 @@ export async function handleCIJob(message: CIJobMessage, env: Env, delivery: Que
 	}
 
 	// ── Dispatch ──
-	let token: string;
-	let url: string;
+	let checkout: RunnerCheckout;
 	try {
-		token = await mintReadToken(env, message.repoName, CHECKOUT_TOKEN_TTL_S);
-		url = getArtifactsRemoteUrl(env, message.repoName);
+		checkout = await buildCheckout(env, { id: run.repo_id, name: message.repoName }, run.branch, commitSha, message.config?.checkout?.lfs);
 	} catch (err) {
 		return releaseOrFailRun(env, run.id, delivery, `Could not mint checkout token: ${String(err)}`);
 	}
@@ -244,7 +274,7 @@ export async function handleCIJob(message: CIJobMessage, env: Env, delivery: Que
 		protocolVersion: RUNNER_PROTOCOL_VERSION,
 		runId: run.id,
 		repoName: message.repoName,
-		checkout: { url, token, branch: run.branch, commitSha },
+		checkout,
 		steps: runnerSteps,
 		maxDurationMs: maxCIDurationMs(env),
 		callbackUrl: ciCallbackUrl(env),
@@ -405,12 +435,7 @@ export async function handleDeployJob(body: DeployJobMessage | LegacyDeployJobMe
 				region: target.gcp_region,
 				service: target.gcp_service,
 				serviceAccountKey,
-				checkout: {
-					url: getArtifactsRemoteUrl(env, message.repoName),
-					token: await mintReadToken(env, message.repoName, CHECKOUT_TOKEN_TTL_S),
-					branch,
-					commitSha,
-				},
+				checkout: await buildCheckout(env, { id: deployment.repo_id, name: message.repoName }, branch, commitSha),
 			};
 		} catch (err) {
 			if (delivery.attempts >= MAX_DELIVERY_ATTEMPTS) await failDeployment(env, deployment.id, `Could not mint checkout token: ${String(err)}`);
@@ -425,12 +450,7 @@ export async function handleDeployJob(body: DeployJobMessage | LegacyDeployJobMe
 			request.cloudflare = {
 				repoName: message.repoName,
 				wranglerConfig: target.wrangler_config || null,
-				checkout: {
-					url: getArtifactsRemoteUrl(env, message.repoName),
-					token: await mintReadToken(env, message.repoName, CHECKOUT_TOKEN_TTL_S),
-					branch,
-					commitSha,
-				},
+				checkout: await buildCheckout(env, { id: deployment.repo_id, name: message.repoName }, branch, commitSha),
 			};
 		} catch (err) {
 			if (delivery.attempts >= MAX_DELIVERY_ATTEMPTS) await failDeployment(env, deployment.id, `Could not mint checkout token: ${String(err)}`);

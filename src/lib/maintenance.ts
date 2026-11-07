@@ -6,6 +6,7 @@
  *   - CI runs stuck in `queued` (message lost / dead-lettered) → failed
  *   - Deployments stuck in `running` / `queued` → failed
  *   - Expired sessions → deleted
+ *   - LFS objects left `pending` for a day → promoted if the bytes are in R2, else purged
  *
  * Timestamps are compared with julianday() because rows mix ISO-8601
  * (`2026-01-01T00:00:00.000Z`, written by the app) and SQLite's
@@ -15,11 +16,14 @@ import type { Env } from '../env.ts';
 import { maxCIDurationMs, MAX_DEPLOY_DEADLINE_MS } from '../queue/ci-consumer.ts';
 import { cancelRunnerRun } from './runner-client.ts';
 import { cleanExpiredSessions } from './session.ts';
+import { reconcileStalePendingLfs } from './lfs-storage.ts';
 
 /** Grace on top of the runner's own deadline so its final callback can land first. */
 const RUNNING_GRACE_MS = 5 * 60 * 1000;
 /** Queue retries with backoff finish well within this. */
 const QUEUED_TIMEOUT_MS = 60 * 60 * 1000;
+/** An LFS upload action is valid for minutes; a day later a pending row is either stored or abandoned. */
+const LFS_PENDING_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 /** Container deploys clone + install + deploy; give them more than the largest runner deadline. */
 const DEPLOY_RUNNING_TIMEOUT_MS = MAX_DEPLOY_DEADLINE_MS * 2 + RUNNING_GRACE_MS;
 
@@ -32,6 +36,8 @@ export interface MaintenanceReport {
 	stuckQueuedRuns: number;
 	stuckDeployments: number;
 	expiredSessions: number;
+	lfsPromoted: number;
+	lfsPurged: number;
 }
 
 async function failStuckRuns(env: Env): Promise<{ running: number; queued: number }> {
@@ -102,7 +108,7 @@ async function failStuckDeployments(env: Env): Promise<number> {
 }
 
 export async function runScheduledMaintenance(env: Env): Promise<MaintenanceReport> {
-	const report: MaintenanceReport = { stuckRuns: 0, stuckQueuedRuns: 0, stuckDeployments: 0, expiredSessions: 0 };
+	const report: MaintenanceReport = { stuckRuns: 0, stuckQueuedRuns: 0, stuckDeployments: 0, expiredSessions: 0, lfsPromoted: 0, lfsPurged: 0 };
 
 	// Each task is independent — one failing must not stop the others.
 	const tasks: Array<Promise<void>> = [
@@ -115,6 +121,10 @@ export async function runScheduledMaintenance(env: Env): Promise<MaintenanceRepo
 		}),
 		cleanExpiredSessions(env.DB).then((n) => {
 			report.expiredSessions = n;
+		}),
+		reconcileStalePendingLfs(env, LFS_PENDING_TIMEOUT_MS).then((r) => {
+			report.lfsPromoted = r.promoted;
+			report.lfsPurged = r.purged;
 		}),
 	];
 	const outcomes = await Promise.allSettled(tasks);

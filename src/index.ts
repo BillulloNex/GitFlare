@@ -9,6 +9,7 @@ import { repoAccess } from './middleware/repo-access.ts';
 import { validateSession } from './lib/session.ts';
 import reposApp from './api/repos.ts';
 import filesApp from './api/files.ts';
+import lfsApiApp from './api/lfs-api.ts';
 import gitApp from './api/git.ts';
 import ciApp from './api/ci.ts';
 import commitsApp from './api/commits.ts';
@@ -26,6 +27,7 @@ import { handleMirrorSyncBatch } from './lib/github-mirror.ts';
 import type { MirrorSyncMessage } from './env.ts';
 import { runScheduledMaintenance } from './lib/maintenance.ts';
 import dashboardHtml from './dashboard/index.html';
+import lfsDocsHtml from './docs/lfs.html';
 import { LOGO_SVG, FAVICON_SVG, WORDMARK_SVG } from './lib/brand';
 
 // ─── Re-export Durable Objects ──────────────────────────────────
@@ -106,6 +108,9 @@ app.get('/', async (c) => {
 	});
 });
 
+// Public docs: the push guard and LFS error messages link here.
+app.get('/docs/lfs', (c) => c.html(lfsDocsHtml));
+
 // Auth routes (login, callback, logout, me) — must be public
 app.route('/api/auth', authApp);
 
@@ -147,6 +152,9 @@ app.route('/api/repos', filesApp);
 
 // Commits: /api/repos/:repo/commits
 app.route('/api/repos', commitsApp);
+
+// Git LFS management: /api/repos/:repo/lfs/* (the git-lfs client uses /git/:repo.git/info/lfs)
+app.route('/api/repos', lfsApiApp);
 
 // CI pipeline: /api/repos/:repo/ci/*
 app.route('/api/repos', ciApp);

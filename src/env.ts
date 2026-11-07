@@ -98,8 +98,19 @@ export interface Env {
 	MAX_CI_DURATION_MS: string;
 	/** Public origin of this Worker, e.g. https://git.example.com — CORS, OAuth redirect, runner callbacks. */
 	APP_URL: string;
-	/** Used to build Artifacts remote URLs (lib/artifacts-url.ts). */
+	/** Used to build Artifacts remote URLs (lib/artifacts-url.ts) and R2 S3 presigned URLs (lib/r2-presign.ts). */
 	CLOUDFLARE_ACCOUNT_ID: string;
+
+	// ── Git LFS (src/api/lfs.ts) ──
+	/** Global per-object cap in bytes. Unset → 5 GiB with presigned transfers, 100 MB when proxied through the Worker. */
+	LFS_MAX_OBJECT_BYTES?: string;
+	/** Lifetime of transfer actions / presigned URLs in seconds (default 900). */
+	LFS_URL_TTL_SECONDS?: string;
+	/** R2 bucket behind the STORAGE binding; needed to build S3 URLs (default gitflare-storage). */
+	R2_BUCKET_NAME?: string;
+	/** R2 API token (secrets). When both are set, LFS bytes go straight to R2 via presigned URLs. */
+	R2_ACCESS_KEY_ID?: string;
+	R2_SECRET_ACCESS_KEY?: string;
 
 	// ── Runner (secrets) ──
 	/** Base URL of the external runner service (packages/runner). */
@@ -169,6 +180,12 @@ export interface CIPipelineConfig {
 	/** Optional — omitted means "run on every push" (lib/ci-parser.ts shouldTrigger). */
 	on?: CITriggerConfig;
 	env?: Record<string, string>;
+	/**
+	 * Checkout options. `lfs`: `auto` (default) pulls LFS objects when
+	 * .gitattributes tracks any and git-lfs is in the job image; `true` fails
+	 * the checkout if git-lfs is missing; `false` leaves pointer files.
+	 */
+	checkout?: { lfs?: 'auto' | boolean };
 	jobs: Record<string, CIJobConfig>;
 }
 
@@ -220,6 +237,10 @@ export interface RepoRecord {
 	is_private: boolean;
 	created_at: string;
 	updated_at: string;
+	/** 0/1 — whether LFS uploads are accepted (downloads always work). */
+	lfs_enabled?: number;
+	/** Per-repo LFS object cap; null → the Worker's global default. */
+	lfs_max_object_bytes?: number | null;
 }
 
 export interface ApiKey {

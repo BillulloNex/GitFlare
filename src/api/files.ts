@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Env } from '../env.ts';
 import type { RepoVariables } from '../middleware/repo-access.ts';
 import { getArtifactBlob, getArtifactRefs, getArtifactRawFile, getArtifactTree } from '../lib/artifact-reader.ts';
+import { publicOrigin } from './lfs.ts';
 
 // All routes run behind repoAccess (src/index.ts), which 404s unknown repos
 // and enforces read access before any Artifacts lookup.
@@ -86,6 +87,23 @@ app.get('/:repo/blob', async (c) => {
   const blob = await getArtifactBlob(c.env, repoName, filePath, ref);
   if (!blob) {
     return c.json({ error: 'File not found' }, 404);
+  }
+
+  if (blob.lfs) {
+    const row = await c.env.DB.prepare('SELECT state FROM lfs_objects WHERE repo_id = ? AND oid = ?')
+      .bind(repo.id, blob.lfs.oid)
+      .first<{ state: 'ready' | 'pending' }>();
+    const state = row?.state ?? 'missing';
+    const origin = publicOrigin(c.env, c.req.url);
+    blob.lfs = {
+      ...blob.lfs,
+      state,
+      download_url: `${origin}/api/repos/${encodeURIComponent(repoName)}/lfs/objects/${blob.lfs.oid}?filename=${encodeURIComponent(blob.name)}`,
+      note:
+        state === 'ready'
+          ? 'Large file stored in Git LFS. Use download_url to fetch the bytes; do not edit the pointer text.'
+          : 'Git LFS pointer whose object is not available on this server (upload incomplete or pushed without git-lfs).',
+    };
   }
 
   return c.json({ data: blob });

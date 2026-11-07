@@ -265,6 +265,10 @@
         .badge-danger { background: var(--danger-bg); color: var(--danger-fg); border-color: var(--danger-border); }
         .badge-running { background: var(--warning-bg); color: var(--warning-fg); border-color: var(--warning-border); }
         .badge-queued, .badge-public, .badge-private { color: var(--text-secondary); }
+        .lfs-card { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+            padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--bg-subtle, transparent); font-size: 13px; }
+        .lfs-card-main { display: flex; flex-direction: column; gap: 2px; }
+        .lfs-card-main span { color: var(--text-secondary); }
 
         /* ─── Layout ─────────────────────────────────────────────── */
         .app-body { display: flex; flex: 1; overflow: hidden; }
@@ -1079,6 +1083,7 @@
                         <div class="repo-breadcrumbs">
                             <h1><a href="javascript:void(0)" onclick="switchMainTab('code')" id="currentRepoNameDisplay"></a></h1>
                             <span class="badge badge-public" id="repoVisibilityBadge" style="display:none;"></span>
+                            <span class="badge badge-public" id="repoLfsBadge" style="display:none;" title="Large files stored in Git LFS (R2)"></span>
                             <button class="health-chip" id="healthChip" style="display:none;" onclick="openLatestRun()" title="Latest workflow run">
                                 <span class="dot"></span><span id="healthChipText"></span>
                             </button>
@@ -1206,6 +1211,17 @@
                                 <button class="btn btn-sm btn-icon" onclick="closeFileViewer()" aria-label="Close file">
                                     <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-x"/></svg>
                                 </button>
+                            </div>
+                        </div>
+                        <div id="lfsCard" class="lfs-card" style="display:none;">
+                            <div class="lfs-card-main">
+                                <strong>Stored in Git LFS</strong>
+                                <span id="lfsCardMeta"></span>
+                            </div>
+                            <div class="lfs-card-actions">
+                                <a id="lfsDownloadLink" class="btn btn-sm" href="#" target="_blank" rel="noopener">
+                                    <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-external"/></svg><span class="btn-label">Download</span>
+                                </a>
                             </div>
                         </div>
                         <div id="fileContentCode" class="code-display">
@@ -1602,9 +1618,25 @@
             const cloneUrl = `${window.location.origin}/git/${encodeURIComponent(name)}.git`;
             document.getElementById('cloneUrlInput').value = cloneUrl;
 
+            loadLfsBadge(name);
+
             loadBranches();
             if (currentTab !== 'ci') loadRepoPulse();
             reloadCurrentTab();
+        }
+
+        /** "LFS · 37 objects · 2.1 GB" in the repo header when the repo stores large files. */
+        async function loadLfsBadge(repoName) {
+            const badge = document.getElementById('repoLfsBadge');
+            badge.style.display = 'none';
+            try {
+                const res = await apiFetch(`${repoApi()}/lfs`, { headers: authHeaders() });
+                if (!res.ok || activeRepo !== repoName) return;
+                const { data } = await res.json();
+                if (!data || !data.object_count) return;
+                badge.textContent = `LFS · ${data.object_count} object${data.object_count === 1 ? '' : 's'} · ${formatBytes(data.total_bytes)}`;
+                badge.style.display = '';
+            } catch { /* informational */ }
         }
 
         /** Re-fetch whatever the active tab shows (after a repo or branch change). */
@@ -1827,7 +1859,22 @@
                 viewer.style.display = 'block';
 
                 document.getElementById('viewerFileName').textContent = data.name;
-                document.getElementById('viewerFileMeta').textContent = `${data.lines} lines · ${formatBytes(data.size)}`;
+                document.getElementById('viewerFileMeta').textContent = data.lfs
+                    ? `Git LFS · ${formatBytes(data.lfs.size)}`
+                    : `${data.lines} lines · ${formatBytes(data.size)}`;
+
+                // Git LFS pointer: show the object, not the 3-line pointer text.
+                const lfsCard = document.getElementById('lfsCard');
+                if (data.lfs) {
+                    const stateText = data.lfs.state === 'ready' ? 'available' : data.lfs.state === 'pending' ? 'upload incomplete' : 'object missing on this server';
+                    document.getElementById('lfsCardMeta').textContent = `${formatBytes(data.lfs.size)} · ${stateText} · oid ${data.lfs.oid.slice(0, 12)}…`;
+                    const link = document.getElementById('lfsDownloadLink');
+                    link.href = data.lfs.download_url;
+                    link.style.display = data.lfs.state === 'ready' ? '' : 'none';
+                    lfsCard.style.display = 'flex';
+                } else {
+                    lfsCard.style.display = 'none';
+                }
 
                 const isMarkdown = data.name.endsWith('.md');
                 const toggle = document.getElementById('viewerModeToggle');
@@ -1835,7 +1882,9 @@
 
                 // Fill line numbers and code
                 document.getElementById('fileLineNumbers').innerHTML = data.is_binary ? '' : Array.from({ length: data.lines }, (_, i) => i + 1).join('<br>');
-                document.getElementById('fileLinesCode').textContent = data.is_binary ? 'Binary file. Use Raw to open it.' : data.content;
+                document.getElementById('fileLinesCode').textContent = data.is_binary
+                    ? 'Binary file. Use Raw to open it.'
+                    : data.lfs ? `${data.content.trimEnd()}\n\n# LFS pointer — the real file is stored in R2. Use Download above.` : data.content;
 
                 if (isMarkdown) {
                     document.getElementById('fileContentPreview').innerHTML = renderSimpleMarkdown(data.content);

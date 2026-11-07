@@ -3,9 +3,17 @@
 	"name": "gitflare",
 	"main": "src/index.ts",
 	"compatibility_date": "2026-09-01",
-	"compatibility_flags": ["nodejs_compat"],
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
 	"rules": [
-		{ "type": "Data", "globs": ["**/*.png"], "fallthrough": true }
+		{
+			"type": "Data",
+			"globs": [
+				"**/*.png"
+			],
+			"fallthrough": true
+		}
 	],
 	"workers_dev": true,
 	"routes": [
@@ -14,7 +22,6 @@
 			"custom_domain": true
 		}
 	],
-
 	// ─── Git Repository Storage ─────────────────────────────────
 	// Cloudflare Artifacts: Git-native storage engine (Zig/WASM)
 	// Handles Smart HTTP v2 protocol, packfiles, ref management
@@ -24,7 +31,6 @@
 			"namespace": "gitflare-repos"
 		}
 	],
-
 	// ─── Metadata Database ──────────────────────────────────────
 	"d1_databases": [
 		{
@@ -34,7 +40,6 @@
 			"migrations_dir": "migrations"
 		}
 	],
-
 	// ─── Large File / LFS / Build Artifact Storage ──────────────
 	"r2_buckets": [
 		{
@@ -42,7 +47,6 @@
 			"bucket_name": "gitflare-storage"
 		}
 	],
-
 	// ─── Cache Layer ────────────────────────────────────────────
 	"kv_namespaces": [
 		{
@@ -50,7 +54,6 @@
 			"id": "4307512814534b69a9ef37a04522f4ca"
 		}
 	],
-
 	// ─── CI/CD Job Queue ────────────────────────────────────────
 	"queues": {
 		"producers": [
@@ -93,14 +96,14 @@
 			}
 		]
 	},
-
 	// ─── Scheduled Maintenance ──────────────────────────────────
 	// src/lib/maintenance.ts: fail CI runs/deployments stuck past their
 	// deadline, purge expired sessions.
 	"triggers": {
-		"crons": ["*/5 * * * *"]
+		"crons": [
+			"*/5 * * * *"
+		]
 	},
-
 	// ─── Durable Objects (Coordination) ─────────────────────────
 	"durable_objects": {
 		"bindings": [
@@ -116,7 +119,6 @@
 			}
 		]
 	},
-
 	// ─── Observability ──────────────────────────────────────────
 	"observability": {
 		"enabled": true,
@@ -125,41 +127,54 @@
 			"invocation_logs": true
 		}
 	},
-
 	// ─── DO Migrations ──────────────────────────────────────────
 	"migrations": [
 		{
 			"tag": "v1",
-			"new_sqlite_classes": ["RepoCoordinator", "CISession"]
+			"new_sqlite_classes": [
+				"RepoCoordinator",
+				"CISession"
+			]
 		},
 		{
 			"tag": "v2",
-			"new_sqlite_classes": ["TicketQueue"]
+			"new_sqlite_classes": [
+				"TicketQueue"
+			]
 		},
 		{
 			// CISession (WebSocket log streaming) was never wired to a route
 			// or written to; removed in Phase Final cleanup. Deleting a class
 			// discards its storage — it never held any.
 			"tag": "v3",
-			"deleted_classes": ["CISession"]
+			"deleted_classes": [
+				"CISession"
+			]
 		}
 	],
-
 	// ─── Secrets ────────────────────────────────────────────────
 	// Set with `wrangler secret put <NAME>` (locally: .dev.vars, see
 	// .dev.vars.example). Required:
 	//   GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, ENCRYPTION_KEY, SESSION_SECRET,
 	//   RUNNER_URL, RUNNER_SECRET, ADMIN_API_KEY
-	// Optional: COOLIFY_BASE_URL, COOLIFY_API_KEY, ALLOWED_DOMAINS, ADMIN_EMAILS
+	// Optional: COOLIFY_BASE_URL, COOLIFY_API_KEY, ALLOWED_DOMAINS, ADMIN_EMAILS,
+	//   R2_ACCESS_KEY_ID + R2_SECRET_ACCESS_KEY (R2 API token, Object Read & Write on
+	//   gitflare-storage → enables presigned LFS transfers)
 	//
 	// Deliberately NOT declared via `"secrets": { "required": [...] }`: that
 	// makes wrangler drop every .dev.vars entry not on the list in local dev
 	// (so the optional ones above would silently vanish) and fail deploys on
 	// any missing secret. The deploy workflow checks the critical ones instead.
-
 	// ─── Environment Variables ──────────────────────────────────
 	"vars": {
 		"GITFLARE_VERSION": "1.0.0",
+		// Git LFS (src/api/lfs.ts). Objects live in the STORAGE bucket under lfs/<repoId>/<oid>.
+		// Transfer mode is "presigned" when the R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY secrets
+		// are set (bytes go straight to R2, objects up to 5 GiB) and "proxy" otherwise (bytes
+		// stream through the Worker, capped by the zone's request-body limit: 100 MB on Free/Pro).
+		// LFS_MAX_OBJECT_BYTES overrides the mode's default cap; a repo can lower it further.
+		"LFS_URL_TTL_SECONDS": "900",
+		"R2_BUCKET_NAME": "gitflare-storage",
 		"MAX_CI_DURATION_MS": "900000",
 		"APP_URL": "https://git.beenex.company",
 		"CLOUDFLARE_ACCOUNT_ID": "aed09ddf6077b29514def05ed3d5e699"

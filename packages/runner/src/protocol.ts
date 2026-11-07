@@ -17,6 +17,8 @@ export interface Checkout {
   token: string;
   branch: string;
   commitSha: string;
+  /** Git LFS pull after checkout (see docker.ts cloneInJob). Absent = leave pointer files. */
+  lfs?: { url: string; token: string; mode: 'auto' | 'always' };
 }
 
 export interface CIStep {

@@ -3,6 +3,11 @@
 
 name: Starship CI/CD
 
+# checkout.lfs: auto (default) pulls Git LFS objects when .gitattributes tracks
+# any and git-lfs is in the job image; true fails without git-lfs; false skips.
+checkout:
+  lfs: auto
+
 on:
   push:
     branches: [main]

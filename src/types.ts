@@ -83,6 +83,17 @@ export interface BlobResult {
   lines: number;
   content: string;
   is_binary: boolean;
+  /** True when the blob is a Git LFS pointer; `content` is then the pointer text. */
+  is_lfs?: boolean;
+  lfs?: {
+    oid: string;
+    /** Size of the real object in bytes (from the pointer). */
+    size: number;
+    /** ready = downloadable; pending = upload never completed; missing = unknown to this server. */
+    state: 'ready' | 'pending' | 'missing';
+    download_url: string;
+    note: string;
+  };
   latest_commit: {
     sha: string;
     short_sha: string;

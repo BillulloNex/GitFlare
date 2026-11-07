@@ -195,6 +195,38 @@ merge queue (`POST /api/repos/:repo/tickets`, then move the ticket to
 review). The queue rebases the branch on the runner, runs CI on the result,
 and fast-forwards the base branch only if CI passes.
 
+### Large files (Git LFS)
+
+Artifacts caps a git blob at 32 MB. Bigger files go through Git LFS and are
+stored in R2 (`STORAGE` bucket, `lfs/<repoId>/<oid>`), indexed in D1
+`lfs_objects`. Stock `git lfs` works against `$APP_URL/git/<repo>.git`
+with no extra configuration:
+
+```bash
+git lfs install
+git lfs track "*.psd"
+git add .gitattributes
+git push gitflare main          # LFS objects upload first, then the commits
+```
+
+A push containing a blob over 32 MB is rejected before it reaches Artifacts
+with a copy-pasteable `git lfs track` recipe (see `/docs/lfs`). Transfer
+mode is **presigned** (bytes go straight to R2, objects up to 5 GiB) when
+the `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` secrets are set, otherwise
+**proxy** (through the Worker, 100 MB cap on Free/Pro zones).
+`LFS_MAX_OBJECT_BYTES` lowers the global cap; a repo can lower its own via
+`PATCH /api/repos/:repo` (`lfs_enabled`, `lfs_max_object_bytes`).
+
+- API: `GET /api/repos/:repo/lfs` (policy + usage), `GET …/lfs/objects`,
+  `GET …/lfs/objects/:oid` (download), `POST …/lfs/token`.
+- CLI: `gitflare lfs status|ls|token`, `gitflare files cat --download`.
+- MCP: `gitflare_lfs_status`, `gitflare_lfs_list`; `gitflare_files_read`
+  returns a structured `lfs` object for pointer files.
+- CI: `checkout.lfs: auto|true|false` in `.gitflare/ci.yml`; the job image
+  needs `git-lfs` (reference image: `packages/runner/ci-image`, published to
+  `ghcr.io/<owner>/gitflare-ci:node22`, set `CI_IMAGE` on the runner).
+- End-to-end check: `scripts/lfs-e2e.sh`.
+
 ### Deploy targets
 
 ```bash

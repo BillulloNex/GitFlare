@@ -24,6 +24,9 @@ import {
   type MirrorSyncResult,
   type Commit,
   type HealthResponse,
+  type LfsSummary,
+  type LfsObjectPage,
+  type LfsToken,
   GitFlareError,
 } from './types.js';
 
@@ -252,6 +255,30 @@ class MirrorsClient {
   }
 }
 
+class LfsClient {
+  constructor(private http: Http) {}
+
+  /** Policy, usage and tracked patterns. Call before committing anything large. */
+  status(repo: string): Promise<LfsSummary> {
+    return this.http.data('GET', `/api/repos/${seg(repo)}/lfs`);
+  }
+
+  async list(repo: string, opts: { limit?: number; offset?: number } = {}): Promise<LfsObjectPage> {
+    const res = await this.http.raw('GET', `/api/repos/${seg(repo)}/lfs/objects${query({ limit: opts.limit, offset: opts.offset })}`);
+    return (await res.json()) as LfsObjectPage;
+  }
+
+  /** Mint a short-lived LFS bearer token (write scope needs write access on the repo). */
+  token(repo: string, opts: { scope?: 'read' | 'write'; ttl_seconds?: number } = {}): Promise<LfsToken> {
+    return this.http.data('POST', `/api/repos/${seg(repo)}/lfs/token`, opts);
+  }
+
+  /** Authenticated download of one object's bytes. */
+  download(repo: string, oid: string, filename?: string): Promise<Response> {
+    return this.http.raw('GET', `/api/repos/${seg(repo)}/lfs/objects/${encodeURIComponent(oid)}${query({ filename })}`);
+  }
+}
+
 // ─── Main Client ────────────────────────────────────────────────
 
 export class GitFlareClient {
@@ -262,6 +289,7 @@ export class GitFlareClient {
   public readonly commits: CommitsClient;
   public readonly deploys: DeployClient;
   public readonly mirrors: MirrorsClient;
+  public readonly lfs: LfsClient;
   private readonly http: Http;
 
   constructor(config: GitFlareConfig) {
@@ -273,6 +301,7 @@ export class GitFlareClient {
     this.commits = new CommitsClient(this.http);
     this.deploys = new DeployClient(this.http);
     this.mirrors = new MirrorsClient(this.http);
+    this.lfs = new LfsClient(this.http);
   }
 
   /** Public health check — does NOT verify credentials (see `verifyAuth`). */

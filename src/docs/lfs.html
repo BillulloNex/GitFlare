@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Large files on GitFlare</title>
+<style>
+  :root { --ink: #1a1a1a; --muted: #5b5b5b; --line: #e3e0d8; --paper: #fbfaf7; --accent: #c9372c; }
+  @media (prefers-color-scheme: dark) { :root { --ink: #ececec; --muted: #a8a8a8; --line: #333; --paper: #161616; --accent: #ff7a6b; } }
+  body { margin: 0; padding: 32px 16px 64px; background: var(--paper); color: var(--ink); font: 16px/1.55 ui-sans-serif, system-ui, -apple-system, sans-serif; }
+  main { max-width: 720px; margin: 0 auto; }
+  h1 { font-size: 28px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 18px; margin: 32px 0 8px; border-top: 1px solid var(--line); padding-top: 20px; }
+  p, li { color: var(--ink); }
+  .muted { color: var(--muted); }
+  pre { background: rgba(127,127,127,0.08); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; overflow-x: auto; font-size: 13.5px; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  td, th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .tag { color: var(--accent); font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Large files on GitFlare</h1>
+  <p class="muted">Git history is stored in Cloudflare Artifacts, which caps a single blob at <strong>32 MB</strong> and a repository at 1 GB. Anything bigger goes through <strong>Git LFS</strong>, stored in R2. Stock <code>git lfs</code> works with no extra configuration.</p>
+
+  <h2>Set up once</h2>
+<pre><code>git lfs install                      # once per machine
+git lfs track "*.psd" "models/*.bin" # patterns for this repo
+git add .gitattributes
+git commit -m "Track large files with LFS"</code></pre>
+  <p>From then on, <code>git add</code>, <code>commit</code>, <code>push</code>, <code>clone</code> and <code>pull</code> behave as usual. LFS discovers the server from the clone URL and reuses the same API key.</p>
+
+  <h2>Push rejected with a recipe?</h2>
+  <p>That means a blob over 32 MB was committed without LFS. The message lists the exact commands. If the file was added in the last commit:</p>
+<pre><code>git lfs install
+git lfs track "*.bin"               # the large file's extension or path
+git add .gitattributes
+git commit --amend --no-edit
+git push</code></pre>
+  <p>If the file is in an earlier commit of the push, rewrite the pushed history instead:</p>
+<pre><code>git lfs migrate import --include="*.bin" --everything
+git push --force-with-lease</code></pre>
+
+  <h2>Limits</h2>
+  <table>
+    <tr><th>Transfer mode</th><th>Max object</th><th>When</th></tr>
+    <tr><td><span class="tag">presigned</span></td><td>5 GiB</td><td>R2 API credentials are configured; bytes go straight to R2.</td></tr>
+    <tr><td><span class="tag">proxy</span></td><td>100 MB (zone request-body limit)</td><td>Fallback; bytes stream through the Worker.</td></tr>
+  </table>
+  <p class="muted">Each repository can lower its own cap or disable uploads in its settings. Check the current policy with <code>GET /api/repos/&lt;repo&gt;/lfs</code>, <code>gitflare lfs status &lt;repo&gt;</code>, or the <code>gitflare_lfs_status</code> MCP tool.</p>
+
+  <h2>CI</h2>
+<pre><code># .gitflare/ci.yml
+checkout:
+  lfs: auto     # auto (default) | true | false</code></pre>
+  <p><code>auto</code> runs <code>git lfs pull</code> when <code>.gitattributes</code> tracks LFS paths and <code>git-lfs</code> is in the job image, otherwise it warns and leaves pointer files. <code>true</code> fails the checkout when <code>git-lfs</code> is missing. A reference image with git-lfs is published as <code>ghcr.io/&lt;owner&gt;/gitflare-ci:node22</code>; point the runner at it with <code>CI_IMAGE</code>.</p>
+
+  <h2>Not supported</h2>
+  <ul>
+    <li>File locking (<code>git lfs lock</code>) — GitFlare's model is a branch per task.</li>
+    <li>Objects over 5 GiB (multipart transfer).</li>
+    <li>Mirroring LFS objects to GitHub — pointer files mirror, the binaries stay in R2.</li>
+  </ul>
+</main>
+</body>
+</html>

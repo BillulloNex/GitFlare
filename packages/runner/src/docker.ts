@@ -194,7 +194,7 @@ export async function removeJob(job: JobContainer): Promise<void> {
  */
 export async function cloneInJob(
   job: JobContainer,
-  checkout: { url: string; token: string; branch: string; commitSha: string },
+  checkout: { url: string; token: string; branch: string; commitSha: string; lfs?: { url: string; token: string; mode: 'auto' | 'always' } },
   onLine: ExecOptions['onLine']
 ): Promise<ExecResult> {
   const script = [
@@ -206,18 +206,45 @@ export async function cloneInJob(
     '  git fetch -q --depth=50 origin "+refs/heads/$3:refs/remotes/origin/$3"',
     '  git cat-file -e "$2^{commit}" 2>/dev/null || git fetch -q --unshallow origin "+refs/heads/$3:refs/remotes/origin/$3"',
     'fi',
-    'git -c advice.detachedHead=false checkout -q "$2"',
+    // Checkout never smudges: LFS objects are fetched explicitly below with
+    // the LFS endpoint + token, not the Artifacts credentials.
+    'GIT_LFS_SKIP_SMUDGE=1 git -c advice.detachedHead=false checkout -q "$2"',
     'echo "Checked out $(git rev-parse --short HEAD) ($3)"',
+    // ── Git LFS ($4 = mode: off | auto | always) ──
+    'if [ "$4" != off ]; then',
+    '  if git grep -q --cached -e "filter=lfs" -- ".gitattributes" "*/.gitattributes" 2>/dev/null; then',
+    '    if command -v git-lfs >/dev/null 2>&1; then',
+    '      echo "Fetching Git LFS objects"',
+    '      git lfs install --local --skip-smudge >/dev/null',
+    '      git lfs pull',
+    '    elif [ "$4" = always ]; then',
+    '      echo "checkout.lfs is true but git-lfs is not installed in the CI image (set CI_IMAGE to an image with git-lfs, e.g. the one built from packages/runner/ci-image)" >&2',
+    '      exit 1',
+    '    else',
+    '      echo "warning: this repo uses Git LFS but git-lfs is not installed in the CI image; large files are left as pointer files" >&2',
+    '    fi',
+    '  fi',
+    'fi',
   ].join('\n');
+
+  // Git config via env only (never argv or .git/config). Entry 0 is the clone
+  // credential for the Artifacts URL; entries 1-2 point git-lfs at the Worker.
+  const configEntries: [string, string][] = [['http.extraHeader', `Authorization: Bearer ${checkout.token}`]];
+  const lfs = checkout.lfs;
+  if (lfs) {
+    // Scope the clone header to the Artifacts URL so it is not sent to the LFS endpoint.
+    configEntries[0] = [`http.${checkout.url}.extraHeader`, `Authorization: Bearer ${checkout.token}`];
+    configEntries.push(['lfs.url', lfs.url], [`http.${lfs.url}.extraHeader`, `Authorization: Bearer ${lfs.token}`]);
+  }
+  const env: Record<string, string> = { GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_COUNT: String(configEntries.length) };
+  configEntries.forEach(([k, v], i) => {
+    env[`GIT_CONFIG_KEY_${i}`] = k;
+    env[`GIT_CONFIG_VALUE_${i}`] = v;
+  });
   return execInJob(
     job,
-    ['sh', '-c', script, 'clone', checkout.url, checkout.commitSha, checkout.branch],
-    {
-      GIT_TERMINAL_PROMPT: '0',
-      GIT_CONFIG_COUNT: '1',
-      GIT_CONFIG_KEY_0: 'http.extraHeader',
-      GIT_CONFIG_VALUE_0: `Authorization: Bearer ${checkout.token}`,
-    },
+    ['sh', '-c', script, 'clone', checkout.url, checkout.commitSha, checkout.branch, lfs ? lfs.mode : 'off'],
+    env,
     { onLine, timeoutMs: 10 * 60_000 }
   );
 }

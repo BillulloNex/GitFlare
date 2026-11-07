@@ -132,6 +132,47 @@ jobs:
           echo "::error::https://git.beenex.company/health did not return 200 after deploy"
           exit 1
 
+  # Reference CI job image (node + git-lfs) for `checkout.lfs`. Published to
+  # GHCR only when its Dockerfile changes; the runner uses it via CI_IMAGE.
+  ci-image:
+    runs-on: ubuntu-latest
+    name: Publish CI job image (GHCR)
+    needs: deploy
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Did the CI image change?
+        id: changed
+        run: |
+          set -euo pipefail
+          before="${{ github.event.before }}"
+          if [ "${{ github.event_name }}" != "push" ] || ! git cat-file -e "$before^{commit}" 2>/dev/null; then
+            echo "build=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if git diff --quiet "$before" HEAD -- packages/runner/ci-image; then
+            echo "build=false" >> "$GITHUB_OUTPUT"; echo "CI image unchanged; skipping."
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log in to GHCR
+        if: steps.changed.outputs.build == 'true'
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and push
+        if: steps.changed.outputs.build == 'true'
+        run: |
+          set -euo pipefail
+          image="ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/gitflare-ci:node22"
+          docker build -t "$image" packages/runner/ci-image
+          docker push "$image"
+          echo "Published $image" >> "$GITHUB_STEP_SUMMARY"
+
   # The runner (packages/runner) is hosted on Coolify. It speaks a versioned
   # protocol with the Worker, so it ships from the same workflow, right after
   # the Worker. Skipped when nothing runner-related changed, so in-flight CI
