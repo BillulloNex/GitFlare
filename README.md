@@ -271,6 +271,27 @@ Version's; trailers carry `Onshape-Document`, `Onshape-Version` and
   `POST …/onshape/versions/:id/retry`, `POST …/onshape/preview`,
   `POST …/onshape/preview/poll`, `GET …/onshape/preview/file`.
 
+### Diary
+
+Every repo has a **Diary** tab: a build log of short posts, each a few lines of
+text plus photos and videos, stamped with when it happened (now by default, or
+any past time for backfilling). Posts are grouped by day; newest or oldest first.
+
+- Drop, paste or pick photos/videos (jpg, png, gif, webp, avif, heic, mp4, mov,
+  webm; up to 2 GB each). They upload as soon as they are added, as R2 multipart
+  uploads streamed through the Worker in 10 MB parts, so phone videos get past the
+  per-request body limit without presigned URLs or bucket CORS.
+- Bytes live in R2 under `diary/<repo_id>/<media_id>/…` and are served with Range
+  support. Uploads never attached to a post are deleted by the cron after a day.
+- Access follows the repo: readers see the diary, writers post, and only an
+  entry's author (or a repo admin) can edit or delete it.
+- Agents: MCP tools `gitflare_diary_list` and `gitflare_diary_post` (with base64
+  attachments), or `client.diary.*` in `@gitflare/client`.
+- API: `GET|POST /api/repos/:repo/diary`, `GET|PATCH|DELETE …/diary/:id`,
+  `POST …/diary/media`, `PUT …/diary/media/:id/parts/:n`,
+  `POST …/diary/media/:id/complete`, `DELETE …/diary/media/:id`,
+  `GET …/diary/media/:id/file`.
+
 ### Deploy targets
 
 ```bash

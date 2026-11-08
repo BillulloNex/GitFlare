@@ -7,6 +7,7 @@
  *   - Deployments stuck in `running` / `queued` → failed
  *   - Expired sessions → deleted
  *   - LFS objects left `pending` for a day → promoted if the bytes are in R2, else purged
+ *   - Diary uploads never attached to an entry for a day → bytes and rows deleted
  *
  * Timestamps are compared with julianday() because rows mix ISO-8601
  * (`2026-01-01T00:00:00.000Z`, written by the app) and SQLite's
@@ -17,6 +18,7 @@ import { maxCIDurationMs, MAX_DEPLOY_DEADLINE_MS } from '../queue/ci-consumer.ts
 import { cancelRunnerRun } from './runner-client.ts';
 import { cleanExpiredSessions } from './session.ts';
 import { reconcileStalePendingLfs } from './lfs-storage.ts';
+import { purgeOrphanDiaryMedia } from '../api/diary.ts';
 
 /** Grace on top of the runner's own deadline so its final callback can land first. */
 const RUNNING_GRACE_MS = 5 * 60 * 1000;
@@ -38,6 +40,7 @@ export interface MaintenanceReport {
 	expiredSessions: number;
 	lfsPromoted: number;
 	lfsPurged: number;
+	diaryOrphansPurged: number;
 }
 
 async function failStuckRuns(env: Env): Promise<{ running: number; queued: number }> {
@@ -108,7 +111,7 @@ async function failStuckDeployments(env: Env): Promise<number> {
 }
 
 export async function runScheduledMaintenance(env: Env): Promise<MaintenanceReport> {
-	const report: MaintenanceReport = { stuckRuns: 0, stuckQueuedRuns: 0, stuckDeployments: 0, expiredSessions: 0, lfsPromoted: 0, lfsPurged: 0 };
+	const report: MaintenanceReport = { stuckRuns: 0, stuckQueuedRuns: 0, stuckDeployments: 0, expiredSessions: 0, lfsPromoted: 0, lfsPurged: 0, diaryOrphansPurged: 0 };
 
 	// Each task is independent — one failing must not stop the others.
 	const tasks: Array<Promise<void>> = [
@@ -125,6 +128,9 @@ export async function runScheduledMaintenance(env: Env): Promise<MaintenanceRepo
 		reconcileStalePendingLfs(env, LFS_PENDING_TIMEOUT_MS).then((r) => {
 			report.lfsPromoted = r.promoted;
 			report.lfsPurged = r.purged;
+		}),
+		purgeOrphanDiaryMedia(env, LFS_PENDING_TIMEOUT_MS).then((n) => {
+			report.diaryOrphansPurged = n;
 		}),
 	];
 	const outcomes = await Promise.allSettled(tasks);

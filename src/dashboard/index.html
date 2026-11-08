@@ -657,6 +657,102 @@
         .idea-note-box { padding: 12px 14px; }
         .idea-note-box textarea { margin-top: 0; }
 
+        /* ─── Diary ──────────────────────────────────────────────── */
+        .diary-wrap { max-width: 860px; margin: 0 auto; }
+        .diary-composer { padding: 14px 16px; margin-bottom: 28px; transition: border-color 0.15s, box-shadow 0.15s; }
+        .diary-composer.is-dragover { border-color: var(--accent-flare); box-shadow: 0 0 0 3px var(--accent-soft); }
+        .diary-composer textarea, .diary-edit textarea {
+            width: 100%; min-height: 72px; resize: vertical; background: transparent; border: 0; outline: none;
+            color: var(--text-primary); font: 400 var(--text-md)/1.55 var(--font-sans);
+        }
+        .diary-composer textarea::placeholder { color: var(--text-muted); }
+        .diary-when { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: var(--text-xs); margin-bottom: 8px; }
+        .diary-when input {
+            background: transparent; border: 1px solid var(--border-default); border-radius: var(--radius-pill); color: var(--text-secondary);
+            font: 500 var(--text-xs)/1 var(--font-mono); height: 26px; padding: 0 10px; color-scheme: dark;
+        }
+        .diary-when input:focus { outline: none; border-color: var(--accent-ring); }
+        .diary-when .diary-now { font-family: var(--font-mono); color: var(--text-secondary); }
+        .diary-composer-bar { display: flex; align-items: center; gap: 8px; justify-content: space-between; border-top: 1px dashed var(--border-default); padding-top: 10px; margin-top: 6px; flex-wrap: wrap; }
+        .diary-composer-bar .hint { font-size: var(--text-xs); color: var(--text-muted); flex: 1; min-width: 140px; }
+        .diary-composer-bar #diaryPostBtn { margin-left: auto; }
+        .diary-tray { display: flex; gap: 8px; flex-wrap: wrap; margin: 4px 0 10px; }
+        .diary-tray:empty { display: none; }
+        .diary-thumb { position: relative; width: 84px; height: 84px; border-radius: var(--radius-sm); overflow: hidden; background: var(--bg-muted); border: 1px solid var(--border-default); flex-shrink: 0; }
+        .diary-thumb img, .diary-thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .diary-thumb .name { position: absolute; inset: auto 0 0 0; padding: 3px 5px; font-size: 10px; color: var(--text-secondary); background: linear-gradient(transparent, rgba(0,0,0,0.75)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .diary-thumb .kind { position: absolute; top: 4px; left: 4px; color: #fff; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.7)); display: flex; }
+        .diary-thumb .remove { position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border-radius: 50%; border: 0; background: rgba(0,0,0,0.65); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
+        .diary-thumb .bar { position: absolute; left: 0; bottom: 0; height: 3px; background: var(--accent-flare); transition: width 0.2s; }
+        .diary-thumb.is-uploading::after { content: ''; position: absolute; inset: 0; background: rgba(0,0,0,0.35); }
+        .diary-thumb.is-error { border-color: var(--danger-border); }
+        .diary-thumb.is-error::after { content: '!'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(60,0,0,0.55); color: var(--danger-fg); font-weight: 700; font-size: 22px; }
+        .diary-thumb .file-ph { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--text-muted); }
+
+        .diary-day { display: flex; align-items: baseline; gap: 12px; margin: 30px 0 14px; position: sticky; top: 0; z-index: 2; padding: 8px 0; background: var(--bg-canvas); }
+        .diary-day:first-child { margin-top: 0; }
+        .diary-day-date { font-family: var(--font-display); font-size: var(--text-xl); font-weight: 700; letter-spacing: -0.03em; }
+        .diary-day-weekday { color: var(--text-muted); font-size: var(--text-sm); }
+        .diary-day-rule { flex: 1; height: 1px; background: var(--border-default); align-self: center; }
+        .diary-day-count { color: var(--text-muted); font-size: var(--text-xs); font-family: var(--font-mono); }
+
+        .diary-entry { display: grid; grid-template-columns: 76px 1fr; gap: 14px; position: relative; padding-bottom: 22px; }
+        .diary-entry::before { content: ''; position: absolute; left: 82px; top: 22px; bottom: 0; width: 1px; background: var(--border-muted); }
+        .diary-entry:last-child::before { display: none; }
+        .diary-time { text-align: right; font: 500 var(--text-sm)/1 var(--font-mono); color: var(--text-secondary); padding-top: 4px; white-space: nowrap; }
+        .diary-time::after { content: ''; position: absolute; left: 79px; top: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent-flare); box-shadow: 0 0 0 3px var(--bg-canvas); }
+        .diary-body { min-width: 0; padding-left: 10px; }
+        .diary-text { font-size: var(--text-md); line-height: 1.6; color: var(--text-primary); overflow-wrap: anywhere; }
+        .diary-text p { margin: 0 0 10px; }
+        .diary-text p:last-child { margin-bottom: 0; }
+        .diary-text ul, .diary-text ol { margin: 4px 0 10px; padding-left: 22px; }
+        .diary-text li { margin: 2px 0; }
+        .diary-text a { color: var(--accent-hover); text-decoration: underline; text-underline-offset: 2px; }
+        .diary-text code { font-family: var(--font-mono); font-size: 0.9em; background: var(--bg-muted); padding: 1px 5px; border-radius: 4px; }
+        .diary-meta { display: flex; gap: 6px; align-items: center; font-size: var(--text-xs); color: var(--text-muted); margin-top: 8px; flex-wrap: wrap; }
+        .diary-meta strong { color: var(--text-secondary); font-weight: 500; }
+        .diary-actions { margin-left: auto; display: flex; gap: 2px; opacity: 0; transition: opacity 0.15s; }
+        .diary-entry:hover .diary-actions, .diary-entry:focus-within .diary-actions { opacity: 1; }
+        @media (hover: none) { .diary-actions { opacity: 1; } }
+
+        .diary-media { display: grid; gap: 6px; margin-top: 10px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .diary-media.n1 { grid-template-columns: 1fr; }
+        .diary-media.n2, .diary-media.n4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .diary-media:first-child { margin-top: 0; }
+        .diary-tile { position: relative; border-radius: var(--radius-sm); overflow: hidden; background: var(--bg-code); border: 1px solid var(--border-muted); aspect-ratio: 1 / 1; }
+        .diary-media.n1 .diary-tile { aspect-ratio: auto; max-height: 620px; display: flex; justify-content: center; }
+        .diary-media.n2 .diary-tile { aspect-ratio: 4 / 5; }
+        .diary-tile img, .diary-tile video { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .diary-media.n1 .diary-tile img, .diary-media.n1 .diary-tile video { width: auto; max-width: 100%; height: auto; max-height: 620px; object-fit: contain; }
+        .diary-tile img { cursor: zoom-in; }
+        .diary-tile .fallback { width: 100%; height: 100%; min-height: 140px; display: flex; flex-direction: column; gap: 6px; align-items: center; justify-content: center; color: var(--text-muted); font-size: var(--text-xs); padding: 12px; text-align: center; overflow-wrap: anywhere; }
+        .diary-tile .fallback a { color: var(--accent-hover); }
+
+        .diary-edit { padding: 12px 14px; }
+        .diary-edit textarea { min-height: 110px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); padding: 8px 10px; margin: 6px 0 8px; }
+        .diary-edit textarea:focus { border-color: var(--accent-ring); }
+        .diary-edit-actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center; flex-wrap: wrap; }
+        .diary-more { display: flex; justify-content: center; margin: 8px 0 24px; }
+
+        .lightbox { position: fixed; inset: 0; z-index: 1000; background: rgba(5,5,4,0.94); display: none; align-items: center; justify-content: center; }
+        .lightbox.show { display: flex; }
+        .lightbox img { max-width: calc(100vw - 120px); max-height: calc(100vh - 100px); object-fit: contain; border-radius: 4px; }
+        .lightbox .lb-btn { position: absolute; width: 44px; height: 44px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.18); background: rgba(20,20,18,0.7); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+        .lightbox .lb-btn:hover { background: rgba(50,50,46,0.9); }
+        .lightbox .lb-close { top: 16px; right: 16px; }
+        .lightbox .lb-prev { left: 16px; top: 50%; transform: translateY(-50%); }
+        .lightbox .lb-next { right: 16px; top: 50%; transform: translateY(-50%); }
+        .lightbox .lb-caption { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,0.7); font: 500 var(--text-xs)/1 var(--font-mono); display: flex; gap: 12px; align-items: center; white-space: nowrap; }
+        .lightbox .lb-caption a { color: #fff; }
+        @media (max-width: 640px) {
+            .diary-entry { grid-template-columns: 1fr; gap: 6px; }
+            .diary-entry::before, .diary-time::after { display: none; }
+            .diary-time { text-align: left; }
+            .diary-body { padding-left: 0; }
+            .diary-day-date { font-size: var(--text-lg); }
+            .lightbox img { max-width: 100vw; max-height: calc(100vh - 120px); }
+        }
+
         /* ─── Commits ────────────────────────────────────────────── */
         .commit-timeline-list { margin-bottom: 24px; }
         .commit-row {
@@ -1234,6 +1330,11 @@
         <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></symbol>
         <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
         <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+        <symbol id="i-camera" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></symbol>
+        <symbol id="i-notebook" viewBox="0 0 24 24"><path d="M2 6h4"/><path d="M2 10h4"/><path d="M2 14h4"/><path d="M2 18h4"/><rect width="16" height="20" x="4" y="2" rx="2"/><path d="M16 2v20"/></symbol>
+        <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M21.17 6.81a2.82 2.82 0 0 0-4-4L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/><path d="m15 5 4 4"/></symbol>
+        <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+        <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
         <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/></symbol>
     </svg>
 
@@ -1274,7 +1375,7 @@
                             <svg class="i" width="16" height="16" aria-hidden="true"><use href="#i-log-out"/></svg>
                             Sign out
                         </button>
-                        <div class="menu-foot">GitFlare v1.1.8</div>
+                        <div class="menu-foot">GitFlare v1.1.9</div>
                     </div>
                 </div>
             </div>
@@ -1339,6 +1440,10 @@
                             <svg class="i" aria-hidden="true"><use href="#i-bulb"/></svg>
                             Ideas
                             <span class="tab-badge" id="ideasCountBadge" style="display:none;"></span>
+                        </button>
+                        <button class="nav-tab" id="tab-btn-diary" role="tab" aria-selected="false" onclick="switchMainTab('diary')">
+                            <svg class="i" aria-hidden="true"><use href="#i-notebook"/></svg>
+                            Diary
                         </button>
                         <button class="nav-tab" id="tab-btn-ci" role="tab" aria-selected="false" onclick="switchMainTab('ci')">
                             <svg class="i" aria-hidden="true"><use href="#i-play"/></svg>
@@ -1527,6 +1632,43 @@
                             <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-arrow-left"/></svg> All ideas
                         </button>
                         <div id="ideaDetail"></div>
+                    </div>
+                </div>
+
+                <!-- TAB: DIARY -->
+                <div id="view-diary" style="display:none;">
+                    <div class="diary-wrap">
+                        <div class="page-head">
+                            <div class="page-head-left">
+                                <div class="page-title">Diary</div>
+                                <div class="segmented" id="diaryOrder" role="group" aria-label="Order">
+                                    <button class="is-active" data-order="desc" data-action="diary-order">Newest first</button>
+                                    <button data-order="asc" data-action="diary-order">Oldest first</button>
+                                </div>
+                            </div>
+                            <button class="btn btn-sm btn-icon" data-action="diary-refresh" aria-label="Refresh diary">
+                                <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-refresh"/></svg>
+                            </button>
+                        </div>
+                        <div class="card diary-composer" id="diaryComposer">
+                            <div class="diary-when">
+                                <svg class="i" width="12" height="12" aria-hidden="true"><use href="#i-clock"/></svg>
+                                <span class="diary-now" id="diaryNowLabel">Now</span>
+                                <input type="datetime-local" id="diaryWhenInput" aria-label="When it happened" style="display:none;">
+                                <button type="button" class="btn btn-sm btn-ghost" style="height:22px; padding:0 8px;" id="diaryWhenToggle" data-action="diary-when-toggle">Change</button>
+                            </div>
+                            <textarea id="diaryTextInput" maxlength="20000" placeholder="What happened? Paste or drop photos and videos here too." aria-label="Diary entry"></textarea>
+                            <div class="diary-tray" id="diaryTray"></div>
+                            <div class="diary-composer-bar">
+                                <button type="button" class="btn btn-sm" data-action="diary-pick">
+                                    <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-camera"/></svg> Photo / video
+                                </button>
+                                <span class="hint" id="diaryHint">⌘/Ctrl+Enter to post</span>
+                                <button type="button" class="btn btn-sm btn-primary" id="diaryPostBtn" data-action="diary-post">Post</button>
+                            </div>
+                            <input type="file" id="diaryFileInput" multiple accept="image/*,video/*,.heic,.heif,.mov" style="display:none;">
+                        </div>
+                        <div id="diaryFeed"></div>
                     </div>
                 </div>
 
@@ -1785,6 +1927,13 @@
         </div>
     </dialog>
 
+    <div class="lightbox" id="diaryLightbox" role="dialog" aria-modal="true" aria-label="Photo viewer">
+        <img id="diaryLightboxImg" alt="">
+        <button class="lb-btn lb-close" data-action="lightbox-close" aria-label="Close"><svg class="i" width="18" height="18" aria-hidden="true"><use href="#i-x"/></svg></button>
+        <button class="lb-btn lb-prev" data-action="lightbox-prev" aria-label="Previous"><svg class="i" width="20" height="20" aria-hidden="true"><use href="#i-chevron-left"/></svg></button>
+        <button class="lb-btn lb-next" data-action="lightbox-next" aria-label="Next"><svg class="i" width="20" height="20" aria-hidden="true"><use href="#i-chevron-right"/></svg></button>
+        <div class="lb-caption"><span id="diaryLightboxCount"></span><a id="diaryLightboxOpen" target="_blank" rel="noopener">Open original</a></div>
+    </div>
     <div class="toaster" id="toaster" aria-live="polite"></div>
 
     <script>
@@ -1913,6 +2062,8 @@
                 if (!res.ok) return;
                 const { user } = await res.json();
                 if (!user) return;
+                currentUserId = user.id || null;
+                if (currentTab === 'diary' && diaryEntries.length) renderDiaryFeed();
                 const btn = document.getElementById('userMenuBtn');
                 if (user.avatar_url && /^https:\/\//.test(user.avatar_url)) {
                     const img = document.createElement('img');
@@ -2073,6 +2224,7 @@
             if (currentTab === 'code') loadTree('');
             else if (currentTab === 'commits') fetchCommits();
             else if (currentTab === 'ideas') { exitIdeaDetail(); fetchIdeas(); }
+            else if (currentTab === 'diary') fetchDiary();
             else if (currentTab === 'ci') fetchCIRuns();
             else if (currentTab === 'deploys') fetchDeployTargets();
             else if (currentTab === 'cad') fetchOnshape();
@@ -2145,7 +2297,7 @@
         function switchMainTab(tab) {
             closeSecrets();
             currentTab = tab;
-            ['code', 'commits', 'ideas', 'ci', 'deploys', 'cad'].forEach(t => {
+            ['code', 'commits', 'ideas', 'diary', 'ci', 'deploys', 'cad'].forEach(t => {
                 const btn = document.getElementById(`tab-btn-${t}`);
                 const view = document.getElementById(`view-${t}`);
                 if (btn) {
@@ -2156,11 +2308,13 @@
             });
             positionTabInk();
             if (tab !== 'cad') closeCadPreview();
+            if (tab !== 'diary' && diaryLightbox) closeDiaryLightbox();
 
             if (!activeRepo) return;
             if (tab === 'code') loadTree();
             else if (tab === 'commits') fetchCommits();
             else if (tab === 'ideas') { exitIdeaDetail(); fetchIdeas(); }
+            else if (tab === 'diary') fetchDiary();
             else if (tab === 'ci') fetchCIRuns();
             else if (tab === 'deploys') fetchDeployTargets();
             else if (tab === 'cad') fetchOnshape();
@@ -4266,6 +4420,598 @@
             }
         }
 
+        // ─── Diary ──────────────────────────────────────────────────────
+        // A build log: posts of text + photos/videos at a moment in time.
+        // Media upload as soon as it's picked (R2 multipart, 10 MB parts,
+        // through the Worker), so Post only has to attach the finished ids.
+        const DIARY_EXT_RE = /\.(jpe?g|png|gif|webp|avif|heic|heif|mp4|m4v|mov|webm)$/i;
+        const DIARY_VIDEO_RE = /\.(mp4|m4v|mov|webm)$/i;
+        const DIARY_TYPE_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp', 'image/avif': 'avif', 'image/heic': 'heic', 'image/heif': 'heif', 'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm' };
+        const DIARY_MAX_BYTES = 2 * 1024 * 1024 * 1024;
+        let diaryOrder = 'desc';
+        let diaryEntries = [];
+        let diaryCursor = null;
+        let diaryTotal = 0;
+        let diaryEditing = null;     // { id, tray }
+        let diaryLightbox = null;    // { list, index }
+        let currentUserId = null;
+        const diaryComposerTray = { el: document.getElementById('diaryTray'), items: [], repo: null };
+
+        function diaryUrl(path = '') { return `${repoApi()}/diary${path}`; }
+
+        function diaryDraftKey() { return `gitflare.diary.draft.${activeRepo}`; }
+        function saveDiaryDraft() {
+            try { localStorage.setItem(diaryDraftKey(), document.getElementById('diaryTextInput').value); } catch { /* storage unavailable */ }
+        }
+        function loadDiaryDraft() {
+            let draft = '';
+            try { draft = localStorage.getItem(diaryDraftKey()) || ''; } catch { /* storage unavailable */ }
+            document.getElementById('diaryTextInput').value = draft;
+        }
+
+        /** 'YYYY-MM-DDTHH:MM' in local time, for <input type="datetime-local">. */
+        function toLocalInputValue(date) {
+            const d = new Date(date);
+            const pad = (n) => String(n).padStart(2, '0');
+            return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        }
+
+        /** Local datetime-local value → ISO with zone, or null when empty/invalid. */
+        function fromLocalInputValue(value) {
+            if (!value) return null;
+            const d = new Date(value);
+            return isNaN(d.getTime()) ? null : d.toISOString();
+        }
+
+        /** Diary text → HTML: escaped, then bullets, numbered lists, **bold**, `code`, links; line breaks kept. */
+        function renderDiaryText(text) {
+            const inline = (s) => esc(s)
+                .replace(/`([^`]+)`/g, '<code>$1</code>')
+                .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+                .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, label, url) => {
+                    const href = safeLinkHref(url);
+                    return href ? `<a href="${href}" target="_blank" rel="noopener noreferrer nofollow">${label}</a>` : m;
+                })
+                .replace(/(^|[\s(])(https?:\/\/[^\s<]+[^\s<.,;:!?)\]'"])/g, (m, pre, url) =>
+                    `${pre}<a href="${url}" target="_blank" rel="noopener noreferrer nofollow">${url}</a>`);
+            const blocks = [];
+            let para = [];
+            let list = null;
+            const flushPara = () => { if (para.length) blocks.push(`<p>${para.join('<br>')}</p>`); para = []; };
+            const flushList = () => { if (list) blocks.push(`<${list.tag}>${list.items.map(i => `<li>${i}</li>`).join('')}</${list.tag}>`); list = null; };
+            for (const line of String(text || '').split('\n')) {
+                const bullet = /^\s*[-*•]\s+(.*)$/.exec(line);
+                const numbered = /^\s*\d+[.)]\s+(.*)$/.exec(line);
+                if (bullet || numbered) {
+                    flushPara();
+                    const tag = bullet ? 'ul' : 'ol';
+                    if (list && list.tag !== tag) flushList();
+                    if (!list) list = { tag, items: [] };
+                    list.items.push(inline((bullet || numbered)[1]));
+                } else if (!line.trim()) {
+                    flushPara(); flushList();
+                } else {
+                    flushList();
+                    para.push(inline(line));
+                }
+            }
+            flushPara(); flushList();
+            return blocks.join('');
+        }
+
+        // ── Uploads (shared by the composer and the entry editor) ──
+
+        function diaryFileName(file) {
+            const name = file.name || '';
+            if (DIARY_EXT_RE.test(name)) return name;
+            const ext = DIARY_TYPE_EXT[file.type];
+            if (!ext) return null;
+            const stem = name.replace(/\.[^.]*$/, '') || (file.type.startsWith('video/') ? 'video' : 'photo');
+            return `${stem}.${ext}`;
+        }
+
+        function addDiaryFiles(tray, files) {
+            if (!activeRepo) return;
+            tray.repo = activeRepo;
+            for (const file of files) {
+                const name = diaryFileName(file);
+                if (!name) { toast(`${file.name || 'That file'} isn't a photo or video`, 'error'); continue; }
+                if (file.size > DIARY_MAX_BYTES) { toast(`${name} is over 2 GB`, 'error'); continue; }
+                if (!file.size) continue;
+                const item = {
+                    key: crypto.randomUUID(), file, name,
+                    kind: DIARY_VIDEO_RE.test(name) ? 'video' : 'image',
+                    preview: URL.createObjectURL(file),
+                    progress: 0, status: 'uploading', mediaId: null,
+                    controller: new AbortController(),
+                };
+                tray.items.push(item);
+                item.promise = uploadDiaryFile(item, () => updateDiaryThumb(item))
+                    .then(() => { item.status = 'ready'; updateDiaryThumb(item); updateDiaryPostButton(); })
+                    .catch((e) => {
+                        if (item.controller.signal.aborted) return;
+                        item.status = 'error';
+                        item.error = e.message;
+                        updateDiaryThumb(item);
+                        updateDiaryPostButton();
+                        toast(`${name} didn't upload: ${e.message}`, 'error');
+                    });
+            }
+            renderDiaryTray(tray);
+            updateDiaryPostButton();
+        }
+
+        async function uploadDiaryFile(item, onProgress) {
+            const signal = item.controller.signal;
+            const json = async (res) => {
+                const body = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+                return body.data;
+            };
+            const started = await json(await apiFetch(diaryUrl('/media'), {
+                method: 'POST', headers: authHeaders(), signal,
+                body: JSON.stringify({ filename: item.name, size: item.file.size }),
+            }));
+            item.mediaId = started.id;
+            const { part_size: partSize, part_count: count } = started;
+            const parts = new Array(count);
+            let next = 1, done = 0;
+            const worker = async () => {
+                while (next <= count) {
+                    const n = next++;
+                    const blob = item.file.slice((n - 1) * partSize, Math.min(n * partSize, item.file.size));
+                    for (let attempt = 1; ; attempt++) {
+                        try {
+                            const data = await json(await apiFetch(diaryUrl(`/media/${encodeURIComponent(started.id)}/parts/${n}`), {
+                                method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: blob, signal,
+                            }));
+                            parts[n - 1] = { part_number: n, etag: data.etag };
+                            break;
+                        } catch (e) {
+                            if (signal.aborted || attempt >= 4) throw e;
+                            await new Promise(r => setTimeout(r, 700 * attempt));
+                        }
+                    }
+                    done++;
+                    item.progress = done / count;
+                    onProgress();
+                }
+            };
+            await Promise.all(Array.from({ length: Math.min(3, count) }, worker));
+            await json(await apiFetch(diaryUrl(`/media/${encodeURIComponent(started.id)}/complete`), {
+                method: 'POST', headers: authHeaders(), signal, body: JSON.stringify({ parts }),
+            }));
+        }
+
+        function renderDiaryTray(tray) {
+            tray.el.replaceChildren(...tray.items.map(item => {
+                if (!item.el) {
+                    const el = document.createElement('div');
+                    el.className = 'diary-thumb';
+                    const src = item.kind === 'video' && item.file ? `${item.preview}#t=0.1` : item.preview;
+                    el.innerHTML = (item.kind === 'video'
+                        ? `<video src="${esc(src)}" muted playsinline preload="metadata"></video><span class="kind">${icon('play', 14)}</span>`
+                        : `<img src="${esc(src)}" alt="">`)
+                        + `<span class="name">${esc(item.name)}</span><span class="bar"></span>`
+                        + `<button type="button" class="remove" data-action="diary-remove-media" data-key="${esc(item.key)}" aria-label="Remove ${esc(item.name)}">${icon('x', 12)}</button>`;
+                    item.el = el;
+                }
+                updateDiaryThumb(item);
+                return item.el;
+            }));
+        }
+
+        function updateDiaryThumb(item) {
+            if (!item.el) return;
+            item.el.classList.toggle('is-uploading', item.status === 'uploading');
+            item.el.classList.toggle('is-error', item.status === 'error');
+            item.el.title = item.status === 'error' ? `${item.name}: ${item.error}` : item.name;
+            const bar = item.el.querySelector('.bar');
+            bar.style.width = item.status === 'uploading' ? `${Math.max(4, item.progress * 100)}%` : '0';
+        }
+
+        function removeDiaryItem(tray, key) {
+            const i = tray.items.findIndex(x => x.key === key);
+            if (i < 0) return;
+            const [item] = tray.items.splice(i, 1);
+            if (item.file) {
+                item.controller.abort();
+                URL.revokeObjectURL(item.preview);
+                // Discard the upload; anything still in flight is swept by the daily cleanup.
+                if (item.mediaId && item.status === 'ready') {
+                    apiFetch(diaryUrl(`/media/${encodeURIComponent(item.mediaId)}`), { method: 'DELETE', headers: authHeaders() }).catch(() => {});
+                }
+            }
+            renderDiaryTray(tray);
+            updateDiaryPostButton();
+        }
+
+        function clearDiaryTray(tray, { discard = true } = {}) {
+            for (const item of [...tray.items]) {
+                if (discard) removeDiaryItem(tray, item.key);
+                else if (item.file) URL.revokeObjectURL(item.preview);
+            }
+            tray.items = [];
+            renderDiaryTray(tray);
+        }
+
+        /** Wait for a tray's uploads; returns the media ids in order, or throws when one failed. */
+        async function diaryTrayMediaIds(tray) {
+            await Promise.all(tray.items.map(i => i.promise).filter(Boolean));
+            const failed = tray.items.find(i => i.status === 'error');
+            if (failed) throw new Error(`${failed.name} didn't upload. Remove it or try again.`);
+            return tray.items.map(i => i.mediaId);
+        }
+
+        function updateDiaryPostButton() {
+            const btn = document.getElementById('diaryPostBtn');
+            const hint = document.getElementById('diaryHint');
+            const pending = diaryComposerTray.items.filter(i => i.status === 'uploading');
+            if (pending.length) {
+                const pct = Math.round(pending.reduce((s, i) => s + i.progress, 0) / pending.length * 100);
+                hint.textContent = `Uploading ${pending.length} file${pending.length === 1 ? '' : 's'}… ${pct}%. You can post now; it'll wait.`;
+            } else {
+                hint.textContent = '⌘/Ctrl+Enter to post';
+            }
+            if (!btn.dataset.busy) btn.disabled = false;
+        }
+
+        // ── Composer ──
+
+        function setDiaryWhen(custom) {
+            const input = document.getElementById('diaryWhenInput');
+            const label = document.getElementById('diaryNowLabel');
+            const toggle = document.getElementById('diaryWhenToggle');
+            if (custom) {
+                input.value = toLocalInputValue(new Date());
+                input.max = toLocalInputValue(new Date(Date.now() + 60_000));
+                input.style.display = '';
+                label.style.display = 'none';
+                toggle.textContent = 'Use now';
+                input.focus();
+            } else {
+                input.value = '';
+                input.style.display = 'none';
+                label.style.display = '';
+                toggle.textContent = 'Change';
+            }
+        }
+
+        async function postDiaryEntry() {
+            const btn = document.getElementById('diaryPostBtn');
+            if (btn.dataset.busy) return;
+            const textEl = document.getElementById('diaryTextInput');
+            const text = textEl.value.trim();
+            const tray = diaryComposerTray;
+            if (!text && !tray.items.length) { textEl.focus(); return; }
+            const whenInput = document.getElementById('diaryWhenInput');
+            const happenedAt = whenInput.style.display === 'none' ? null : fromLocalInputValue(whenInput.value);
+            if (whenInput.style.display !== 'none' && !happenedAt) { toast('Pick a valid date and time', 'error'); whenInput.focus(); return; }
+            const repoAtStart = activeRepo;
+            btn.dataset.busy = '1';
+            btn.disabled = true;
+            btn.textContent = tray.items.some(i => i.status === 'uploading') ? 'Waiting for uploads…' : 'Posting…';
+            try {
+                const mediaIds = await diaryTrayMediaIds(tray);
+                if (activeRepo !== repoAtStart) throw new Error('Switched repositories before the post finished');
+                btn.textContent = 'Posting…';
+                const res = await apiFetch(diaryUrl(), {
+                    method: 'POST', headers: authHeaders(),
+                    body: JSON.stringify({ text, media_ids: mediaIds, ...(happenedAt ? { happened_at: happenedAt } : {}) }),
+                });
+                const json = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+                textEl.value = '';
+                saveDiaryDraft();
+                clearDiaryTray(tray, { discard: false });
+                setDiaryWhen(false);
+                toast('Posted to the diary', 'success');
+                fetchDiary();
+            } catch (e) {
+                toast(`Couldn't post: ${e.message}`, 'error');
+            } finally {
+                delete btn.dataset.busy;
+                btn.disabled = false;
+                btn.textContent = 'Post';
+                updateDiaryPostButton();
+            }
+        }
+
+        // ── Feed ──
+
+        function setDiaryOrder(order) {
+            diaryOrder = order === 'asc' ? 'asc' : 'desc';
+            document.querySelectorAll('#diaryOrder button').forEach(b => b.classList.toggle('is-active', b.dataset.order === diaryOrder));
+            fetchDiary();
+        }
+
+        async function fetchDiary({ more = false } = {}) {
+            const feed = document.getElementById('diaryFeed');
+            const repoAtStart = activeRepo;
+            if (diaryComposerTray.repo && diaryComposerTray.repo !== activeRepo) {
+                clearDiaryTray(diaryComposerTray);
+                diaryComposerTray.repo = null;
+            }
+            if (!more) {
+                if (diaryEditing) { clearDiaryTray(diaryEditing.tray); diaryEditing = null; }
+                loadDiaryDraft();
+                feed.innerHTML = `<div class="card">${skeletonList(3)}</div>`;
+            }
+            try {
+                const q = new URLSearchParams({ order: diaryOrder, limit: '30' });
+                if (more && diaryCursor) q.set('cursor', diaryCursor);
+                const res = await apiFetch(`${diaryUrl()}?${q}`, { headers: authHeaders() });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const json = await res.json();
+                if (activeRepo !== repoAtStart) return;
+                const page = Array.isArray(json.data) ? json.data : [];
+                diaryEntries = more ? diaryEntries.concat(page) : page;
+                diaryCursor = json.next_cursor || null;
+                diaryTotal = json.total || diaryEntries.length;
+                renderDiaryFeed();
+            } catch (e) {
+                if (!more) feed.innerHTML = `<div class="card">${emptyState('Failed to load the diary.', { error: true })}</div>`;
+                else toast("Couldn't load more entries", 'error');
+            }
+        }
+
+        function diaryDayKey(iso) {
+            const d = new Date(iso);
+            return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+        }
+
+        function renderDiaryFeed() {
+            const feed = document.getElementById('diaryFeed');
+            if (!diaryEntries.length) {
+                feed.innerHTML = `<div class="card">${emptyState('<strong>No entries yet.</strong> Post what you built today: a photo, a clip, a few lines.', { iconName: 'camera' })}</div>`;
+                return;
+            }
+            const groups = [];
+            for (const e of diaryEntries) {
+                const key = diaryDayKey(e.happened_at);
+                const last = groups[groups.length - 1];
+                if (last && last.key === key) last.entries.push(e);
+                else groups.push({ key, date: new Date(e.happened_at), entries: [e] });
+            }
+            const thisYear = new Date().getFullYear();
+            feed.innerHTML = groups.map(g => {
+                const date = g.date.toLocaleDateString([], { month: 'short', day: 'numeric', ...(g.date.getFullYear() !== thisYear ? { year: 'numeric' } : {}) });
+                const weekday = g.date.toLocaleDateString([], { weekday: 'long' });
+                return `<section>
+                    <div class="diary-day"><span class="diary-day-date">${esc(date)}</span><span class="diary-day-weekday">${esc(weekday)}</span><span class="diary-day-rule"></span><span class="diary-day-count">${g.entries.length} post${g.entries.length === 1 ? '' : 's'}</span></div>
+                    ${g.entries.map(renderDiaryEntry).join('')}
+                </section>`;
+            }).join('') + (diaryCursor
+                ? `<div class="diary-more"><button class="btn btn-sm" data-action="diary-more">Load older · ${diaryTotal - diaryEntries.length} more</button></div>`
+                : '');
+            if (diaryEditing) {
+                const host = document.querySelector(`[data-diary-editor="${CSS.escape(diaryEditing.id)}"] .diary-tray`);
+                if (host) { diaryEditing.tray.el = host; renderDiaryTray(diaryEditing.tray); }
+            }
+        }
+
+        function renderDiaryMedia(e) {
+            const media = e.media || [];
+            if (!media.length) return '';
+            const n = media.length <= 4 ? `n${media.length}` : 'nmany';
+            return `<div class="diary-media ${n}">${media.map((m, i) => {
+                const url = esc(m.url);
+                const body = m.kind === 'video'
+                    ? `<video controls playsinline preload="metadata" src="${url}#t=0.1" data-download="${url}?download=1" data-name="${esc(m.filename)}"></video>`
+                    : `<img class="diary-img" loading="lazy" src="${url}" alt="${esc(m.filename)}" data-action="lightbox-open" data-id="${esc(m.id)}" data-download="${url}?download=1" data-name="${esc(m.filename)}">`;
+                return `<div class="diary-tile">${body}</div>`;
+            }).join('')}</div>`;
+        }
+
+        function renderDiaryEntry(e) {
+            const time = new Date(e.happened_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+            if (diaryEditing && diaryEditing.id === e.id) {
+                return `<article class="diary-entry"><div class="diary-time">${esc(time)}</div>
+                    <div class="diary-body"><div class="card diary-edit" data-diary-editor="${esc(e.id)}">
+                        <div class="diary-when">${icon('clock', 12)}<input type="datetime-local" id="diaryEditWhen" value="${esc(toLocalInputValue(e.happened_at))}" aria-label="When it happened"></div>
+                        <textarea id="diaryEditText" maxlength="20000" aria-label="Entry text">${esc(e.text)}</textarea>
+                        <div class="diary-tray"></div>
+                        <div class="diary-edit-actions">
+                            <button class="btn btn-sm" data-action="diary-edit-pick" style="margin-right:auto;">${icon('camera', 14)} Add photo / video</button>
+                            <button class="btn btn-sm" data-action="diary-edit-cancel">Cancel</button>
+                            <button class="btn btn-sm btn-primary" data-action="diary-edit-save">Save</button>
+                        </div>
+                    </div></div></article>`;
+            }
+            const edited = e.updated_at && e.created_at && Date.parse(e.updated_at) - Date.parse(e.created_at) > 60_000;
+            const mine = currentUserId && e.author_id === currentUserId;
+            const actions = mine ? `<span class="diary-actions">
+                    <button class="btn btn-sm btn-ghost btn-icon" data-action="diary-edit" data-id="${esc(e.id)}" aria-label="Edit entry" title="Edit">${icon('pencil', 13)}</button>
+                    <button class="btn btn-sm btn-ghost btn-icon btn-danger" data-action="diary-delete" data-id="${esc(e.id)}" aria-label="Delete entry" title="Delete">${icon('trash', 13)}</button>
+                </span>` : '';
+            const fullTime = new Date(e.happened_at).toLocaleString([], { dateStyle: 'full', timeStyle: 'short' });
+            return `<article class="diary-entry" id="diary-${esc(e.id)}">
+                <time class="diary-time" datetime="${esc(e.happened_at)}" title="${esc(fullTime)}">${esc(time)}</time>
+                <div class="diary-body">
+                    ${e.text ? `<div class="diary-text">${renderDiaryText(e.text)}</div>` : ''}
+                    ${renderDiaryMedia(e)}
+                    <div class="diary-meta"><strong>${esc(e.author)}</strong>${edited ? '<span>·</span><span>edited</span>' : ''}${actions}</div>
+                </div>
+            </article>`;
+        }
+
+        // ── Edit / delete ──
+
+        function startDiaryEdit(id) {
+            const entry = diaryEntries.find(x => x.id === id);
+            if (!entry) return;
+            if (diaryEditing) clearDiaryTray(diaryEditing.tray);
+            const tray = { el: document.createElement('div'), repo: activeRepo, items: (entry.media || []).map(m => ({
+                key: m.id, name: m.filename, kind: m.kind, preview: m.url, status: 'ready', mediaId: m.id, progress: 1,
+            })) };
+            diaryEditing = { id, tray };
+            renderDiaryFeed();
+            const ta = document.getElementById('diaryEditText');
+            ta?.focus();
+            ta?.addEventListener('keydown', (ev) => {
+                if (ev.key === 'Enter' && (ev.metaKey || ev.ctrlKey)) { ev.preventDefault(); saveDiaryEdit(); }
+                else if (ev.key === 'Escape') cancelDiaryEdit();
+            });
+        }
+
+        function cancelDiaryEdit() {
+            if (!diaryEditing) return;
+            clearDiaryTray(diaryEditing.tray);
+            diaryEditing = null;
+            renderDiaryFeed();
+        }
+
+        async function saveDiaryEdit() {
+            if (!diaryEditing) return;
+            const editing = diaryEditing;
+            const text = document.getElementById('diaryEditText').value.trim();
+            const happenedAt = fromLocalInputValue(document.getElementById('diaryEditWhen').value);
+            if (!happenedAt) { toast('Pick a valid date and time', 'error'); return; }
+            const saveBtn = document.querySelector('[data-action="diary-edit-save"]');
+            if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+            try {
+                const mediaIds = await diaryTrayMediaIds(editing.tray);
+                const res = await apiFetch(diaryUrl(`/${encodeURIComponent(editing.id)}`), {
+                    method: 'PATCH', headers: authHeaders(),
+                    body: JSON.stringify({ text, happened_at: happenedAt, media_ids: mediaIds }),
+                });
+                const json = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+                clearDiaryTray(editing.tray, { discard: false });
+                diaryEditing = null;
+                const i = diaryEntries.findIndex(x => x.id === editing.id);
+                if (i >= 0) diaryEntries[i] = json.data;
+                // A new time can move the entry to another day or page; reload keeps the order honest.
+                fetchDiary();
+            } catch (e) {
+                toast(`Couldn't save: ${e.message}`, 'error');
+                if (saveBtn) { saveBtn.disabled = false; saveBtn.textContent = 'Save'; }
+            }
+        }
+
+        async function deleteDiaryEntry(id) {
+            const entry = diaryEntries.find(x => x.id === id);
+            if (!entry) return;
+            const n = (entry.media || []).length;
+            if (!confirm(`Delete this diary entry${n ? ` and its ${n} photo${n === 1 ? '' : 's'}/video${n === 1 ? '' : 's'}` : ''}? This can't be undone.`)) return;
+            try {
+                const res = await apiFetch(diaryUrl(`/${encodeURIComponent(id)}`), { method: 'DELETE', headers: authHeaders() });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                diaryEntries = diaryEntries.filter(x => x.id !== id);
+                diaryTotal = Math.max(0, diaryTotal - 1);
+                renderDiaryFeed();
+                toast('Entry deleted', 'success');
+            } catch (e) {
+                toast(`Couldn't delete: ${e.message}`, 'error');
+            }
+        }
+
+        // ── Lightbox ──
+
+        function openDiaryLightbox(mediaId) {
+            const list = diaryEntries.flatMap(e => (e.media || []).filter(m => m.kind === 'image'));
+            const index = list.findIndex(m => m.id === mediaId);
+            if (index < 0) return;
+            diaryLightbox = { list, index };
+            document.getElementById('diaryLightbox').classList.add('show');
+            showDiaryLightbox();
+        }
+
+        function showDiaryLightbox() {
+            const { list, index } = diaryLightbox;
+            const m = list[index];
+            const img = document.getElementById('diaryLightboxImg');
+            img.src = m.url;
+            img.alt = m.filename;
+            document.getElementById('diaryLightboxCount').textContent = `${index + 1} / ${list.length} · ${m.filename}`;
+            document.getElementById('diaryLightboxOpen').href = m.url;
+            document.querySelector('#diaryLightbox .lb-prev').style.display = index > 0 ? '' : 'none';
+            document.querySelector('#diaryLightbox .lb-next').style.display = index < list.length - 1 ? '' : 'none';
+        }
+
+        function stepDiaryLightbox(delta) {
+            if (!diaryLightbox) return;
+            const next = diaryLightbox.index + delta;
+            if (next < 0 || next >= diaryLightbox.list.length) return;
+            diaryLightbox.index = next;
+            showDiaryLightbox();
+        }
+
+        function closeDiaryLightbox() {
+            diaryLightbox = null;
+            document.getElementById('diaryLightbox').classList.remove('show');
+            document.getElementById('diaryLightboxImg').removeAttribute('src');
+        }
+
+        // ── Wiring ──
+
+        (() => {
+            const composer = document.getElementById('diaryComposer');
+            const textEl = document.getElementById('diaryTextInput');
+            const fileInput = document.getElementById('diaryFileInput');
+            let pickTarget = null;
+            window.pickDiaryFiles = (tray) => { pickTarget = tray; fileInput.click(); };
+            fileInput.addEventListener('change', () => {
+                if (fileInput.files?.length) addDiaryFiles(pickTarget || diaryComposerTray, [...fileInput.files]);
+                fileInput.value = '';
+                pickTarget = null;
+            });
+            textEl.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); postDiaryEntry(); }
+            });
+            textEl.addEventListener('input', saveDiaryDraft);
+            const pasteFiles = (e, tray) => {
+                const files = [...(e.clipboardData?.files || [])];
+                if (!files.length) return;
+                e.preventDefault();
+                addDiaryFiles(tray, files);
+            };
+            textEl.addEventListener('paste', (e) => pasteFiles(e, diaryComposerTray));
+            document.getElementById('diaryFeed').addEventListener('paste', (e) => {
+                if (diaryEditing && e.target.id === 'diaryEditText') pasteFiles(e, diaryEditing.tray);
+            });
+            let depth = 0;
+            composer.addEventListener('dragenter', (e) => { if (e.dataTransfer?.types?.includes('Files')) { e.preventDefault(); depth++; composer.classList.add('is-dragover'); } });
+            composer.addEventListener('dragover', (e) => { if (e.dataTransfer?.types?.includes('Files')) e.preventDefault(); });
+            composer.addEventListener('dragleave', () => { depth = Math.max(0, depth - 1); if (!depth) composer.classList.remove('is-dragover'); });
+            composer.addEventListener('drop', (e) => {
+                depth = 0;
+                composer.classList.remove('is-dragover');
+                if (!e.dataTransfer?.files?.length) return;
+                e.preventDefault();
+                addDiaryFiles(diaryComposerTray, [...e.dataTransfer.files]);
+            });
+            // HEIC and some videos don't render in every browser: swap in a download tile.
+            document.addEventListener('error', (e) => {
+                const el = e.target;
+                if (!(el instanceof HTMLImageElement || el instanceof HTMLVideoElement)) return;
+                const tile = el.closest('.diary-tile');
+                if (tile && el.dataset.download) {
+                    tile.innerHTML = `<div class="fallback">${icon(el.tagName === 'VIDEO' ? 'play' : 'camera', 22)}<span>${esc(el.dataset.name || 'file')}</span><span>This browser can't preview it.</span><a href="${esc(el.dataset.download)}">Download</a></div>`;
+                    return;
+                }
+                const thumb = el.closest('.diary-thumb');
+                if (thumb && !thumb.querySelector('.file-ph')) {
+                    const ph = document.createElement('div');
+                    ph.className = 'file-ph';
+                    ph.innerHTML = icon(el.tagName === 'VIDEO' ? 'play' : 'camera', 22);
+                    el.replaceWith(ph);
+                }
+            }, true);
+            document.getElementById('diaryLightbox').addEventListener('click', (e) => {
+                if (e.target.id === 'diaryLightbox') closeDiaryLightbox();
+            });
+            document.addEventListener('keydown', (e) => {
+                if (!diaryLightbox) return;
+                if (e.key === 'Escape') closeDiaryLightbox();
+                else if (e.key === 'ArrowLeft') stepDiaryLightbox(-1);
+                else if (e.key === 'ArrowRight') stepDiaryLightbox(1);
+            });
+            window.addEventListener('beforeunload', (e) => {
+                if (diaryComposerTray.items.some(i => i.status === 'uploading')) { e.preventDefault(); e.returnValue = ''; }
+            });
+        })();
+
         // ─── Feature 4: Deployments ─────────────────────────────────────
         function shortSha(sha) { return sha ? String(sha).slice(0, 7) : ''; }
 
@@ -4493,6 +5239,24 @@
                 case 'idea-filter':
                     filterIdeas(d.filter || '');
                     break;
+                case 'diary-order': setDiaryOrder(d.order); break;
+                case 'diary-refresh': fetchDiary(); break;
+                case 'diary-more': fetchDiary({ more: true }); break;
+                case 'diary-when-toggle': setDiaryWhen(document.getElementById('diaryWhenInput').style.display === 'none'); break;
+                case 'diary-pick': pickDiaryFiles(diaryComposerTray); break;
+                case 'diary-post': postDiaryEntry(); break;
+                case 'diary-remove-media':
+                    removeDiaryItem(el.closest('.diary-edit') && diaryEditing ? diaryEditing.tray : diaryComposerTray, d.key);
+                    break;
+                case 'diary-edit': startDiaryEdit(d.id); break;
+                case 'diary-delete': deleteDiaryEntry(d.id); break;
+                case 'diary-edit-pick': if (diaryEditing) pickDiaryFiles(diaryEditing.tray); break;
+                case 'diary-edit-cancel': cancelDiaryEdit(); break;
+                case 'diary-edit-save': saveDiaryEdit(); break;
+                case 'lightbox-open': openDiaryLightbox(d.id); break;
+                case 'lightbox-close': closeDiaryLightbox(); break;
+                case 'lightbox-prev': stepDiaryLightbox(-1); break;
+                case 'lightbox-next': stepDiaryLightbox(1); break;
                 case 'open-idea':
                     openIdea(d.id);
                     break;

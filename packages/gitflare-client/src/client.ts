@@ -27,6 +27,10 @@ import {
   type LfsSummary,
   type LfsObjectPage,
   type LfsToken,
+  type DiaryEntry,
+  type DiaryMedia,
+  type DiaryPage,
+  type CreateDiaryEntryInput,
   GitFlareError,
 } from './types.js';
 
@@ -66,6 +70,22 @@ class Http {
       throw new GitFlareError(res.status, res.statusText, parsed);
     }
     return res;
+  }
+
+  /** Send raw bytes (no JSON encoding) and return the `{ data }` envelope. */
+  async bytes<T>(method: string, path: string, body: Uint8Array | Blob): Promise<T> {
+    const res = await this.fetchImpl(`${this.base}${path}`, {
+      method,
+      headers: this.headers({ 'Content-Type': 'application/octet-stream' }),
+      body: body as BodyInit,
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      let parsed: unknown = text || res.statusText;
+      try { parsed = JSON.parse(text); } catch { /* keep text */ }
+      throw new GitFlareError(res.status, res.statusText, parsed);
+    }
+    return ((await res.json()) as { data: T }).data;
   }
 
   /** JSON body as-is (endpoints that don't use an envelope). */
@@ -279,6 +299,53 @@ class LfsClient {
   }
 }
 
+class DiaryClient {
+  constructor(private http: Http) {}
+
+  /** Entries newest first (or `order: 'asc'`), paged by `cursor`. */
+  async list(repo: string, opts: { order?: 'asc' | 'desc'; limit?: number; cursor?: string } = {}): Promise<DiaryPage> {
+    const res = await this.http.raw('GET', `/api/repos/${seg(repo)}/diary${query({ order: opts.order, limit: opts.limit, cursor: opts.cursor })}`);
+    return (await res.json()) as DiaryPage;
+  }
+
+  get(repo: string, id: string): Promise<DiaryEntry> {
+    return this.http.data('GET', `/api/repos/${seg(repo)}/diary/${seg(id)}`);
+  }
+
+  create(repo: string, input: CreateDiaryEntryInput): Promise<DiaryEntry> {
+    return this.http.data('POST', `/api/repos/${seg(repo)}/diary`, input);
+  }
+
+  /** `media_ids`, when given, is the full new list (reorders, adds, and removes). */
+  update(repo: string, id: string, input: CreateDiaryEntryInput): Promise<DiaryEntry> {
+    return this.http.data('PATCH', `/api/repos/${seg(repo)}/diary/${seg(id)}`, input);
+  }
+
+  delete(repo: string, id: string): Promise<{ id: string; deleted: boolean }> {
+    return this.http.data('DELETE', `/api/repos/${seg(repo)}/diary/${seg(id)}`);
+  }
+
+  /**
+   * Upload a photo or video (jpg, png, gif, webp, avif, heic, mp4, mov, webm; up
+   * to 2 GB) and return it ready to attach via `create({ media_ids })`.
+   * Unattached uploads are deleted after a day.
+   */
+  async upload(repo: string, filename: string, bytes: Uint8Array | Blob): Promise<DiaryMedia> {
+    const size = bytes instanceof Blob ? bytes.size : bytes.byteLength;
+    const base = `/api/repos/${seg(repo)}/diary/media`;
+    const started = await this.http.data<{ id: string; part_size: number; part_count: number }>('POST', base, { filename, size });
+    const parts: { part_number: number; etag: string }[] = [];
+    for (let n = 1; n <= started.part_count; n++) {
+      const start = (n - 1) * started.part_size;
+      const end = Math.min(n * started.part_size, size);
+      const chunk = bytes instanceof Blob ? bytes.slice(start, end) : bytes.subarray(start, end);
+      const part = await this.http.bytes<{ part_number: number; etag: string }>('PUT', `${base}/${seg(started.id)}/parts/${n}`, chunk);
+      parts.push(part);
+    }
+    return this.http.data('POST', `${base}/${seg(started.id)}/complete`, { parts });
+  }
+}
+
 // ─── Main Client ────────────────────────────────────────────────
 
 export class GitFlareClient {
@@ -290,6 +357,7 @@ export class GitFlareClient {
   public readonly deploys: DeployClient;
   public readonly mirrors: MirrorsClient;
   public readonly lfs: LfsClient;
+  public readonly diary: DiaryClient;
   private readonly http: Http;
 
   constructor(config: GitFlareConfig) {
@@ -302,6 +370,7 @@ export class GitFlareClient {
     this.deploys = new DeployClient(this.http);
     this.mirrors = new MirrorsClient(this.http);
     this.lfs = new LfsClient(this.http);
+    this.diary = new DiaryClient(this.http);
   }
 
   /** Public health check — does NOT verify credentials (see `verifyAuth`). */

@@ -427,6 +427,47 @@ export interface Commit {
   stats: { additions: number; deletions: number; total: number; files_changed: number };
 }
 
+// ─── Diary ──────────────────────────────────────────────────────
+
+/** A photo or video on a diary entry. `url` is repo-relative; fetch it with the same credentials. */
+export interface DiaryMedia {
+  id: string;
+  kind: 'image' | 'video';
+  filename: string;
+  content_type: string;
+  size: number;
+  status: 'pending' | 'ready';
+  url: string;
+}
+
+/** One diary post: text plus media at the moment it happened. */
+export interface DiaryEntry {
+  id: string;
+  text: string;
+  /** ISO-8601 UTC. */
+  happened_at: string;
+  author: string;
+  author_id: string | null;
+  created_at: string;
+  updated_at: string;
+  media: DiaryMedia[];
+}
+
+export interface DiaryPage {
+  data: DiaryEntry[];
+  /** Pass as `cursor` for the next page; null at the end. */
+  next_cursor: string | null;
+  total: number;
+}
+
+export interface CreateDiaryEntryInput {
+  text?: string;
+  /** ISO-8601 with a time zone. Defaults to now. */
+  happened_at?: string;
+  /** Ids from `diary.upload`, in display order. */
+  media_ids?: string[];
+}
+
 // ─── Health ─────────────────────────────────────────────────────
 
 export interface HealthResponse {

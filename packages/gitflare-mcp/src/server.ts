@@ -285,6 +285,57 @@ export function createServer(client: GitFlareClient): McpServer {
     run(({ repo }) => client.mirrors.sync(repo)),
   );
 
+  // ── Diary ──
+  const absolute = (entry: { media: { url: string }[] }) => ({
+    ...entry,
+    media: entry.media.map((m) => ({ ...m, url: `${client.baseUrl}${m.url}` })),
+  });
+
+  server.tool(
+    'gitflare_diary_list',
+    "Read a repo's diary: the build log of text + photo/video posts, each with the time it happened. Media URLs need the same credentials (Authorization header).",
+    {
+      repo: z.string(),
+      order: z.enum(['desc', 'asc']).optional().describe('desc = newest first (default)'),
+      limit: z.number().int().min(1).max(100).optional().describe('Default 30'),
+      cursor: z.string().optional().describe('next_cursor from the previous page'),
+    },
+    run(async ({ repo, order, limit, cursor }) => {
+      const page = await client.diary.list(repo, { order, limit, cursor });
+      return { ...page, data: page.data.map(absolute) };
+    }),
+  );
+
+  server.tool(
+    'gitflare_diary_post',
+    "Post to a repo's diary: text (markdown-ish: lines, - bullets, **bold**, links) and optional images/videos, at a given moment (default now). Use it to log progress, results, or generated figures.",
+    {
+      repo: z.string(),
+      text: z.string().max(20000).optional(),
+      happened_at: z.string().optional().describe('ISO-8601 with a time zone, e.g. 2026-10-03T03:26:00-04:00. Default: now'),
+      attachments: z
+        .array(
+          z.object({
+            filename: z.string().describe('With extension: jpg, png, gif, webp, avif, heic, mp4, mov or webm'),
+            data_base64: z.string().describe('File bytes, base64 (max ~15 MB each through MCP)'),
+          }),
+        )
+        .max(10)
+        .optional(),
+    },
+    run(async ({ repo, text, happened_at, attachments }) => {
+      const media_ids: string[] = [];
+      for (const a of attachments ?? []) {
+        if (a.data_base64.length > 20_000_000) throw new Error(`${a.filename} is too large for MCP; upload it with the REST API`);
+        const bin = atob(a.data_base64.replace(/\s+/g, ''));
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        media_ids.push((await client.diary.upload(repo, a.filename, bytes)).id);
+      }
+      return absolute(await client.diary.create(repo, { text, happened_at, media_ids }));
+    }),
+  );
+
   // ── Git Remote URL ──
   server.tool(
     'gitflare_git_remote_url',
