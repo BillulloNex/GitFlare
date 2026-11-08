@@ -12,7 +12,7 @@
  * Export is asynchronous in Onshape, so the dashboard drives it:
  *   startPreview → { state: 'exporting', translation_id } → pollPreview … → 'ready'
  */
-import { detectExtension, type OnshapeClient } from './onshape.ts';
+import type { OnshapeClient } from './onshape.ts';
 import { MAX_IN_MEMORY_BYTES, readCapped } from './onshape-sync.ts';
 
 /**
@@ -112,26 +112,16 @@ export async function pollPreview(
 			await res.body.cancel().catch(() => {});
 			return tooBig(declared);
 		}
-		// Known length: stream into R2 without holding it in memory, then check what it is.
+		// Known length: stream into R2 without holding it in memory. A zip (GLTF plus
+		// buffers, or one file per part) is kept as is: the dashboard unpacks it.
 		await storage.put(key, res.body, { httpMetadata: { contentType: 'application/octet-stream' } });
-		const head = await storage.get(key, { range: { offset: 0, length: 4 } });
-		const ext = detectExtension('glb', new Uint8Array(head ? await head.arrayBuffer() : new ArrayBuffer(0)));
-		if (ext.endsWith('zip')) {
-			await storage.delete(key);
-			return zipped();
-		}
 		return { state: 'ready', element_id: elementId, microversion };
 	}
 
 	const bytes = await readCapped(res, MAX_IN_MEMORY_BYTES);
 	if (!bytes) return { state: 'failed', error: `This model is over the ${mb(MAX_IN_MEMORY_BYTES)} limit for downloads of unknown size. Pick a smaller Part Studio.` };
-	if (detectExtension('glb', bytes).endsWith('zip')) return zipped();
 	await storage.put(key, bytes, { httpMetadata: { contentType: 'application/octet-stream' } });
 	return { state: 'ready', element_id: elementId, microversion };
-}
-
-function zipped(): PreviewResult {
-	return { state: 'failed', error: 'Onshape split this model into several files, which the preview cannot show' };
 }
 
 /** Drop every cached preview of a repo (on disconnect). Best effort. */

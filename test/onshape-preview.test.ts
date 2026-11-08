@@ -86,8 +86,9 @@ describe('onshape live preview', () => {
 		expect(await pollPreview(storage, busy.client, 'r', DID, PART, MV, TID)).toMatchObject({ state: 'exporting', translation_id: TID });
 		const failed = fakeClient({ translation: async () => ({ id: TID, requestState: 'FAILED', failureReason: 'Regen error' }) });
 		expect(await pollPreview(storage, failed.client, 'r', DID, PART, MV, TID)).toEqual({ state: 'failed', error: 'Regen error' });
+		// Zips are kept: the dashboard unpacks them.
 		const zip = fakeClient({ downloadResponse: async () => new Response(new Uint8Array([0x50, 0x4b, 3, 4])) });
-		expect((await pollPreview(storage, zip.client, 'r', DID, PART, MV, TID)).state).toBe('failed');
+		expect((await pollPreview(storage, zip.client, 'r', DID, PART, MV, TID)).state).toBe('ready');
 	});
 
 	it('streams a download of known size into R2 and refuses one over the limit', async () => {
@@ -99,11 +100,11 @@ describe('onshape live preview', () => {
 
 		const zipBytes = new Uint8Array([0x50, 0x4b, 3, 4]);
 		const zip = fakeClient({ downloadResponse: async () => new Response(zipBytes, { headers: { 'Content-Length': '4' } }) });
-		expect((await pollPreview(storage, zip.client, 'r', DID, ASM, MV, TID)).state).toBe('failed');
-		expect(objects.has(previewKey('r', DID, ASM, MV))).toBe(false);
+		expect((await pollPreview(storage, zip.client, 'r', DID, ASM, MV, TID)).state).toBe('ready');
+		expect(objects.get(previewKey('r', DID, ASM, MV))).toEqual(zipBytes);
 
 		const huge = fakeClient({ downloadResponse: async () => new Response(glb, { headers: { 'Content-Length': String(400 * 1024 * 1024) } }) });
-		const result = await pollPreview(storage, huge.client, 'r', DID, ASM, MV, TID);
+		const result = await pollPreview(storage, huge.client, 'r', DID, 'aaaaaaaaaaaaaaaaaaaaaaaa', MV, TID);
 		expect(result).toMatchObject({ state: 'failed' });
 		expect(result.state === 'failed' && result.error).toContain('400 MB');
 	});

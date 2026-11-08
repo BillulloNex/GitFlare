@@ -12,7 +12,8 @@
     <script type="importmap">
     { "imports": {
         "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+        "fflate": "https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js"
     } }
     </script>
     <style>
@@ -1273,7 +1274,7 @@
                             <svg class="i" width="16" height="16" aria-hidden="true"><use href="#i-log-out"/></svg>
                             Sign out
                         </button>
-                        <div class="menu-foot">GitFlare v1.1.7</div>
+                        <div class="menu-foot">GitFlare v1.1.8</div>
                     </div>
                 </div>
             </div>
@@ -2451,7 +2452,8 @@
         }
 
         // ─── 3D Model Viewer (three.js, loaded on demand) ───────────────
-        const MODEL_FILE_RE = /\.(glb|gltf|stl)$/i;
+        // Onshape sometimes zips an export (glTF + buffers, or one file per part): .glb.zip opens too.
+        const MODEL_FILE_RE = /\.(glb|gltf|stl)(\.zip)?$/i;
         let modelView = null;      // { renderer, controls, scene, camera, frame(), raf, observer }
         let modelLoadSeq = 0;
         // Element-id prefix of the stage in use: 'model' (file viewer) or 'cadModel' (CAD tab live preview).
@@ -2508,6 +2510,53 @@
         }
 
         /** Render a GLB / glTF / STL. `opts.prefix` picks the stage, `opts.url` overrides where the bytes come from. */
+        /**
+         * Bytes → three.js object. A zip is unpacked: every .glb / .gltf in it is loaded
+         * (a .gltf's buffers and textures come from the same zip) and grouped.
+         */
+        async function parseModel(THREE, loaderModule, buffer, isStl) {
+            const bytes = new Uint8Array(buffer);
+            const isZip = bytes[0] === 0x50 && bytes[1] === 0x4b;
+            if (isStl && !isZip) {
+                const geometry = new loaderModule.STLLoader().parse(buffer);
+                geometry.computeVertexNormals();
+                return new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xc9c6bd, metalness: 0.15, roughness: 0.55 }));
+            }
+            const { GLTFLoader } = isStl ? await import('three/addons/loaders/GLTFLoader.js') : loaderModule;
+            const parseGltf = (data, manager) => new Promise((resolve, reject) => new GLTFLoader(manager).parse(data, '', g => resolve(g.scene), reject));
+            if (!isZip) return parseGltf(buffer);
+
+            const { unzipSync } = await import('fflate');
+            const files = unzipSync(bytes);
+            const names = Object.keys(files).filter(n => !n.startsWith('__MACOSX/'));
+            const blobUrls = {};
+            for (const n of names) blobUrls[n.split('/').pop()] = URL.createObjectURL(new Blob([files[n]]));
+            const manager = new THREE.LoadingManager();
+            manager.setURLModifier(url => blobUrls[decodeURIComponent(url).split('/').pop()] ?? url);
+            try {
+                const group = new THREE.Group();
+                const models = names.filter(n => /\.(glb|gltf)$/i.test(n));
+                const stls = names.filter(n => /\.stl$/i.test(n));
+                if (!models.length && !stls.length) throw new Error('the zip holds no .glb, .gltf or .stl file');
+                for (const n of models) {
+                    const data = /\.gltf$/i.test(n) ? new TextDecoder().decode(files[n]) : files[n].slice().buffer;
+                    group.add(await parseGltf(data, manager));
+                }
+                if (stls.length) {
+                    const { STLLoader } = await import('three/addons/loaders/STLLoader.js');
+                    const material = new THREE.MeshStandardMaterial({ color: 0xc9c6bd, metalness: 0.15, roughness: 0.55 });
+                    for (const n of stls) {
+                        const geometry = new STLLoader().parse(files[n].slice().buffer);
+                        geometry.computeVertexNormals();
+                        group.add(new THREE.Mesh(geometry, material));
+                    }
+                }
+                return group;
+            } finally {
+                Object.values(blobUrls).forEach(u => URL.revokeObjectURL(u));
+            }
+        }
+
         async function renderModel(file, opts = {}) {
             disposeModel();
             modelPrefix = opts.prefix || 'model';
@@ -2536,15 +2585,7 @@
                 const buffer = await res.arrayBuffer();
                 if (seq !== modelLoadSeq) return;
 
-                let object;
-                if (isStl) {
-                    const geometry = new loaderModule.STLLoader().parse(buffer);
-                    geometry.computeVertexNormals();
-                    object = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xc9c6bd, metalness: 0.15, roughness: 0.55 }));
-                } else {
-                    const gltf = await new Promise((resolve, reject) => new loaderModule.GLTFLoader().parse(buffer, '', resolve, reject));
-                    object = gltf.scene;
-                }
+                const object = await parseModel(THREE, loaderModule, buffer, isStl);
                 if (seq !== modelLoadSeq) return;
 
                 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });

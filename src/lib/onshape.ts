@@ -301,7 +301,10 @@ export class OnshapeClient {
 		const base = `/${kind}/d/${documentId}/${wv}/${versionId}/e/${element.id}`;
 		switch (format) {
 			case 'glb':
-				return this.json('POST', `${base}/export/gltf`, { body: { storeInDocument: false, ...(resolution ? { meshParams: { resolution } } : {}) } });
+				return this.json('POST', `${base}/export/gltf`, {
+					// grouping: one file for the whole tab. Onshape's default (false) zips one file per part.
+					body: { storeInDocument: false, grouping: true, ...(resolution ? { meshParams: { resolution } } : {}) },
+				});
 			case 'step':
 				return this.json('POST', `${base}/export/step`, { body: { storeInDocument: false } });
 			case 'stl':
