@@ -3,8 +3,17 @@
  * without D1. Routes live in src/api/ideas.ts.
  */
 
-export const IDEA_STATUSES = ['open', 'exploring', 'done', 'dropped'] as const;
+export const IDEA_STATUSES = ['created', 'in_progress', 'done', 'abandoned'] as const;
 export type IdeaStatus = (typeof IDEA_STATUSES)[number];
+
+export const IDEA_STATUS_LABELS: Record<IdeaStatus, string> = {
+	created: 'Created',
+	in_progress: 'In progress',
+	done: 'Done',
+	abandoned: 'Abandoned',
+};
+
+export const STATUS_ERROR = 'status must be one of created, in_progress, done, abandoned';
 
 export const TITLE_MAX = 200;
 export const BODY_MAX = 20_000;
@@ -101,6 +110,6 @@ export function newIdeaId(): string {
 
 /** Text for the automatic log entry written on a status change. */
 export function statusChangeText(from: IdeaStatus, to: IdeaStatus, note?: string | null): string {
-	const line = `Status: ${from} → ${to}`;
+	const line = `Status: ${IDEA_STATUS_LABELS[from]} → ${IDEA_STATUS_LABELS[to]}`;
 	return note ? `${line}\n\n${note}` : line;
 }

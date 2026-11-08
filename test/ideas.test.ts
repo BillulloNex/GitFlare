@@ -12,8 +12,8 @@ import {
 
 describe('ideas', () => {
 	it('accepts only the four statuses', () => {
-		for (const s of ['open', 'exploring', 'done', 'dropped']) expect(isIdeaStatus(s)).toBe(true);
-		expect(isIdeaStatus('active')).toBe(false);
+		for (const s of ['created', 'in_progress', 'done', 'abandoned']) expect(isIdeaStatus(s)).toBe(true);
+		expect(isIdeaStatus('open')).toBe(false);
 		expect(isIdeaStatus(1)).toBe(false);
 	});
 
@@ -68,7 +68,7 @@ describe('ideas', () => {
 	});
 
 	it('describes a status change, with an optional note', () => {
-		expect(statusChangeText('open', 'exploring')).toBe('Status: open → exploring');
-		expect(statusChangeText('exploring', 'dropped', 'Too hot.')).toBe('Status: exploring → dropped\n\nToo hot.');
+		expect(statusChangeText('created', 'in_progress')).toBe('Status: Created → In progress');
+		expect(statusChangeText('in_progress', 'abandoned', 'Too hot.')).toBe('Status: In progress → Abandoned\n\nToo hot.');
 	});
 });

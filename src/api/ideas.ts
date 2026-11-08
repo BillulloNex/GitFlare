@@ -12,6 +12,7 @@ import {
 	parseTitle,
 	readRefs,
 	statusChangeText,
+	STATUS_ERROR,
 	type IdeaStatus,
 } from '../lib/ideas.ts';
 
@@ -69,7 +70,7 @@ async function auditIdea(c: Context<IdeaEnv>, action: string, details: Record<st
 app.get('/:repo/ideas', async (c) => {
 	const status = c.req.query('status');
 	if (status !== undefined && !isIdeaStatus(status)) {
-		return c.json({ error: 'status must be one of open, exploring, done, dropped' }, 400);
+		return c.json({ error: STATUS_ERROR }, 400);
 	}
 	const where = status ? 'i.repo_id = ? AND i.status = ?' : 'i.repo_id = ?';
 	const params = status ? [c.get('repoRecord').id, status] : [c.get('repoRecord').id];
@@ -95,8 +96,8 @@ app.post('/:repo/ideas', async (c) => {
 	if (!title) return c.json({ error: 'title is required (max 200 characters)' }, 400);
 	const text = parseBody(body.body);
 	if (text === null) return c.json({ error: 'body must be a string (max 20000 characters)' }, 400);
-	const status = body.status === undefined ? 'open' : body.status;
-	if (!isIdeaStatus(status)) return c.json({ error: 'status must be one of open, exploring, done, dropped' }, 400);
+	const status = body.status === undefined ? 'created' : body.status;
+	if (!isIdeaStatus(status)) return c.json({ error: STATUS_ERROR }, 400);
 
 	const who = author(c);
 	const now = new Date().toISOString();
@@ -152,7 +153,7 @@ app.patch('/:repo/ideas/:id', async (c) => {
 		next.body = text;
 	}
 	if (body.status !== undefined) {
-		if (!isIdeaStatus(body.status)) return c.json({ error: 'status must be one of open, exploring, done, dropped' }, 400);
+		if (!isIdeaStatus(body.status)) return c.json({ error: STATUS_ERROR }, 400);
 		next.status = body.status;
 	}
 	let note: string | null = null;
@@ -240,7 +241,7 @@ app.post('/:repo/ideas/:id/log', async (c) => {
 });
 
 // ─── DELETE /api/repos/:repo/ideas/:id ──────────────────────────
-// For mistakes and duplicates. Ideas that didn't pan out should be `dropped`.
+// For mistakes and duplicates. Ideas that didn't pan out should be `abandoned`.
 app.delete('/:repo/ideas/:id', async (c) => {
 	const idea = await loadIdea(c, c.req.param('id'));
 	if (!idea) return c.json({ error: 'Idea not found' }, 404);

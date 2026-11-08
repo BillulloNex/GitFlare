@@ -14,7 +14,7 @@ Two tables. Every idea belongs to a repo and uses that repo's access rules (`che
 | `repo_id` | required |
 | `title` | |
 | `body` | markdown: the raw thought |
-| `status` | `open` → `exploring` → `done` \| `dropped` |
+| `status` | `created` → `in_progress` → `done` \| `abandoned` |
 | `created_by` | user or API key / agent name |
 | `created_at`, `updated_at` | |
 
@@ -32,8 +32,8 @@ Commits link to an idea when a log entry mentions them. No trailers or push-time
 ## Rules
 - Access follows the repo: `read` can view, `write` can create, log, and change status.
 - Log entries can't be edited or deleted. Fix a mistake by adding another entry.
-- Status can move in any direction (a `dropped` idea can be reopened). Each status change also writes a log entry automatically.
-- When an agent picks up an idea, it sets `exploring`. There are no locks or leases.
+- Status can move in any direction (an `abandoned` idea can be picked up again). Each status change also writes a log entry automatically.
+- When an agent picks up an idea, it sets `in_progress`. There are no locks or leases.
 
 ## Phase 1: API + notes UI
 - `migrations/0012_ideas.sql`: `ideas`, `idea_logs`
@@ -53,7 +53,7 @@ Commits link to an idea when a log entry mentions them. No trailers or push-time
 - `packages/gitflare-client`: idea methods
 - `packages/gitflare-cli`: `gitflare idea add|list|show|status|log`
 - `packages/gitflare-mcp` + `/mcp`: `idea_create`, `idea_list`, `idea_get`, `idea_update`, `idea_log`
-- Tool descriptions tell agents to set `exploring` when they start, log each attempt with commit refs, and finish with `done` or `dropped` plus a summary.
+- Tool descriptions tell agents to set `in_progress` when they start, log each attempt with commit refs, and finish with `done` or `abandoned` plus a summary.
 
 ## Phase 3: ChatGPT / Claude connectors
 - OAuth on `/mcp`, because their custom connectors don't accept Bearer API keys. This is the only significant new work in the plan.

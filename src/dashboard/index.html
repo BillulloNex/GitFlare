@@ -632,7 +632,7 @@
         .idea-row-snippet { font-size: var(--text-xs); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 4px; }
         .idea-meta { font-size: var(--text-xs); color: var(--text-muted); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
         .idea-meta strong { color: var(--text-secondary); font-weight: 500; }
-        .badge-dropped { color: var(--text-muted); text-decoration: line-through; }
+        .badge-abandoned { color: var(--text-muted); text-decoration: line-through; }
         .idea-head { padding: 20px 24px; margin-bottom: 16px; }
         .idea-head-top { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
         .idea-title { font-family: var(--font-display); font-size: 24px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.25; cursor: text; outline: none; border-radius: 4px; }
@@ -1494,10 +1494,10 @@
                                 <div class="page-title">Ideas</div>
                                 <div class="segmented" id="ideaFilter" role="group" aria-label="Filter ideas">
                                     <button class="is-active" data-filter="" data-action="idea-filter">All</button>
-                                    <button data-filter="open" data-action="idea-filter">Open</button>
-                                    <button data-filter="exploring" data-action="idea-filter">Exploring</button>
+                                    <button data-filter="created" data-action="idea-filter">Created</button>
+                                    <button data-filter="in_progress" data-action="idea-filter">In progress</button>
                                     <button data-filter="done" data-action="idea-filter">Done</button>
-                                    <button data-filter="dropped" data-action="idea-filter">Dropped</button>
+                                    <button data-filter="abandoned" data-action="idea-filter">Abandoned</button>
                                 </div>
                             </div>
                             <button class="btn btn-sm btn-icon" onclick="fetchIdeas()" aria-label="Refresh ideas">
@@ -3795,14 +3795,16 @@
 
 
         // ─── Ideas ──────────────────────────────────────────────────────
-        const IDEA_STATUSES = ['open', 'exploring', 'done', 'dropped'];
+        const IDEA_STATUSES = ['created', 'in_progress', 'done', 'abandoned'];
+        const IDEA_STATUS_LABELS = { created: 'Created', in_progress: 'In progress', done: 'Done', abandoned: 'Abandoned' };
+        const ideaLabel = (s) => IDEA_STATUS_LABELS[s] || s;
         let ideaFilter = '';
         let activeIdea = null;
 
         function ideaBadge(status) {
-            const cls = { open: 'badge-queued', exploring: 'badge-running', done: 'badge-success', dropped: 'badge-dropped' }[status] || 'badge-queued';
-            const ic = { open: 'circle', exploring: 'loader', done: 'check', dropped: 'ban' }[status] || 'circle';
-            return `<span class="badge ${cls}">${icon(ic, 12)} ${esc(status)}</span>`;
+            const cls = { created: 'badge-queued', in_progress: 'badge-running', done: 'badge-success', abandoned: 'badge-abandoned' }[status] || 'badge-queued';
+            const ic = { created: 'circle', in_progress: 'loader', done: 'check', abandoned: 'ban' }[status] || 'circle';
+            return `<span class="badge ${cls}">${icon(ic, 12)} ${esc(ideaLabel(status))}</span>`;
         }
 
         function ideaUrl(id = '') {
@@ -3835,9 +3837,9 @@
                 const { data } = await res.json();
                 if (activeRepo !== repoAtStart) return;
                 const list = Array.isArray(data) ? data : [];
-                if (!ideaFilter) setCountBadge('ideasCountBadge', list.filter(i => i.status === 'open' || i.status === 'exploring').length || null);
+                if (!ideaFilter) setCountBadge('ideasCountBadge', list.filter(i => i.status === 'created' || i.status === 'in_progress').length || null);
                 if (!list.length) {
-                    const msg = ideaFilter ? `No ${esc(ideaFilter)} ideas.` : '<strong>No ideas yet.</strong> Write the first one above.';
+                    const msg = ideaFilter ? `No ${esc(ideaLabel(ideaFilter).toLowerCase())} ideas.` : '<strong>No ideas yet.</strong> Write the first one above.';
                     container.innerHTML = `<div class="card">${emptyState(msg, { iconName: 'bulb' })}</div>`;
                     return;
                 }
@@ -3940,7 +3942,7 @@
             if (!i) return;
             const host = document.getElementById('ideaDetail');
             const statusButtons = IDEA_STATUSES.map(s =>
-                `<button class="${s === i.status ? 'is-active' : ''}" data-action="idea-status" data-status="${s}">${esc(s[0].toUpperCase() + s.slice(1))}</button>`).join('');
+                `<button class="${s === i.status ? 'is-active' : ''}" data-action="idea-status" data-status="${s}">${esc(ideaLabel(s))}</button>`).join('');
             const logs = i.logs || [];
             host.innerHTML = `
                 <div class="card idea-head">
@@ -3978,8 +3980,8 @@
         async function setIdeaStatus(status) {
             if (!activeIdea || status === activeIdea.status) return;
             let note = null;
-            if (status === 'done' || status === 'dropped') {
-                note = prompt(status === 'done' ? 'What came of it? (optional)' : 'Why drop it? (optional)', '');
+            if (status === 'done' || status === 'abandoned') {
+                note = prompt(status === 'done' ? 'What came of it? (optional)' : 'Why abandon it? (optional)', '');
                 if (note === null) return; // cancelled
             }
             try {
@@ -4062,7 +4064,7 @@
 
         async function deleteIdea() {
             if (!activeIdea) return;
-            if (!confirm(`Delete "${activeIdea.title}" and its work log?\n\nIf it just didn't work out, mark it Dropped instead so the record stays.`)) return;
+            if (!confirm(`Delete "${activeIdea.title}" and its work log?\n\nIf it just didn't work out, mark it Abandoned instead so the record stays.`)) return;
             try {
                 const res = await apiFetch(ideaUrl(activeIdea.id), { method: 'DELETE', headers: authHeaders() });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
