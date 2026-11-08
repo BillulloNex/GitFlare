@@ -9,6 +9,8 @@ When a task changes this repo, finish by committing and pushing. Do not wait to 
 
 Commit on the current branch and push to its upstream. On `main`, push to `origin/main`.
 
+After the push, watch the Deploy workflow until it finishes. Tell the user the result, and when it succeeds confirm the live version at `https://git.beenex.company/health`. If it fails, say which step failed.
+
 - Never update git config.
 - Never force-push, hard-reset, or skip hooks unless the user explicitly asks.
 - Never commit secrets (`.env`, credentials, tokens). Leave those files out and say so.
