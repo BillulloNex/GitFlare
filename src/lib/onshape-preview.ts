@@ -15,6 +15,14 @@
 import { detectExtension, type OnshapeClient } from './onshape.ts';
 import { MAX_EXPORT_BYTES, readCapped } from './onshape-sync.ts';
 
+/**
+ * Largest preview we keep. A download with a Content-Length streams straight
+ * into R2, so this is not bound by Worker memory; one without is buffered and
+ * capped at MAX_EXPORT_BYTES.
+ */
+export const MAX_PREVIEW_BYTES = 150 * 1024 * 1024;
+const mb = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`;
+
 export const PREVIEW_PREFIX = 'onshape-preview/';
 const EXPORTABLE = new Set(['PARTSTUDIO', 'ASSEMBLY']);
 const ID_RE = /^[A-Za-z0-9]{1,64}$/;
@@ -67,7 +75,8 @@ export async function startPreview(
 	if (await storage.head(previewKey(repoId, documentId, pick.id, microversion))) {
 		return { state: 'ready', element_id: pick.id, microversion, elements };
 	}
-	const t = await client.startExport(documentId, workspaceId, { id: pick.id, elementType: pick.elementType }, 'glb', 'w');
+	// COARSE: a preview only needs to look right, and FINE meshes of detailed parts run to hundreds of MB.
+	const t = await client.startExport(documentId, workspaceId, { id: pick.id, elementType: pick.elementType }, 'glb', 'w', 'COARSE');
 	if (t.requestState === 'FAILED' || !isPreviewId(t.id)) return { state: 'failed', error: t.failureReason || 'Onshape could not export this tab', elements };
 	return { state: 'exporting', element_id: pick.id, microversion, translation_id: t.id, elements };
 }
@@ -91,12 +100,38 @@ export async function pollPreview(
 	const fileId = t.resultExternalDataIds?.[0];
 	if (!fileId) return { state: 'failed', error: 'The export finished without a file' };
 
-	const bytes = await readCapped(await client.downloadResponse(documentId, fileId), MAX_EXPORT_BYTES);
-	if (!bytes) return { state: 'failed', error: `The model is over the ${MAX_EXPORT_BYTES / 1024 / 1024} MB preview limit` };
-	const ext = detectExtension('glb', bytes);
-	if (ext.endsWith('zip')) return { state: 'failed', error: 'Onshape split this model into several files, which the preview cannot show' };
-	await storage.put(key, bytes, { httpMetadata: { contentType: ext === 'glb' ? 'model/gltf-binary' : 'model/gltf+json' } });
+	const res = await client.downloadResponse(documentId, fileId);
+	const declared = Number(res.headers.get('Content-Length'));
+	const tooBig = (size: number) => ({
+		state: 'failed' as const,
+		error: `This model is ${mb(size)} even at coarse resolution, over the ${mb(MAX_PREVIEW_BYTES)} preview limit. Pick a smaller Part Studio.`,
+	});
+
+	if (res.body && Number.isFinite(declared) && declared > 0) {
+		if (declared > MAX_PREVIEW_BYTES) {
+			await res.body.cancel().catch(() => {});
+			return tooBig(declared);
+		}
+		// Known length: stream into R2 without holding it in memory, then check what it is.
+		await storage.put(key, res.body, { httpMetadata: { contentType: 'application/octet-stream' } });
+		const head = await storage.get(key, { range: { offset: 0, length: 4 } });
+		const ext = detectExtension('glb', new Uint8Array(head ? await head.arrayBuffer() : new ArrayBuffer(0)));
+		if (ext.endsWith('zip')) {
+			await storage.delete(key);
+			return zipped();
+		}
+		return { state: 'ready', element_id: elementId, microversion };
+	}
+
+	const bytes = await readCapped(res, MAX_EXPORT_BYTES);
+	if (!bytes) return { state: 'failed', error: `This model is over the ${mb(MAX_EXPORT_BYTES)} limit for downloads of unknown size. Pick a smaller Part Studio.` };
+	if (detectExtension('glb', bytes).endsWith('zip')) return zipped();
+	await storage.put(key, bytes, { httpMetadata: { contentType: 'application/octet-stream' } });
 	return { state: 'ready', element_id: elementId, microversion };
+}
+
+function zipped(): PreviewResult {
+	return { state: 'failed', error: 'Onshape split this model into several files, which the preview cannot show' };
 }
 
 /** Drop every cached preview of a repo (on disconnect). Best effort. */

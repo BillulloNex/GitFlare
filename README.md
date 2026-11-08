@@ -257,7 +257,7 @@ Version's; trailers carry `Onshape-Document`, `Onshape-Version` and
   calls. Calls are counted in `onshape_links.api_calls` and shown in the
   dashboard.
 - Live preview: the CAD tab can render one Part Studio or Assembly of a
-  document's main workspace in 3D before any Version exists
+  document's main workspace in 3D before any Version exists, exported at COARSE mesh resolution and streamed into R2 (up to 150 MB)
   (`src/lib/onshape-preview.ts`). It exports a GLB on demand and caches it in
   R2 under `onshape-preview/<repo_id>/…/<microversion>`, so an unchanged tab
   costs 2 calls and a fresh render about 5–10. Previews are not committed.

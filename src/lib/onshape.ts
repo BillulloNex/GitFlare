@@ -293,13 +293,15 @@ export class OnshapeClient {
 		versionId: string,
 		element: { id: string; elementType: string },
 		format: ExportFormat,
-		wv: 'v' | 'w' = 'v'
+		wv: 'v' | 'w' = 'v',
+		/** Mesh resolution for GLB/STL; Onshape's default is FINE. */
+		resolution?: 'FINE' | 'MEDIUM' | 'COARSE'
 	): Promise<OnshapeTranslation> {
 		const kind = element.elementType === 'ASSEMBLY' ? 'assemblies' : 'partstudios';
 		const base = `/${kind}/d/${documentId}/${wv}/${versionId}/e/${element.id}`;
 		switch (format) {
 			case 'glb':
-				return this.json('POST', `${base}/export/gltf`, { body: { storeInDocument: false } });
+				return this.json('POST', `${base}/export/gltf`, { body: { storeInDocument: false, ...(resolution ? { meshParams: { resolution } } : {}) } });
 			case 'step':
 				return this.json('POST', `${base}/export/step`, { body: { storeInDocument: false } });
 			case 'stl':

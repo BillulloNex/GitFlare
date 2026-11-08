@@ -13,9 +13,17 @@ function fakeStorage() {
 	const objects = new Map<string, Uint8Array>();
 	const storage = {
 		head: async (key: string) => (objects.has(key) ? { key } : null),
-		put: async (key: string, value: Uint8Array) => void objects.set(key, value),
+		put: async (key: string, value: Uint8Array | ReadableStream) => {
+			objects.set(key, value instanceof ReadableStream ? new Uint8Array(await new Response(value).arrayBuffer()) : value);
+		},
+		get: async (key: string, opts?: { range?: { offset: number; length: number } }) => {
+			const bytes = objects.get(key);
+			if (!bytes) return null;
+			const slice = opts?.range ? bytes.subarray(opts.range.offset, opts.range.offset + opts.range.length) : bytes;
+			return { arrayBuffer: async () => slice.slice().buffer };
+		},
 		list: async ({ prefix }: { prefix: string }) => ({ objects: [...objects.keys()].filter((k) => k.startsWith(prefix)).map((key) => ({ key })), truncated: false }),
-		delete: async (keys: string[]) => keys.forEach((k) => objects.delete(k)),
+		delete: async (keys: string | string[]) => [keys].flat().forEach((k) => objects.delete(k)),
 	};
 	return { objects, storage: storage as unknown as R2Bucket };
 }
@@ -32,8 +40,8 @@ function fakeClient(over: Partial<Record<keyof OnshapeClient, unknown>> = {}) {
 				{ id: ASM, name: 'Assembly 1', elementType: 'ASSEMBLY', microversionId: MV },
 			]
 		),
-		startExport: async (_d: string, w: string, el: { id: string }, format: string, wv: string) => (
-			calls.push(`export:${wv}:${w}:${el.id}:${format}`),
+		startExport: async (_d: string, w: string, el: { id: string }, format: string, wv: string, resolution?: string) => (
+			calls.push(`export:${wv}:${w}:${el.id}:${format}:${resolution}`),
 			{ id: TID, requestState: 'ACTIVE' }
 		),
 		translation: async () => (calls.push('translation'), { id: TID, requestState: 'DONE', resultExternalDataIds: ['file1'] }),
@@ -57,7 +65,7 @@ describe('onshape live preview', () => {
 		const started = await startPreview(storage, client, 'repo1', DID);
 		expect(started).toMatchObject({ state: 'exporting', element_id: ASM, microversion: MV, translation_id: TID });
 		expect(started.elements?.map((e) => e.name)).toEqual(['Part Studio 1', 'Assembly 1']);
-		expect(calls).toEqual(['document', `elements:w:${WID}`, `export:w:${WID}:${ASM}:glb`]);
+		expect(calls).toEqual(['document', `elements:w:${WID}`, `export:w:${WID}:${ASM}:glb:COARSE`]);
 
 		const done = await pollPreview(storage, client, 'repo1', DID, ASM, MV, TID);
 		expect(done).toEqual({ state: 'ready', element_id: ASM, microversion: MV });
@@ -80,6 +88,24 @@ describe('onshape live preview', () => {
 		expect(await pollPreview(storage, failed.client, 'r', DID, PART, MV, TID)).toEqual({ state: 'failed', error: 'Regen error' });
 		const zip = fakeClient({ downloadResponse: async () => new Response(new Uint8Array([0x50, 0x4b, 3, 4])) });
 		expect((await pollPreview(storage, zip.client, 'r', DID, PART, MV, TID)).state).toBe('failed');
+	});
+
+	it('streams a download of known size into R2 and refuses one over the limit', async () => {
+		const glb = new Uint8Array([0x67, 0x6c, 0x54, 0x46, 2, 0, 0, 0]);
+		const { storage, objects } = fakeStorage();
+		const streamed = fakeClient({ downloadResponse: async () => new Response(glb, { headers: { 'Content-Length': String(glb.length) } }) });
+		expect(await pollPreview(storage, streamed.client, 'r', DID, PART, MV, TID)).toMatchObject({ state: 'ready' });
+		expect(objects.get(previewKey('r', DID, PART, MV))).toEqual(glb);
+
+		const zipBytes = new Uint8Array([0x50, 0x4b, 3, 4]);
+		const zip = fakeClient({ downloadResponse: async () => new Response(zipBytes, { headers: { 'Content-Length': '4' } }) });
+		expect((await pollPreview(storage, zip.client, 'r', DID, ASM, MV, TID)).state).toBe('failed');
+		expect(objects.has(previewKey('r', DID, ASM, MV))).toBe(false);
+
+		const huge = fakeClient({ downloadResponse: async () => new Response(glb, { headers: { 'Content-Length': String(400 * 1024 * 1024) } }) });
+		const result = await pollPreview(storage, huge.client, 'r', DID, ASM, MV, TID);
+		expect(result).toMatchObject({ state: 'failed' });
+		expect(result.state === 'failed' && result.error).toContain('400 MB');
 	});
 
 	it('says so when a document has nothing to render', async () => {
