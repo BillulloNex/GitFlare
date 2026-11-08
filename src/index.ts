@@ -90,7 +90,7 @@ app.get('/health', (c) => {
 	return c.json({
 		service: 'gitflare',
 		status: 'ok',
-		version: c.env.GITFLARE_VERSION ?? '1.0.0',
+		version: c.env.GITFLARE_VERSION ?? '1.1.1',
 	});
 });
 
@@ -107,7 +107,7 @@ app.get('/', async (c) => {
 	return c.json({
 		service: 'gitflare',
 		status: 'ok',
-		version: c.env.GITFLARE_VERSION ?? '1.0.0',
+		version: c.env.GITFLARE_VERSION ?? '1.1.1',
 	});
 });
 
