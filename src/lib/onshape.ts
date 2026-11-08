@@ -254,8 +254,13 @@ export class OnshapeClient {
 		return this.json('GET', `/translations/${translationId}`);
 	}
 
+	/** The export bytes, still a stream: the caller enforces a size cap before buffering. */
+	downloadResponse(documentId: string, externalDataId: string): Promise<Response> {
+		return this.request('GET', `/documents/d/${documentId}/externaldata/${externalDataId}`, { accept: 'application/octet-stream' });
+	}
+
 	async download(documentId: string, externalDataId: string): Promise<Uint8Array> {
-		const res = await this.request('GET', `/documents/d/${documentId}/externaldata/${externalDataId}`, { accept: 'application/octet-stream' });
+		const res = await this.downloadResponse(documentId, externalDataId);
 		return new Uint8Array(await res.arrayBuffer());
 	}
 }

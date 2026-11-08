@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS onshape_links (
     backfill TEXT NOT NULL DEFAULT 'latest' CHECK (backfill IN ('latest', 'all')),
     is_enabled INTEGER NOT NULL DEFAULT 1,
     next_check_at TEXT,                     -- ISO; NULL = due now
+    retry_after TEXT,                       -- ISO; whole link paused (auth, quota, rate limit, protected branch)
     last_check_at TEXT,
     last_status TEXT,                       -- 'ok' | 'error'
     last_error TEXT,

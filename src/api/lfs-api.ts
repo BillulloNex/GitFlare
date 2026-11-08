@@ -66,7 +66,9 @@ app.get('/:repo/lfs/objects/:oid', async (c) => {
 	const filename = (c.req.query('filename') || oid).split('/').pop() || oid;
 	const key = lfsObjectKey(repo.id, oid);
 
-	const presign = presignConfig(c.env);
+	// ?proxy=1 streams through the Worker even in presigned mode: the dashboard's 3D viewer
+	// needs same-origin bytes (a cross-origin redirect to R2 would need bucket CORS).
+	const presign = c.req.query('proxy') === '1' ? null : presignConfig(c.env);
 	if (presign) {
 		const head = await c.env.STORAGE.head(key);
 		if (!head) return c.json({ error: 'Object not found' }, 404);

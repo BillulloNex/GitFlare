@@ -121,6 +121,21 @@ describe('git objects', () => {
 		git(repo, ['fsck', '--strict']);
 	});
 
+	it('refuses to replace a file with a directory, or a directory with a file', async () => {
+		const repo = tempRepo();
+		const read = reader(repo);
+		const blob = await makeBlob('x\n');
+		const fileTree = await applyTreeChanges(read, null, new Map([['robot', { sha: blob.sha }]]));
+		const c1 = await makeCommit({ tree: fileTree.sha, parents: [], author, committer: author, message: 'file' });
+		receivePack(repo, await buildReceivePackRequest({ refName: 'refs/heads/main', oldSha: null, newSha: c1.sha, objects: [blob, ...fileTree.objects, c1] }));
+		await expect(applyTreeChanges(read, fileTree.sha, new Map([['robot/part.step', { sha: blob.sha }]]))).rejects.toThrow(/"robot" is a file/);
+
+		const dirTree = await applyTreeChanges(read, null, new Map([['robot/part.step', { sha: blob.sha }]]));
+		const c2 = await makeCommit({ tree: dirTree.sha, parents: [], author, committer: author, message: 'dir' });
+		receivePack(repo, await buildReceivePackRequest({ refName: 'refs/heads/side', oldSha: null, newSha: c2.sha, objects: [blob, ...dirTree.objects, c2] }));
+		await expect(applyTreeChanges(read, dirTree.sha, new Map([['robot', { sha: blob.sha }]]))).rejects.toThrow(/"robot" is a directory/);
+	});
+
 	it('is rejected as non-fast-forward when the old sha is stale', async () => {
 		const repo = tempRepo();
 		const blob = await makeBlob('x');

@@ -38,6 +38,10 @@ export const MODE_SYMLINK = '120000';
 export const MODE_TREE = '40000';
 export const MODE_GITLINK = '160000';
 
+function isTreeMode(mode: string): boolean {
+	return mode.replace(/^0+/, '') === '40000';
+}
+
 // ─── Bytes helpers ──────────────────────────────────────────────
 
 export function concatBytes(chunks: Uint8Array[]): Uint8Array {
@@ -189,17 +193,30 @@ export async function applyTreeChanges(
 		node.files.set(parts[parts.length - 1], change);
 	}
 
-	async function write(treeSha: string | null, node: Node): Promise<string | null> {
+	async function write(treeSha: string | null, node: Node, prefix: string): Promise<string | null> {
 		const entries = new Map<string, TreeEntry>();
 		if (treeSha) for (const e of await readTree(treeSha)) entries.set(e.name, e);
 
 		for (const [name, change] of node.files) {
-			if (change === null) entries.delete(name);
-			else entries.set(name, { name, mode: change.mode ?? MODE_FILE, sha: change.sha });
+			if (change === null) {
+				entries.delete(name);
+				continue;
+			}
+			const existing = entries.get(name);
+			if (existing && isTreeMode(existing.mode)) {
+				throw new Error(`"${prefix}${name}" is a directory; refusing to replace it with a file`);
+			}
+			entries.set(name, { name, mode: change.mode ?? MODE_FILE, sha: change.sha });
 		}
 		for (const [name, child] of node.dirs) {
+			if (node.files.get(name)) {
+				throw new Error(`"${prefix}${name}" is both a file and a directory in this commit`);
+			}
 			const existing = entries.get(name);
-			const childSha = await write(existing?.mode === MODE_TREE ? existing.sha : null, child);
+			if (existing && !isTreeMode(existing.mode)) {
+				throw new Error(`"${prefix}${name}" is a file; refusing to replace it with a directory`);
+			}
+			const childSha = await write(existing && isTreeMode(existing.mode) ? existing.sha : null, child, `${prefix}${name}/`);
 			if (childSha === null) entries.delete(name);
 			else entries.set(name, { name, mode: MODE_TREE, sha: childSha });
 		}
@@ -209,7 +226,7 @@ export async function applyTreeChanges(
 		return tree.sha;
 	}
 
-	const sha = (await write(rootSha, root)) ?? (await makeTree([])).sha;
+	const sha = (await write(rootSha, root, '')) ?? (await makeTree([])).sha;
 	if (objects.length === 0) objects.push(await makeTree([]));
 	return { sha, objects };
 }

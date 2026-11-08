@@ -8,6 +8,13 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <!-- three.js for the 3D model viewer; modules load only when a model is opened. -->
+    <script type="importmap">
+    { "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    } }
+    </script>
     <style>
         /* ─── Tokens ─────────────────────────────────────────────────
            Warm near-black neutrals, one accent (flare orange) reserved
@@ -785,6 +792,8 @@
         .deploy-meta dt { color: var(--text-muted); }
         .deploy-meta dd { color: var(--text-secondary); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .deploy-meta code { font-size: var(--text-xs); color: var(--text-primary); }
+        .deploy-meta a { color: var(--text-primary); text-decoration: underline; text-decoration-color: var(--border-strong); text-underline-offset: 2px; }
+        .deploy-meta a:hover { text-decoration-color: var(--accent-flare); }
         .deploy-card-foot {
             margin-top: auto;
             border-top: 1px solid var(--border-muted);
@@ -792,6 +801,66 @@
             display: flex; justify-content: space-between; align-items: center; gap: 12px;
         }
         .deploy-last { display: flex; align-items: center; gap: 8px; font-size: var(--text-xs); color: var(--text-muted); min-width: 0; }
+
+        /* ─── 3D model viewer ────────────────────────────────────── */
+        .model-stage {
+            position: relative;
+            height: min(68vh, 620px);
+            border-top: 1px solid var(--border-muted);
+            background:
+                radial-gradient(var(--border-muted) 1px, transparent 1px) 0 0 / 18px 18px,
+                radial-gradient(circle at 50% 38%, var(--bg-muted), var(--bg-code) 70%);
+        }
+        .model-stage canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+        .model-stage canvas:active { cursor: grabbing; }
+        .model-status {
+            position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 8px;
+            color: var(--text-muted); font-size: var(--text-sm); text-align: center; padding: 24px; pointer-events: none;
+        }
+        .model-status.is-error { color: var(--danger-fg); }
+        .model-hud {
+            position: absolute; left: 12px; right: 12px; bottom: 12px;
+            display: flex; justify-content: space-between; align-items: flex-end; gap: 8px; pointer-events: none;
+        }
+        .model-hud .hud-dims {
+            font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-secondary);
+            background: rgba(10, 10, 9, 0.72); border: 1px solid var(--border-default); border-radius: var(--radius-sm); padding: 4px 8px;
+        }
+        .model-hud .btn { pointer-events: auto; }
+
+        /* ─── Onshape (CAD tab) ──────────────────────────────────── */
+        .onshape-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; align-items: start; }
+        @media (max-width: 960px) { .onshape-grid { grid-template-columns: 1fr; } }
+        .onshape-section-head {
+            display: flex; justify-content: space-between; align-items: center; gap: 12px;
+            padding: 14px 20px; font-weight: 600; font-size: var(--text-sm);
+        }
+        .onshape-section-head span { color: var(--text-muted); font-weight: 400; font-size: var(--text-xs); }
+        .version-row {
+            display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center;
+            padding: 12px 20px; border-top: 1px solid var(--border-muted);
+        }
+        .version-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .version-sub { font-size: var(--text-xs); color: var(--text-muted); }
+        .version-side { display: flex; align-items: center; gap: 8px; grid-row: 1 / span 2; grid-column: 2; }
+        .version-error { grid-column: 1 / -1; font-size: var(--text-xs); color: var(--danger-fg); overflow-wrap: anywhere; }
+        .onshape-intro { padding: 28px; display: grid; gap: 18px; }
+        .onshape-intro h3 { font-family: var(--font-display); font-size: var(--text-lg); letter-spacing: -0.02em; }
+        .onshape-intro p { color: var(--text-secondary); max-width: 62ch; }
+        .onshape-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+        .onshape-step { border: 1px dashed var(--border-default); border-radius: var(--radius-sm); padding: 12px 14px; font-size: var(--text-sm); color: var(--text-secondary); }
+        .onshape-step strong { display: block; color: var(--text-primary); font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+        .onshape-alert { margin: 0 20px 16px; padding: 10px 12px; border-radius: var(--radius-sm); font-size: var(--text-xs);
+            background: var(--danger-bg); color: var(--danger-fg); border: 1px solid var(--danger-border); overflow-wrap: anywhere; }
+        dialog.dialog-wide { max-width: 560px; }
+        textarea.form-control { height: auto; min-height: 76px; padding: 8px 12px; resize: vertical; font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.6; }
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        @media (max-width: 520px) { .form-row { grid-template-columns: 1fr; } }
+        .form-hint { font-size: var(--text-xs); color: var(--text-muted); margin-top: 6px; }
+        .form-hint a { color: var(--text-secondary); }
+        .check-row { display: flex; gap: 16px; flex-wrap: wrap; }
+        .check-row label { display: inline-flex; gap: 6px; align-items: center; margin: 0; color: var(--text-secondary); font-size: var(--text-sm); font-weight: 400; }
+        .check-row input { accent-color: var(--accent-flare); }
 
         /* ─── Dialogs & menus ────────────────────────────────────── */
         dialog {
@@ -1136,6 +1205,10 @@
                             <svg class="i" aria-hidden="true"><use href="#i-rocket"/></svg>
                             Deployments
                         </button>
+                        <button class="nav-tab" id="tab-btn-cad" role="tab" aria-selected="false" onclick="switchMainTab('cad')">
+                            <svg class="i" aria-hidden="true"><use href="#i-box"/></svg>
+                            CAD
+                        </button>
                     </nav>
                     <div class="pulse" id="repoPulse" style="display:none;">
                         <span class="pulse-legend" id="pulseLegend"></span>
@@ -1222,6 +1295,14 @@
                                 <a id="lfsDownloadLink" class="btn btn-sm" href="#" target="_blank" rel="noopener">
                                     <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-external"/></svg><span class="btn-label">Download</span>
                                 </a>
+                            </div>
+                        </div>
+                        <div id="modelStage" class="model-stage" style="display:none;">
+                            <canvas id="modelCanvas" aria-label="3D model preview"></canvas>
+                            <div class="model-status" id="modelStatus"></div>
+                            <div class="model-hud">
+                                <span class="hud-dims" id="modelDims" style="display:none;"></span>
+                                <button class="btn btn-sm" id="modelResetBtn" style="display:none;" onclick="resetModelView()">Reset view</button>
                             </div>
                         </div>
                         <div id="fileContentCode" class="code-display">
@@ -1322,6 +1403,15 @@
                     </div>
                     <div id="deployTargetsListContainer"></div>
                 </div>
+
+                <!-- TAB 5: CAD (Onshape sync) -->
+                <div id="view-cad" style="display:none;">
+                    <div class="page-head">
+                        <div class="page-title">Onshape</div>
+                        <div class="page-actions" id="onshapeActions"></div>
+                    </div>
+                    <div id="onshapeContainer"></div>
+                </div>
               </div>
             </div>
         </main>
@@ -1357,6 +1447,62 @@
             <button class="btn btn-primary" onclick="submitRunWorkflow()">
                 <svg class="i" width="12" height="12" aria-hidden="true"><use href="#i-play"/></svg> Run
             </button>
+        </div>
+    </dialog>
+
+    <dialog id="onshapeModal" class="dialog-wide">
+        <h3 id="onshapeModalTitle">Connect Onshape</h3>
+        <p class="dialog-lead">Every new Onshape Version becomes a commit here, with each Part Studio and Assembly saved as files in Git LFS.</p>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="onshapeAccessKey">Access key</label>
+                <input type="text" id="onshapeAccessKey" class="form-control" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="form-group">
+                <label for="onshapeSecretKey">Secret key</label>
+                <input type="password" id="onshapeSecretKey" class="form-control" autocomplete="new-password">
+            </div>
+        </div>
+        <div class="form-hint" id="onshapeKeyHint" style="margin-top:-8px; margin-bottom:16px;">Create a key pair with read access at <a href="https://dev-portal.onshape.com/keys" target="_blank" rel="noopener">dev-portal.onshape.com/keys</a>. Keys are encrypted at rest.</div>
+        <div class="form-group">
+            <label for="onshapeDocuments">Documents <span style="color:var(--text-muted); font-weight:400;">(one Onshape URL per line)</span></label>
+            <textarea id="onshapeDocuments" class="form-control" rows="3" placeholder="https://cad.onshape.com/documents/…" spellcheck="false"></textarea>
+        </div>
+        <div class="form-group">
+            <label>Export formats</label>
+            <div class="check-row">
+                <label><input type="checkbox" name="onshapeFormat" value="glb" checked> GLB <span style="color:var(--text-muted)">· 3D preview</span></label>
+                <label><input type="checkbox" name="onshapeFormat" value="step" checked> STEP <span style="color:var(--text-muted)">· any CAD</span></label>
+                <label><input type="checkbox" name="onshapeFormat" value="stl"> STL <span style="color:var(--text-muted)">· printing</span></label>
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label for="onshapeInterval">Check for new versions</label>
+                <select id="onshapeInterval" class="form-control">
+                    <option value="60">Every hour</option>
+                    <option value="360">Every 6 hours</option>
+                    <option value="720">Every 12 hours</option>
+                    <option value="1440" selected>Daily</option>
+                    <option value="10080">Weekly</option>
+                </select>
+            </div>
+            <div class="form-group" id="onshapeBackfillGroup">
+                <label for="onshapeBackfill">Existing versions</label>
+                <select id="onshapeBackfill" class="form-control">
+                    <option value="latest" selected>Latest only</option>
+                    <option value="all">All, oldest first</option>
+                </select>
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="onshapeBranch">Branch <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label>
+            <input type="text" id="onshapeBranch" class="form-control" placeholder="Default branch if the repo is empty, otherwise “onshape”" spellcheck="false">
+        </div>
+        <div class="form-hint" id="onshapeQuotaHint"></div>
+        <div class="dialog-actions" style="margin-top:20px;">
+            <button class="btn" onclick="document.getElementById('onshapeModal').close()">Cancel</button>
+            <button class="btn btn-primary" id="onshapeSubmitBtn" onclick="submitOnshapeLink()">Connect</button>
         </div>
     </dialog>
 
@@ -1598,6 +1744,7 @@
             if (!repo) return;
             activeRepo = name;
             currentPath = '';
+            onshapeData = null;
             currentBranch = repo.default_branch || 'main';
             document.getElementById('currentBranchName').textContent = currentBranch;
             setCountBadge('commitsCountBadge', null);
@@ -1646,6 +1793,7 @@
             else if (currentTab === 'commits') fetchCommits();
             else if (currentTab === 'ci') fetchCIRuns();
             else if (currentTab === 'deploys') fetchDeployTargets();
+            else if (currentTab === 'cad') fetchOnshape();
         }
 
         // ─── Branch Picker ──────────────────────────────────────────────
@@ -1714,7 +1862,7 @@
         // ─── Tabs Switching ─────────────────────────────────────────────
         function switchMainTab(tab) {
             currentTab = tab;
-            ['code', 'commits', 'ci', 'deploys'].forEach(t => {
+            ['code', 'commits', 'ci', 'deploys', 'cad'].forEach(t => {
                 const btn = document.getElementById(`tab-btn-${t}`);
                 const view = document.getElementById(`view-${t}`);
                 if (btn) {
@@ -1730,6 +1878,7 @@
             else if (tab === 'commits') fetchCommits();
             else if (tab === 'ci') fetchCIRuns();
             else if (tab === 'deploys') fetchDeployTargets();
+            else if (tab === 'cad') fetchOnshape();
         }
 
         // ─── Feature 1: Codebase Explorer ───────────────────────────────
@@ -1837,7 +1986,7 @@
             if (/\.(md|mdx|txt)$/i.test(name)) return icon('file-text', 16);
             if (/\.(json|jsonc|ya?ml|toml)$/i.test(name)) return icon('braces', 16);
             if (/\.(ts|tsx|js|jsx|mjs|cjs|py|sh|go|rs|rb|css|html|sql)$/i.test(name)) return icon('file-code', 16);
-            if (name === 'Dockerfile') return icon('box', 16);
+            if (name === 'Dockerfile' || MODEL_FILE_RE.test(name) || /\.(step|stp)$/i.test(name)) return icon('box', 16);
             return icon('file', 16);
         }
 
@@ -1880,6 +2029,15 @@
                 const toggle = document.getElementById('viewerModeToggle');
                 toggle.style.display = isMarkdown ? 'flex' : 'none';
 
+                // 3D models (GLB / glTF / STL): render instead of showing pointer text or "binary file".
+                if (isViewableModel(data)) {
+                    document.getElementById('fileContentCode').style.display = 'none';
+                    document.getElementById('fileContentPreview').style.display = 'none';
+                    renderModel(data);
+                    return;
+                }
+                disposeModel();
+
                 // Fill line numbers and code
                 document.getElementById('fileLineNumbers').innerHTML = data.is_binary ? '' : Array.from({ length: data.lines }, (_, i) => i + 1).join('<br>');
                 document.getElementById('fileLinesCode').textContent = data.is_binary
@@ -1918,6 +2076,7 @@
         }
 
         function closeFileViewer() {
+            disposeModel();
             document.getElementById('fileViewerBox').style.display = 'none';
             document.getElementById('fileTreeBox').style.display = 'block';
             activeViewerFile = null;
@@ -1935,6 +2094,446 @@
                 window.open(`${repoApi()}/raw?path=${encodeURIComponent(activeViewerFile.path)}&ref=${encodeURIComponent(currentBranch)}`, '_blank', 'noopener');
             }
         }
+
+        // ─── 3D Model Viewer (three.js, loaded on demand) ───────────────
+        const MODEL_FILE_RE = /\.(glb|gltf|stl)$/i;
+        let modelView = null;      // { renderer, controls, scene, camera, frame(), raf, observer }
+        let modelLoadSeq = 0;
+
+        function isViewableModel(file) {
+            if (!MODEL_FILE_RE.test(file.name)) return false;
+            return file.lfs ? file.lfs.state === 'ready' : true;
+        }
+
+        function modelSourceUrl(file) {
+            if (file.lfs) {
+                // proxy=1: stream through the Worker so the bytes are same-origin even when LFS downloads are presigned.
+                return `${file.lfs.download_url}${file.lfs.download_url.includes('?') ? '&' : '?'}proxy=1`;
+            }
+            return `${repoApi()}/raw?path=${encodeURIComponent(file.path)}&ref=${encodeURIComponent(currentBranch)}`;
+        }
+
+        function disposeModel() {
+            modelLoadSeq++;
+            const stage = document.getElementById('modelStage');
+            if (stage) stage.style.display = 'none';
+            if (!modelView) return;
+            cancelAnimationFrame(modelView.raf);
+            modelView.observer.disconnect();
+            modelView.controls.dispose();
+            modelView.scene.traverse(o => {
+                o.geometry?.dispose?.();
+                const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+                mats.forEach(m => { Object.values(m).forEach(v => v?.isTexture && v.dispose()); m.dispose(); });
+            });
+            modelView.renderer.dispose();
+            modelView = null;
+        }
+
+        function resetModelView() {
+            modelView?.frame();
+        }
+
+        /** "120 × 42 × 8 mm". Onshape glTF is in metres; STL has no units (assume mm unless it is tiny). */
+        function formatModelDims(size, isStl) {
+            const max = Math.max(size.x, size.y, size.z);
+            const toMm = !isStl || max < 5 ? 1000 : 1;
+            const fmt = v => {
+                const mm = v * toMm;
+                return mm >= 100 ? mm.toFixed(0) : mm >= 10 ? mm.toFixed(1) : mm.toFixed(2);
+            };
+            return `${fmt(size.x)} × ${fmt(size.y)} × ${fmt(size.z)} mm`;
+        }
+
+        async function renderModel(file) {
+            disposeModel();
+            const seq = modelLoadSeq;
+            const stage = document.getElementById('modelStage');
+            const status = document.getElementById('modelStatus');
+            const canvas = document.getElementById('modelCanvas');
+            const dims = document.getElementById('modelDims');
+            const resetBtn = document.getElementById('modelResetBtn');
+            stage.style.display = 'block';
+            status.className = 'model-status';
+            status.innerHTML = `${icon('loader', 16, 'i-spin')} Loading model…`;
+            dims.style.display = 'none';
+            resetBtn.style.display = 'none';
+            canvas.style.visibility = 'hidden';
+
+            try {
+                const isStl = /\.stl$/i.test(file.name);
+                const [THREE, { OrbitControls }, loaderModule, res] = await Promise.all([
+                    import('three'),
+                    import('three/addons/controls/OrbitControls.js'),
+                    isStl ? import('three/addons/loaders/STLLoader.js') : import('three/addons/loaders/GLTFLoader.js'),
+                    apiFetch(modelSourceUrl(file)),
+                ]);
+                if (!res.ok) throw new Error(`download failed (HTTP ${res.status})`);
+                const buffer = await res.arrayBuffer();
+                if (seq !== modelLoadSeq) return;
+
+                let object;
+                if (isStl) {
+                    const geometry = new loaderModule.STLLoader().parse(buffer);
+                    geometry.computeVertexNormals();
+                    object = new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({ color: 0xc9c6bd, metalness: 0.15, roughness: 0.55 }));
+                } else {
+                    const gltf = await new Promise((resolve, reject) => new loaderModule.GLTFLoader().parse(buffer, '', resolve, reject));
+                    object = gltf.scene;
+                }
+                if (seq !== modelLoadSeq) return;
+
+                const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+                renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+                renderer.outputColorSpace = THREE.SRGBColorSpace;
+                const scene = new THREE.Scene();
+                scene.add(new THREE.HemisphereLight(0xffffff, 0x2a2a27, 1.6));
+                const key = new THREE.DirectionalLight(0xffffff, 2.2);
+                key.position.set(1, 2, 1.5);
+                const rim = new THREE.DirectionalLight(0xffb27a, 0.8); // flare-tinted rim light
+                rim.position.set(-1.5, 0.5, -1);
+                scene.add(key, rim);
+
+                // Centre the model on the origin and sit it on a grid.
+                const box = new THREE.Box3().setFromObject(object);
+                const size = box.getSize(new THREE.Vector3());
+                const center = box.getCenter(new THREE.Vector3());
+                object.position.sub(center);
+                scene.add(object);
+                const maxDim = Math.max(size.x, size.y, size.z) || 1;
+                const grid = new THREE.GridHelper(maxDim * 3, 24, 0x3a3a36, 0x232320);
+                grid.position.y = -size.y / 2;
+                scene.add(grid);
+
+                const camera = new THREE.PerspectiveCamera(35, 1, maxDim / 1000, maxDim * 100);
+                const controls = new OrbitControls(camera, canvas);
+                controls.enableDamping = true;
+                controls.autoRotate = true;
+                controls.autoRotateSpeed = 1.2;
+                controls.addEventListener('start', () => { controls.autoRotate = false; });
+
+                const frame = () => {
+                    const distance = (maxDim / (2 * Math.tan((camera.fov * Math.PI) / 360))) * 1.5;
+                    camera.position.set(distance * 0.75, distance * 0.55, distance * 0.9);
+                    controls.target.set(0, 0, 0);
+                    controls.update();
+                };
+
+                const resize = () => {
+                    const { clientWidth: w, clientHeight: h } = stage;
+                    if (!w || !h) return;
+                    renderer.setSize(w, h, false);
+                    camera.aspect = w / h;
+                    camera.updateProjectionMatrix();
+                };
+                const observer = new ResizeObserver(resize);
+                observer.observe(stage);
+                resize();
+                frame();
+
+                modelView = { renderer, controls, scene, camera, frame, observer, raf: 0 };
+                const tick = () => {
+                    if (!modelView || modelView.renderer !== renderer) return;
+                    controls.update();
+                    renderer.render(scene, camera);
+                    modelView.raf = requestAnimationFrame(tick);
+                };
+                tick();
+
+                status.innerHTML = '';
+                canvas.style.visibility = 'visible';
+                dims.textContent = formatModelDims(size, isStl);
+                dims.style.display = '';
+                resetBtn.style.display = '';
+            } catch (e) {
+                if (seq !== modelLoadSeq) return;
+                status.className = 'model-status is-error';
+                status.innerHTML = `${icon('alert', 16)} <span>Couldn't render this model: ${esc(e.message || String(e))}</span>`;
+            }
+        }
+
+        // ─── CAD: Onshape sync ──────────────────────────────────────────
+        let onshapeData = null;
+        let onshapeRefreshTimer = null;
+
+        const ONSHAPE_INTERVALS = { 60: 'Every hour', 360: 'Every 6 hours', 720: 'Every 12 hours', 1440: 'Daily', 10080: 'Weekly' };
+
+        function onshapeIntervalLabel(minutes) {
+            return ONSHAPE_INTERVALS[minutes] || `Every ${Math.round(minutes / 60)} h`;
+        }
+
+        function onshapeVersionBadge(v) {
+            if (v.status === 'committed') return `<span class="badge badge-success">${icon('check', 12)} Committed</span>`;
+            if (v.status === 'failed') return `<span class="badge badge-danger">${icon('x', 12)} Failed</span>`;
+            if (v.status === 'exporting') {
+                const settled = v.exports_done + v.exports_failed;
+                return `<span class="badge badge-running">${icon('loader', 12, 'i-spin')} Exporting ${settled}/${v.exports_total}</span>`;
+            }
+            return `<span class="badge badge-queued">${icon('clock', 12)} Queued</span>`;
+        }
+
+        async function fetchOnshape() {
+            clearTimeout(onshapeRefreshTimer);
+            const container = document.getElementById('onshapeContainer');
+            const repoAtRequest = activeRepo;
+            if (!onshapeData) container.innerHTML = `<div class="card">${skeletonList(4)}</div>`;
+            try {
+                const res = await apiFetch(`${repoApi()}/onshape`, { headers: authHeaders() });
+                if (repoAtRequest !== activeRepo) return;
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                onshapeData = await res.json();
+                renderOnshape();
+                // Keep the list live while versions are exporting.
+                const busy = (onshapeData.versions || []).some(v => v.status === 'pending' || v.status === 'exporting');
+                if (busy) onshapeRefreshTimer = setTimeout(() => { if (currentTab === 'cad') fetchOnshape(); }, 15000);
+            } catch (e) {
+                container.innerHTML = `<div class="card">${emptyState('Failed to load the Onshape link.', { error: true })}</div>`;
+            }
+        }
+
+        function renderOnshape() {
+            const { link, versions = [], counts = {} } = onshapeData || {};
+            const actions = document.getElementById('onshapeActions');
+            const container = document.getElementById('onshapeContainer');
+
+            if (!link) {
+                actions.innerHTML = '';
+                container.innerHTML = `
+                    <div class="card onshape-intro">
+                        <div>
+                            <h3>Version your Onshape CAD in this repo</h3>
+                            <p>GitFlare checks your Onshape documents on a schedule. Each new Onshape <em>Version</em> becomes a commit with every Part Studio and Assembly exported, so the history is yours and opens in any CAD tool.</p>
+                        </div>
+                        <div class="onshape-steps">
+                            <div class="onshape-step"><strong>1 · Connect</strong>Paste an Onshape API key and the document URLs.</div>
+                            <div class="onshape-step"><strong>2 · Save a version</strong>In Onshape, create a Version as usual.</div>
+                            <div class="onshape-step"><strong>3 · Browse</strong>GLB, STEP and STL land in Git LFS. Open a .glb here to spin it in 3D.</div>
+                        </div>
+                        <div><button class="btn btn-primary" data-action="onshape-edit">${icon('plus', 14)} Connect Onshape</button></div>
+                    </div>`;
+                return;
+            }
+
+            actions.innerHTML = `
+                <button class="btn btn-sm" data-action="onshape-sync" ${link.is_enabled ? '' : 'disabled'}>${icon('refresh', 14)} Sync now</button>
+                <button class="btn btn-sm" data-action="onshape-edit">Settings</button>`;
+
+            const docsById = Object.fromEntries(link.documents.map(d => [d.id, d]));
+            const rows = versions.map(v => {
+                const doc = docsById[v.document_id];
+                const commit = v.commit_sha
+                    ? `<span class="sha-pill" role="button" tabindex="0" data-action="onshape-open-commit" data-sha="${esc(v.commit_sha)}" title="Open commit">${esc(shortSha(v.commit_sha))}</span>`
+                    : '';
+                const files = v.status === 'committed' && doc
+                    ? `<button class="btn btn-sm" data-action="onshape-open-folder" data-folder="${esc(doc.folder)}">${icon('box', 14)} Files</button>`
+                    : '';
+                const retry = v.status === 'failed' ? `<button class="btn btn-sm" data-action="onshape-retry" data-id="${esc(v.id)}">Retry</button>` : '';
+                const failedExports = v.exports_failed ? ` · ${v.exports_failed} export${v.exports_failed === 1 ? '' : 's'} failed` : '';
+                return `
+                    <div class="version-row">
+                        <div class="version-name" title="${esc(v.version_name)}">${esc(v.version_name)}</div>
+                        <div class="version-side">${commit}${files}${retry}${onshapeVersionBadge(v)}</div>
+                        <div class="version-sub">${esc(doc ? doc.name : v.document_id)} · ${esc(v.creator_name || 'Onshape')} · ${esc(timeAgo(v.version_created_at))}${esc(failedExports)}</div>
+                        ${v.error && v.status !== 'committed' ? `<div class="version-error">${esc(v.error)}</div>` : ''}
+                    </div>`;
+            }).join('');
+
+            const committed = counts.committed || 0;
+            const versionsCard = `
+                <div class="card">
+                    <div class="onshape-section-head">Versions <span>${committed} committed${counts.skipped ? ` · ${counts.skipped} older skipped` : ''}</span></div>
+                    ${rows || `<div style="border-top:1px solid var(--border-muted)">${emptyState(link.last_check_at ? '<strong>No versions to sync yet.</strong> Create a Version in Onshape and it shows up here.' : 'Checking Onshape for versions…', { iconName: 'box' })}</div>`}
+                </div>`;
+
+            const statusBadge = !link.is_enabled
+                ? '<span class="badge badge-queued">Paused</span>'
+                : link.last_status === 'error'
+                    ? `<span class="badge badge-danger">${icon('alert', 12)} Error</span>`
+                    : link.last_check_at ? `<span class="badge badge-success">${icon('check', 12)} Syncing</span>` : '<span class="badge badge-queued">Starting</span>';
+            const docLinks = link.documents
+                .map(d => `<a href="${esc(link.base_url)}/documents/${esc(d.id)}" target="_blank" rel="noopener">${esc(d.name)}</a>`)
+                .join(', ');
+            const statusCard = `
+                <div class="card deploy-card">
+                    <div class="deploy-card-top">
+                        <div class="deploy-card-title">
+                            <div class="deploy-type-icon cloudflare">${icon('box', 18)}</div>
+                            <div style="min-width:0;">
+                                <div class="deploy-name">Onshape link</div>
+                                <div class="deploy-sub">${esc(link.base_url.replace(/^https:\/\//, ''))} · key ••••${esc(link.access_key_hint)}</div>
+                            </div>
+                        </div>
+                        ${statusBadge}
+                    </div>
+                    ${link.last_error ? `<div class="onshape-alert">${esc(link.last_error)}</div>` : ''}
+                    <dl class="deploy-meta">
+                        <dt>Documents</dt><dd style="white-space:normal">${docLinks}</dd>
+                        <dt>Branch</dt><dd><code>${esc(link.branch)}</code></dd>
+                        <dt>Formats</dt><dd>${esc(link.formats.map(f => f.toUpperCase()).join(' · '))}</dd>
+                        <dt>Checks</dt><dd>${esc(onshapeIntervalLabel(link.interval_minutes))}</dd>
+                        <dt>Last check</dt><dd>${esc(link.last_check_at ? timeAgo(link.last_check_at) : 'never')}</dd>
+                        <dt>API calls</dt><dd title="Onshape counts API calls against your plan's yearly allowance">${esc(String(link.api_calls))} used · ~${esc(String(link.discovery_calls_per_year))}/yr for checks</dd>
+                    </dl>
+                    <div class="deploy-card-foot">
+                        <button class="btn btn-sm" data-action="onshape-toggle">${link.is_enabled ? 'Pause' : 'Resume'}</button>
+                        <button class="btn btn-sm btn-ghost" data-action="onshape-unlink" style="color:var(--danger-fg)">Disconnect</button>
+                    </div>
+                </div>`;
+
+            container.innerHTML = `<div class="onshape-grid">${versionsCard}${statusCard}</div>`;
+        }
+
+        function updateOnshapeQuotaHint() {
+            const interval = Number(document.getElementById('onshapeInterval').value);
+            const docs = document.getElementById('onshapeDocuments').value.split('\n').filter(l => l.trim()).length || 1;
+            const perYear = Math.round((365 * 24 * 60 / interval) * docs);
+            document.getElementById('onshapeQuotaHint').textContent =
+                `Checks cost ~${perYear.toLocaleString()} Onshape API calls a year. Each new version also costs a start, several status checks, and a download per part and format — a large document can use hundreds of calls. Free and Standard plans get 2,500 calls a year.`;
+        }
+
+        function openOnshapeModal() {
+            const link = onshapeData?.link;
+            const modal = document.getElementById('onshapeModal');
+            document.getElementById('onshapeModalTitle').textContent = link ? 'Onshape settings' : 'Connect Onshape';
+            document.getElementById('onshapeSubmitBtn').textContent = link ? 'Save' : 'Connect';
+            document.getElementById('onshapeAccessKey').value = '';
+            document.getElementById('onshapeSecretKey').value = '';
+            document.getElementById('onshapeAccessKey').placeholder = link ? `••••${link.access_key_hint} (leave blank to keep)` : '';
+            document.getElementById('onshapeSecretKey').placeholder = link ? 'stored (leave blank to keep)' : '';
+            document.getElementById('onshapeDocuments').value = link ? link.documents.map(d => `${link.base_url}/documents/${d.id}`).join('\n') : '';
+            const formats = link ? link.formats : ['glb', 'step'];
+            document.querySelectorAll('input[name="onshapeFormat"]').forEach(cb => { cb.checked = formats.includes(cb.value); });
+            const interval = document.getElementById('onshapeInterval');
+            interval.value = String(link ? link.interval_minutes : 1440);
+            if (!interval.value) interval.value = '1440';
+            document.getElementById('onshapeBackfillGroup').style.display = link ? 'none' : '';
+            document.getElementById('onshapeBranch').value = link ? link.branch : '';
+            updateOnshapeQuotaHint();
+            modal.showModal();
+        }
+
+        async function submitOnshapeLink() {
+            const link = onshapeData?.link;
+            const btn = document.getElementById('onshapeSubmitBtn');
+            const body = {
+                documents: document.getElementById('onshapeDocuments').value.split('\n').map(l => l.trim()).filter(Boolean),
+                formats: [...document.querySelectorAll('input[name="onshapeFormat"]:checked')].map(cb => cb.value),
+                interval_minutes: Number(document.getElementById('onshapeInterval').value),
+            };
+            const access = document.getElementById('onshapeAccessKey').value.trim();
+            const secret = document.getElementById('onshapeSecretKey').value.trim();
+            if (access) body.access_key = access;
+            if (secret) body.secret_key = secret;
+            const branch = document.getElementById('onshapeBranch').value.trim();
+            if (branch) body.branch = branch;
+            if (!link) body.backfill = document.getElementById('onshapeBackfill').value;
+
+            if (!link && (!access || !secret)) return toast('Enter the Onshape access key and secret key', 'error');
+            if (link && (!access || !secret)) {
+                const known = new Set(link.documents.map(d => d.id));
+                const adding = body.documents.some(ref => {
+                    const fromUrl = (ref.match(/\/documents\/([a-f0-9]{24})/i) || [])[1];
+                    const id = fromUrl || (/^[a-f0-9]{24}$/i.test(ref) ? ref : '');
+                    return !id || !known.has(id);
+                });
+                if (adding) return toast('Enter the Onshape access key and secret key again to add a document', 'error');
+            }
+            if (!body.documents.length) return toast('Add at least one Onshape document URL', 'error');
+            if (!body.formats.length) return toast('Pick at least one export format', 'error');
+
+            btn.disabled = true;
+            btn.textContent = 'Checking Onshape…';
+            try {
+                const res = await apiFetch(`${repoApi()}/onshape`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify(body) });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.details || data.error || `HTTP ${res.status}`);
+                document.getElementById('onshapeModal').close();
+                toast(link ? 'Onshape settings saved' : 'Onshape connected — checking for versions', 'success');
+                fetchOnshape();
+                setTimeout(() => { if (currentTab === 'cad') fetchOnshape(); }, 6000);
+            } catch (e) {
+                toast(e.message, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = link ? 'Save' : 'Connect';
+            }
+        }
+
+        async function onshapeSyncNow() {
+            try {
+                const res = await apiFetch(`${repoApi()}/onshape/sync`, { method: 'POST', headers: authHeaders() });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+                toast('Checking Onshape for new versions', 'success');
+                setTimeout(() => { if (currentTab === 'cad') fetchOnshape(); }, 5000);
+            } catch (e) {
+                toast(`Sync failed: ${e.message}`, 'error');
+            }
+        }
+
+        async function onshapeToggle() {
+            const link = onshapeData?.link;
+            if (!link) return;
+            try {
+                const res = await apiFetch(`${repoApi()}/onshape`, { method: 'PUT', headers: authHeaders(), body: JSON.stringify({ is_enabled: !link.is_enabled }) });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.details || data.error || `HTTP ${res.status}`);
+                toast(link.is_enabled ? 'Onshape sync paused' : 'Onshape sync resumed', 'success');
+                fetchOnshape();
+            } catch (e) {
+                toast(e.message, 'error');
+            }
+        }
+
+        async function onshapeUnlink() {
+            if (!confirm('Disconnect Onshape? Commits already made stay in the repo; the stored API keys are deleted.')) return;
+            try {
+                const res = await apiFetch(`${repoApi()}/onshape`, { method: 'DELETE', headers: authHeaders() });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                toast('Onshape disconnected', 'success');
+                onshapeData = null;
+                fetchOnshape();
+            } catch (e) {
+                toast(`Couldn't disconnect: ${e.message}`, 'error');
+            }
+        }
+
+        async function onshapeRetry(id) {
+            try {
+                const res = await apiFetch(`${repoApi()}/onshape/versions/${encodeURIComponent(id)}/retry`, { method: 'POST', headers: authHeaders() });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                toast('Retrying export', 'success');
+                fetchOnshape();
+            } catch (e) {
+                toast(`Retry failed: ${e.message}`, 'error');
+            }
+        }
+
+        /** Jump to the synced files on the link's branch. */
+        function onshapeOpenFolder(folder) {
+            const branch = onshapeData?.link?.branch;
+            if (branch && branch !== currentBranch) {
+                currentBranch = branch;
+                document.getElementById('currentBranchName').textContent = branch;
+                renderBranchMenu();
+            }
+            currentPath = folder || '';
+            switchMainTab('code');
+        }
+
+        function onshapeOpenCommit(sha) {
+            const branch = onshapeData?.link?.branch;
+            if (branch && branch !== currentBranch) {
+                currentBranch = branch;
+                document.getElementById('currentBranchName').textContent = branch;
+                renderBranchMenu();
+            }
+            switchMainTab('commits');
+            openCommitDetail(sha);
+        }
+
+        document.getElementById('onshapeInterval').addEventListener('change', updateOnshapeQuotaHint);
+        document.getElementById('onshapeDocuments').addEventListener('input', updateOnshapeQuotaHint);
 
         // ─── Feature 2: Commit History & Diff View ───────────────────────
         async function fetchCommits() {
@@ -2713,6 +3312,27 @@
                     break;
                 case 'deploy-now':
                     deployNow(d.targetId);
+                    break;
+                case 'onshape-edit':
+                    openOnshapeModal();
+                    break;
+                case 'onshape-sync':
+                    onshapeSyncNow();
+                    break;
+                case 'onshape-toggle':
+                    onshapeToggle();
+                    break;
+                case 'onshape-unlink':
+                    onshapeUnlink();
+                    break;
+                case 'onshape-retry':
+                    onshapeRetry(d.id);
+                    break;
+                case 'onshape-open-folder':
+                    onshapeOpenFolder(d.folder);
+                    break;
+                case 'onshape-open-commit':
+                    onshapeOpenCommit(d.sha);
                     break;
                 case 'select-step': {
                     const job = activeRunDetail?.jobs?.[Number(d.job)];

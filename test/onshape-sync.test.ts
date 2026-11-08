@@ -14,11 +14,15 @@ import {
 	signRequest,
 } from '../src/lib/onshape.ts';
 import {
+	assignFolders,
+	buildManifest,
 	elementFileNames,
 	ensureLfsAttributes,
 	newVersions,
+	readCapped,
 	runOnshapeSync,
 	safeName,
+	type ExportState,
 } from '../src/lib/onshape-sync.ts';
 
 // ─── Pure helpers ───────────────────────────────────────────────
@@ -68,14 +72,45 @@ describe('onshape helpers', () => {
 		expect([...names.values()]).toEqual(['Part Studio 1 (aaaaaa)', 'part studio 1 (bbbbbb)', 'Assembly']);
 	});
 
-	it('adds only missing LFS patterns to .gitattributes', () => {
-		const fresh = ensureLfsAttributes(null)!;
-		expect(fresh).toContain('*.glb filter=lfs diff=lfs merge=lfs -text\n');
-		expect(ensureLfsAttributes(fresh)).toBeNull();
-		const merged = ensureLfsAttributes('*.psd filter=lfs diff=lfs merge=lfs -text\n*.glb filter=lfs diff=lfs merge=lfs -text\n')!;
+	it('adds only missing LFS patterns to .gitattributes, scoped to the document folder', () => {
+		const fresh = ensureLfsAttributes(null, 'Drone Frame')!;
+		expect(fresh).toContain('Drone[[:space:]]Frame/*.glb filter=lfs diff=lfs merge=lfs -text\n');
+		expect(fresh).not.toMatch(/^\*\.glb/m);
+		expect(ensureLfsAttributes(fresh, 'Drone Frame')).toBeNull();
+		const merged = ensureLfsAttributes('*.psd filter=lfs diff=lfs merge=lfs -text\n', 'parts')!;
 		expect(merged.startsWith('*.psd')).toBe(true);
-		expect(merged.match(/\*\.glb/g)).toHaveLength(1);
-		expect(merged).toContain('*.step filter=lfs');
+		expect(merged).toContain('parts/*.step filter=lfs');
+		expect(merged).not.toMatch(/\n\*\.step/);
+	});
+
+	it('gives two documents with the same name different folders', () => {
+		const [a, b] = assignFolders([
+			{ id: 'aaaaaaaaaaaa', name: 'Untitled document' },
+			{ id: 'bbbbbbbbbbbb', name: 'Untitled document' },
+		]);
+		expect(a.folder).toBe('Untitled document');
+		expect(b.folder).toBe('Untitled document (bbbbbb)');
+		expect(assignFolders([a, b]).map((d) => d.folder)).toEqual([a.folder, b.folder]);
+	});
+
+	it('keeps the previous file when an export fails', () => {
+		const doc = { id: 'd', name: 'Frame', folder: 'Frame' };
+		const version = { version_id: 'v2', version_name: 'v2', version_description: null, version_created_at: '2026-11-03T10:00:00Z', creator_name: null };
+		const previous = buildManifest({ base_url: 'https://cad.onshape.com' }, doc, { ...version, version_id: 'v1', version_name: 'v1' }, {
+			tasks: [{ elementId: 'e1', elementName: 'Arm', elementType: 'PARTSTUDIO', format: 'step', state: 'done', polls: 1, nextPollAt: 0, oid: 'abc', size: 4, ext: 'step' }],
+		} satisfies ExportState, null);
+		const next = buildManifest({ base_url: 'https://cad.onshape.com' }, doc, version, {
+			tasks: [{ elementId: 'e1', elementName: 'Arm', elementType: 'PARTSTUDIO', format: 'step', state: 'failed', polls: 1, nextPollAt: 0, error: 'no solid' }],
+		} satisfies ExportState, previous);
+		expect(next.elements[0].files).toEqual([{ path: 'Arm.step', format: 'step', size: 4, oid: 'abc', from_version: 'v1' }]);
+		expect(next.elements[0].errors).toEqual([{ format: 'step', error: 'no solid' }]);
+	});
+
+	it('stops reading a body that declares itself over the cap', async () => {
+		const big = new Response(new Uint8Array(8), { headers: { 'Content-Length': '999999999' } });
+		expect(await readCapped(big, 16)).toBeNull();
+		const small = new Response(new Uint8Array([1, 2, 3]));
+		expect([...(await readCapped(small, 16))!]).toEqual([1, 2, 3]);
 	});
 
 	it('picks new versions in creation order', () => {
@@ -209,7 +244,8 @@ function fakeArtifacts(bare: string) {
 		readTree,
 		readCommit: async (hash: string) => {
 			const text = git(bare, ['cat-file', '-p', hash]).toString();
-			return { hash, treeHash: text.match(/^tree (\w+)/)![1] } as never;
+			const blank = text.indexOf('\n\n');
+			return { hash, treeHash: text.match(/^tree (\w+)/)![1], message: blank === -1 ? '' : text.slice(blank + 2) } as never;
 		},
 		readFile: async ({ ref, path }: { ref: string; path: string }) => {
 			try {
@@ -263,13 +299,19 @@ describe('Onshape sync end to end', () => {
 
 		db = new DatabaseSync(':memory:');
 		db.exec(`
-			CREATE TABLE repositories (id TEXT PRIMARY KEY, name TEXT, default_branch TEXT);
+			CREATE TABLE repositories (id TEXT PRIMARY KEY, name TEXT, default_branch TEXT, lfs_enabled INTEGER NOT NULL DEFAULT 1);
 			CREATE TABLE lfs_objects (repo_id TEXT, oid TEXT, size INTEGER, state TEXT, created_at TEXT DEFAULT (datetime('now')), PRIMARY KEY (repo_id, oid));
 			CREATE TABLE audit_log (id TEXT, repo_id TEXT, actor TEXT, action TEXT, details TEXT, ip_address TEXT, created_at TEXT);
 			CREATE TABLE github_mirrors (id TEXT, repo_id TEXT, branch_filter TEXT, is_enabled INTEGER);
-			INSERT INTO repositories VALUES ('repo1', 'cad', 'main');
+			INSERT INTO repositories (id, name, default_branch) VALUES ('repo1', 'cad', 'main');
 		`);
 		db.exec(readFileSync(join(__dirname, '../migrations/0009_onshape.sql'), 'utf8'));
+		db.exec(`CREATE TABLE protected_branches (
+			id TEXT PRIMARY KEY,
+			repo_id TEXT NOT NULL,
+			branch_pattern TEXT NOT NULL,
+			enforce_merge_queue INTEGER NOT NULL DEFAULT 1
+		);`);
 
 		const key = 'test-encryption-key-0123456789abcdef';
 		db.prepare(
@@ -354,7 +396,7 @@ describe('Onshape sync end to end', () => {
 		expect(pointer).toMatch(/^version https:\/\/git-lfs.github.com\/spec\/v1\noid sha256:\w{64}\nsize \d+\n$/);
 		expect(new TextDecoder().decode(r2.get(`lfs/repo1/${oid}`))).toBe(`glTFglb:${versions[2].id}:${'e1'.padEnd(24, '0')}`);
 		expect(db.prepare("SELECT COUNT(*) AS n FROM lfs_objects WHERE state = 'ready'").get()).toEqual({ n: 4 });
-		expect(show('.gitattributes')).toContain('*.step filter=lfs diff=lfs merge=lfs -text');
+		expect(show('.gitattributes')).toContain('Drone[[:space:]]Frame/*.step filter=lfs diff=lfs merge=lfs -text');
 
 		const log = git(bare, ['log', '--format=%an|%aI|%B', 'main']).toString();
 		expect(log).toContain('Thomas|2026-11-03T10:00:00Z|Thicker arms');
@@ -383,11 +425,12 @@ describe('Onshape sync end to end', () => {
 		advance(5 * 60_000);
 		await tick();
 		expect(statuses().Unibody).toBe('committed');
-		expect(files()).toEqual(['.gitattributes', 'Drone Frame/Frame.glb', 'Drone Frame/onshape.json']);
+		expect(files()).toEqual(['.gitattributes', 'Drone Frame/Frame.glb', 'Drone Frame/Frame.step', 'Drone Frame/onshape.json']);
 		const manifest = JSON.parse(show('Drone Frame/onshape.json'));
 		expect(manifest.elements[0].errors).toEqual([{ format: 'step', error: 'Part has no solid bodies' }]);
+		expect(manifest.elements[0].files.find((f: { format: string }) => f.format === 'step').from_version).toBe(versions[2].id);
 		const message = git(bare, ['log', '-1', '--format=%B', 'main']).toString();
-		expect(message).toContain('Failed: Frame step: Part has no solid bodies');
+		expect(message).toContain('Failed (previous file kept where there was one): Frame step: Part has no solid bodies');
 		expect(git(bare, ['rev-list', '--count', 'main']).toString().trim()).toBe('2');
 		git(bare, ['fsck', '--strict']);
 
@@ -410,10 +453,21 @@ describe('Onshape sync end to end', () => {
 	it('records a bad key on the link without touching versions', async () => {
 		db.prepare('UPDATE onshape_links SET access_key_encrypted = ?').run(await encryptSecret('WRONG', env.ENCRYPTION_KEY));
 		await tick();
-		const link = db.prepare('SELECT last_status, last_error, next_check_at FROM onshape_links').get() as Record<string, string>;
+		const link = db.prepare('SELECT last_status, last_error, retry_after FROM onshape_links').get() as Record<string, string>;
 		expect(link.last_status).toBe('error');
 		expect(link.last_error).toContain('401');
-		expect(Date.parse(link.next_check_at) - now).toBeLessThanOrEqual(3600_000);
+		expect(Date.parse(link.retry_after) - now).toBe(3600_000);
 		expect(db.prepare('SELECT COUNT(*) AS n FROM onshape_versions').get()).toEqual({ n: 0 });
+	});
+
+	it('does not export or push when the branch is protected', async () => {
+		db.exec("INSERT INTO protected_branches (id, repo_id, branch_pattern, enforce_merge_queue) VALUES ('p1', 'repo1', 'main', 1)");
+		await tick();
+		const link = db.prepare('SELECT last_error, retry_after FROM onshape_links').get() as Record<string, string>;
+		expect(link.last_error).toContain('protected');
+		expect(Date.parse(link.retry_after) - now).toBe(3600_000);
+		expect(db.prepare('SELECT COUNT(*) AS n FROM onshape_versions').get()).toEqual({ n: 0 });
+		expect(onshape.calls).toEqual([]);
+		expect(() => git(bare, ['rev-parse', '--verify', 'refs/heads/main'])).toThrow();
 	});
 });

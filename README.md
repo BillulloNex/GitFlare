@@ -228,6 +228,36 @@ the `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` secrets are set, otherwise
   include `git-lfs` for LFS checkouts.
 - End-to-end check: `scripts/lfs-e2e.sh`.
 
+### CAD from Onshape
+
+A repo can follow Onshape documents (dashboard **CAD** tab, or
+`PUT /api/repos/:repo/onshape`). Each new Onshape *Version* becomes one
+commit, oldest first, holding every Part Studio and Assembly as GLB (opens in
+the dashboard's 3D viewer), STEP and/or STL, stored in Git LFS, plus an
+`onshape.json` manifest per document. The commit's author and date are the
+Version's; trailers carry `Onshape-Document`, `Onshape-Version` and
+`Onshape-Url`.
+
+- Keys: an Onshape API key pair with read access (dev-portal.onshape.com/keys),
+  encrypted at rest with `ENCRYPTION_KEY`. Enterprise `*.onshape.com` hosts work.
+- Branch: `onshape`, unless the default branch is empty and not protected.
+  A merge-queue branch is refused. The Worker writes the commit
+  (`src/lib/git-objects.ts`) under the repo push lock and applies the same
+  protection check as `git.ts`. CI does not run on these commits.
+- Each document gets its own folder. Two documents with the same name do not
+  share one. Adding a document requires entering the API keys again.
+- Schedule: the `*/5` cron checks each link every `interval_minutes` (default
+  daily) and moves exports along. "Sync now" checks immediately, at most once
+  a minute. A failed export does not block its version and does not delete the
+  previous file: the error goes into `onshape.json` and the commit message.
+- Quota: Onshape Free/Standard plans allow 2,500 API calls a year. A check is
+  ~1 call per document. Each exported version costs a start, polls, and a
+  download per element and format, so a large document can use hundreds of
+  calls. Calls are counted in `onshape_links.api_calls` and shown in the
+  dashboard.
+- API: `GET|PUT|DELETE /api/repos/:repo/onshape`, `POST …/onshape/sync`,
+  `POST …/onshape/versions/:id/retry`.
+
 ### Deploy targets
 
 ```bash

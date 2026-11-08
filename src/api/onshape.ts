@@ -25,13 +25,15 @@ import {
 	parseDocumentRef,
 	type ExportFormat,
 } from '../lib/onshape.ts';
-import { runOnshapeSync, type LinkedDocument } from '../lib/onshape-sync.ts';
+import { assignFolders, branchIsProtected, runOnshapeSync, type LinkedDocument } from '../lib/onshape-sync.ts';
 
 const app = new Hono<{ Bindings: Env; Variables: RepoVariables }>();
 
 const MIN_INTERVAL_MINUTES = 60;
 const MAX_INTERVAL_MINUTES = 7 * 24 * 60;
 const MAX_DOCUMENTS = 10;
+/** "Sync now" won't start another discovery inside this window. */
+const SYNC_COOLDOWN_MS = 60_000;
 
 interface LinkRow {
 	id: string;
@@ -59,7 +61,8 @@ function publicLink(row: LinkRow) {
 		id: row.id,
 		base_url: row.base_url,
 		access_key_hint: row.access_key_hint,
-		documents: JSON.parse(row.documents) as LinkedDocument[],
+		// `folder`: where the document's files live in the repo.
+		documents: assignFolders(JSON.parse(row.documents) as LinkedDocument[]),
 		branch: row.branch,
 		formats: JSON.parse(row.formats) as ExportFormat[],
 		interval_minutes: row.interval_minutes,
@@ -179,7 +182,14 @@ app.put('/:repo/onshape', requireRepoLevel('admin'), async (c) => {
 		if (typeof body.branch !== 'string' || !isValidRefName(`refs/heads/${body.branch.trim()}`) || !body.branch.trim()) return c.json({ error: 'branch is not a valid branch name' }, 400);
 		branch = body.branch.trim();
 	}
-	if (!branch) branch = await defaultSyncBranch(c.env, repo.name, repo.default_branch || 'main');
+	if (!branch) branch = await defaultSyncBranch(c.env, repo.id, repo.name, repo.default_branch || 'main');
+	// Ongoing sync cannot use a merge-queue branch: only the first commit would land.
+	if (await branchIsProtected(DB, repo.id, branch, { isCreate: false, defaultBranch: repo.default_branch || 'main' })) {
+		return c.json(
+			{ error: `Branch "${branch}" is protected by the merge queue. Use another branch (the usual choice is "onshape"), or remove that protection rule.` },
+			400
+		);
+	}
 
 	// ── Check the keys and documents against Onshape ──
 	let accessKey: string;
@@ -196,20 +206,26 @@ app.put('/:repo/onshape', requireRepoLevel('admin'), async (c) => {
 	try {
 		if (documentRefs) {
 			const previous = new Map(documents.map((d) => [d.id, d]));
+			const adding = parsedDocs.some(({ parsed }) => parsed && !previous.has(parsed.documentId));
+			// Stored keys belong to whoever connected the repo. Adding a document re-checks
+			// them, so another admin cannot point the sync at a document only those keys can see.
+			if (existing && adding && (!body.access_key?.trim() || !body.secret_key?.trim())) {
+				return c.json({ error: 'Enter the Onshape access key and secret key again to add a document' }, 400);
+			}
 			const resolved: LinkedDocument[] = [];
 			for (const { parsed } of parsedDocs) {
 				const id = parsed!.documentId;
 				if (resolved.some((d) => d.id === id)) continue;
-				// Keep the stored name for documents already linked: it is the folder name in git.
 				const known = previous.get(id);
 				if (known && !keysChanged) {
 					resolved.push(known);
 					continue;
 				}
 				const info = await client.document(id);
-				resolved.push({ id, name: known?.name ?? (info.name || id) });
+				// Keep the stored folder: that is where this document's history already lives.
+				resolved.push({ id, name: info.name || known?.name || id, folder: known?.folder });
 			}
-			documents = resolved;
+			documents = assignFolders(resolved);
 		} else if (keysChanged) {
 			await client.sessionInfo();
 		}
@@ -241,7 +257,7 @@ app.put('/:repo/onshape', requireRepoLevel('admin'), async (c) => {
 		id = existing.id;
 		await DB.prepare(
 			`UPDATE onshape_links SET base_url = ?, access_key_encrypted = ?, secret_key_encrypted = ?, access_key_hint = ?, documents = ?,
-			   branch = ?, formats = ?, interval_minutes = ?, backfill = ?, is_enabled = ?, next_check_at = NULL, last_error = NULL, updated_at = ?
+			   branch = ?, formats = ?, interval_minutes = ?, backfill = ?, is_enabled = ?, next_check_at = NULL, retry_after = NULL, last_error = NULL, updated_at = ?
 			 WHERE id = ?`
 		)
 			.bind(values.base_url, values.access_key_encrypted, values.secret_key_encrypted, values.access_key_hint, values.documents, values.branch, values.formats, values.interval_minutes, values.backfill, values.is_enabled, now, id)
@@ -254,6 +270,17 @@ app.put('/:repo/onshape', requireRepoLevel('admin'), async (c) => {
 			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 		)
 			.bind(id, repo.id, values.base_url, values.access_key_encrypted, values.secret_key_encrypted, values.access_key_hint, values.documents, values.branch, values.formats, values.interval_minutes, values.backfill, values.is_enabled, auditContext(c).actor, now, now)
+			.run();
+	}
+
+	// Documents removed from the link: drop their unfinished versions (committed history stays).
+	if (existing && documentRefs) {
+		const keep = documents.map((d) => d.id);
+		await DB.prepare(
+			`DELETE FROM onshape_versions WHERE link_id = ? AND status IN ('pending', 'exporting')
+			 AND document_id NOT IN (${keep.map(() => '?').join(', ')})`
+		)
+			.bind(id, ...keep)
 			.run();
 	}
 
@@ -285,9 +312,20 @@ app.delete('/:repo/onshape', requireRepoLevel('admin'), async (c) => {
 
 app.post('/:repo/onshape/sync', async (c) => {
 	const repo = c.get('repoRecord');
-	const row = await c.env.DB.prepare('SELECT id, is_enabled FROM onshape_links WHERE repo_id = ?').bind(repo.id).first<{ id: string; is_enabled: number }>();
+	const row = await c.env.DB.prepare('SELECT id, is_enabled, last_check_at, last_error, retry_after, lease_until FROM onshape_links WHERE repo_id = ?')
+		.bind(repo.id)
+		.first<{ id: string; is_enabled: number; last_check_at: string | null; last_error: string | null; retry_after: string | null; lease_until: string | null }>();
 	if (!row) return c.json({ error: 'No Onshape link configured' }, 404);
 	if (!row.is_enabled) return c.json({ error: 'The Onshape link is paused' }, 409);
+	if (row.retry_after && Date.parse(row.retry_after) > Date.now()) {
+		return c.json({ error: row.last_error || 'Onshape sync is paused. Save the Onshape settings to try again.' }, 409);
+	}
+	if (row.lease_until && row.lease_until > new Date().toISOString()) {
+		return c.json({ queued: true, message: 'A sync is already running.' }, 202);
+	}
+	if (row.last_check_at && Date.now() - Date.parse(row.last_check_at) < SYNC_COOLDOWN_MS) {
+		return c.json({ error: 'Checked Onshape less than a minute ago. Wait a minute before checking again.' }, 429);
+	}
 	await c.env.DB.prepare('UPDATE onshape_links SET next_check_at = NULL WHERE id = ?').bind(row.id).run();
 	c.executionCtx.waitUntil(runOnshapeSync(c.env, { linkId: row.id }));
 	return c.json({ queued: true, message: 'Checking Onshape for new versions. Exports finish over the next few minutes.' }, 202);
@@ -295,30 +333,44 @@ app.post('/:repo/onshape/sync', async (c) => {
 
 app.post('/:repo/onshape/versions/:id/retry', async (c) => {
 	const repo = c.get('repoRecord');
-	const res = await c.env.DB.prepare(
-		`UPDATE onshape_versions SET status = 'pending', attempts = 0, error = NULL, exports = NULL, updated_at = ?
-		 WHERE id = ? AND repo_id = ? AND status = 'failed'`
+	const version = await c.env.DB.prepare(
+		'SELECT id, link_id, document_id, version_created_at, status FROM onshape_versions WHERE id = ? AND repo_id = ?'
 	)
-		.bind(new Date().toISOString(), c.req.param('id'), repo.id)
+		.bind(c.req.param('id'), repo.id)
+		.first<{ id: string; link_id: string; document_id: string; version_created_at: string; status: string }>();
+	if (!version || version.status !== 'failed') return c.json({ error: 'No failed version with that id' }, 404);
+	// Committing an older version on top of a newer one would roll the files back.
+	const newer = await c.env.DB.prepare(
+		`SELECT version_name FROM onshape_versions
+		 WHERE link_id = ? AND document_id = ? AND status = 'committed' AND version_created_at > ? LIMIT 1`
+	)
+		.bind(version.link_id, version.document_id, version.version_created_at)
+		.first<{ version_name: string }>();
+	if (newer) {
+		return c.json({ error: `A newer version "${newer.version_name}" is already in the repository, so this one cannot be retried.` }, 409);
+	}
+	await c.env.DB.prepare(
+		`UPDATE onshape_versions SET status = 'pending', attempts = 0, error = NULL, exports = NULL, updated_at = ? WHERE id = ?`
+	)
+		.bind(new Date().toISOString(), version.id)
 		.run();
-	if ((res.meta?.changes ?? 0) === 0) return c.json({ error: 'No failed version with that id' }, 404);
-	const link = await c.env.DB.prepare('SELECT id FROM onshape_links WHERE repo_id = ?').bind(repo.id).first<{ id: string }>();
-	if (link) c.executionCtx.waitUntil(runOnshapeSync(c.env, { linkId: link.id }));
+	c.executionCtx.waitUntil(runOnshapeSync(c.env, { linkId: version.link_id }));
 	return c.json({ retrying: true });
 });
 
 /**
- * Where the commits go by default: the repo's default branch if it has no
- * commits yet (a repo made for CAD), otherwise a separate `onshape` branch so
- * an existing code history is never touched.
+ * Where the commits go by default. A protected branch (main, on every repo)
+ * cannot take the sync: only its first commit would land. An Artifacts error
+ * also stays off the default branch, so a blip never points a code repo at main.
  */
-async function defaultSyncBranch(env: Env, repoName: string, defaultBranch: string): Promise<string> {
+async function defaultSyncBranch(env: Env, repoId: string, repoName: string, defaultBranch: string): Promise<string> {
+	if (await branchIsProtected(env.DB, repoId, defaultBranch, { isCreate: false, defaultBranch })) return 'onshape';
 	try {
 		const artifact = await env.REPOS.get(repoName);
 		const log = await artifact?.log({ ref: defaultBranch, limit: 1 });
 		return log && log.length > 0 ? 'onshape' : defaultBranch;
 	} catch {
-		return defaultBranch; // unborn branch
+		return 'onshape';
 	}
 }
 
