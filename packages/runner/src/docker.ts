@@ -249,6 +249,26 @@ export async function cloneInJob(
   );
 }
 
+/**
+ * Build the default job image (ci-image/Dockerfile, bundled into the runner
+ * image at /app/ci-image) when CI_IMAGE is unset. Docker's layer cache makes
+ * this a no-op after the first start. Any failure falls back to the stock
+ * node image so the runner still serves jobs (without git-lfs).
+ */
+export async function ensureDefaultCiImage(): Promise<void> {
+  if (config.ciImage) return;
+  const dockerfileDir = new URL('../ci-image/', import.meta.url).pathname;
+  console.log(`Building default CI image ${config.defaultCiImage} from ${dockerfileDir}`);
+  const build = await docker(['build', '--quiet', '-t', config.defaultCiImage, dockerfileDir], { timeoutMs: 15 * 60_000 });
+  if (build.code === 0) {
+    config.ciImage = config.defaultCiImage;
+    console.log(`CI image: ${config.ciImage} (built locally, includes git-lfs)`);
+  } else {
+    config.ciImage = config.fallbackCiImage;
+    console.error(`Could not build ${config.defaultCiImage}: ${build.stderr.trim().split('\n').pop()}; using ${config.ciImage} (no git-lfs)`);
+  }
+}
+
 /** Remove containers/volumes left behind by a previous process of THIS runner (crash, restart). */
 export async function sweepOrphans(): Promise<void> {
   const filter = ['--filter', `label=${LABEL_RUNNER}=${config.runnerId}`];

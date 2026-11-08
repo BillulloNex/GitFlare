@@ -18,7 +18,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { config } from './config.js';
 import { cancelRun, ciStats, executeCIRun, isRunKnown } from './ci.js';
 import { executeDeploy, isDeployKnown } from './deploy.js';
-import { dockerAvailable, sweepOrphans } from './docker.js';
+import { dockerAvailable, ensureDefaultCiImage, sweepOrphans } from './docker.js';
 import { executeMerge, isMergeKnown, mergeCapacityAvailable } from './merge.js';
 import {
   PROTOCOL_HEADER,
@@ -170,7 +170,7 @@ const server = http.createServer((req, res) => {
 server.listen(config.port, async () => {
   console.log(`Runner listening on port ${config.port} (protocol v${PROTOCOL_VERSION}, id ${config.runnerId})`);
   console.log(`RUNNER_SECRET: ${config.runnerSecret ? 'set' : 'MISSING — all webhooks will return 503'}`);
-  console.log(`CI image: ${config.ciImage}, max concurrent jobs: ${config.maxConcurrentJobs}`);
+  console.log(`CI image: ${config.ciImage || `${config.defaultCiImage} (built at startup)`}, max concurrent jobs: ${config.maxConcurrentJobs}`);
   console.log(`Callback origins: ${config.allowedCallbackOrigins.join(', ') || '(any — set ALLOWED_CALLBACK_ORIGINS)'}`);
   console.log(`CLOUDFLARE_API_TOKEN: ${config.cloudflareApiToken ? 'set' : 'not set (Cloudflare deploys disabled)'}`);
   console.log(`GCP_SERVICE_ACCOUNT_KEY: ${config.gcpServiceAccountKey ? 'set' : 'not set (Cloud Run targets need their own key)'} — image ${config.cloudRunImage}`);
@@ -178,6 +178,10 @@ server.listen(config.port, async () => {
   if (docker.ok) {
     console.log(`Docker: ${docker.detail}`);
     await sweepOrphans().catch(err => console.error('Orphan sweep failed', err));
+    await ensureDefaultCiImage().catch(err => {
+      config.ciImage = config.fallbackCiImage;
+      console.error('Default CI image build failed', err);
+    });
   } else {
     console.error(`Docker: UNAVAILABLE (${docker.detail}) — CI jobs will be rejected until it is reachable`);
   }

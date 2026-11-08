@@ -30,7 +30,8 @@ services:
       # Set to the Worker's APP_URL origin, e.g. https://git.example.com
       ALLOWED_CALLBACK_ORIGINS: ${ALLOWED_CALLBACK_ORIGINS:?ALLOWED_CALLBACK_ORIGINS is required (the Worker APP_URL origin)}
       # Job container settings
-      CI_IMAGE: ${CI_IMAGE:-node:22-bookworm}
+      # Unset → the runner builds gitflare-ci:node22 (node + git-lfs) locally at startup.
+      CI_IMAGE: ${CI_IMAGE:-}
       CI_USER: ${CI_USER:-1000:1000}
       CI_MEMORY: ${CI_MEMORY:-4g}
       CI_CPUS: ${CI_CPUS:-2}

@@ -222,9 +222,10 @@ the `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` secrets are set, otherwise
 - CLI: `gitflare lfs status|ls|token`, `gitflare files cat --download`.
 - MCP: `gitflare_lfs_status`, `gitflare_lfs_list`; `gitflare_files_read`
   returns a structured `lfs` object for pointer files.
-- CI: `checkout.lfs: auto|true|false` in `.gitflare/ci.yml`; the job image
-  needs `git-lfs` (reference image: `packages/runner/ci-image`, published to
-  `ghcr.io/<owner>/gitflare-ci:node22`, set `CI_IMAGE` on the runner).
+- CI: `checkout.lfs: auto|true|false` in `.gitflare/ci.yml`. With `CI_IMAGE`
+  unset the runner builds `gitflare-ci:node22` (node + git-lfs, from
+  `packages/runner/ci-image`) locally at startup; a custom `CI_IMAGE` must
+  include `git-lfs` for LFS checkouts.
 - End-to-end check: `scripts/lfs-e2e.sh`.
 
 ### Deploy targets

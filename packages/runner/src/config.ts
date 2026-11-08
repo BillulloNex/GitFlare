@@ -21,8 +21,16 @@ export const config = {
   allowedCallbackOrigins: list('ALLOWED_CALLBACK_ORIGINS'),
 
   // ── Job containers ──
-  /** Image for CI jobs and Cloudflare deploys. Must contain `git` and `sh`. */
-  ciImage: process.env.CI_IMAGE || 'node:22-bookworm',
+  /**
+   * Image for CI jobs and Cloudflare deploys. Must contain `git` and `sh`.
+   * Unset → the runner builds `gitflare-ci:node22` (node:22-bookworm + git-lfs,
+   * see ci-image/Dockerfile) on the host daemon at startup and uses that;
+   * if the build fails it falls back to plain node:22-bookworm.
+   */
+  ciImage: process.env.CI_IMAGE || '',
+  /** Name of the locally built default job image. */
+  defaultCiImage: 'gitflare-ci:node22',
+  fallbackCiImage: 'node:22-bookworm',
   /** Image for Cloud Run deploys. Must contain `git`, `sh` and `gcloud`. */
   cloudRunImage: process.env.CLOUDRUN_IMAGE || 'google/cloud-sdk:slim',
   /** uid:gid steps run as inside the job container (never root). */

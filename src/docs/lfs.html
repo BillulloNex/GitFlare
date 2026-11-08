@@ -55,7 +55,7 @@ git push --force-with-lease</code></pre>
 <pre><code># .gitflare/ci.yml
 checkout:
   lfs: auto     # auto (default) | true | false</code></pre>
-  <p><code>auto</code> runs <code>git lfs pull</code> when <code>.gitattributes</code> tracks LFS paths and <code>git-lfs</code> is in the job image, otherwise it warns and leaves pointer files. <code>true</code> fails the checkout when <code>git-lfs</code> is missing. A reference image with git-lfs is published as <code>ghcr.io/&lt;owner&gt;/gitflare-ci:node22</code>; point the runner at it with <code>CI_IMAGE</code>.</p>
+  <p><code>auto</code> runs <code>git lfs pull</code> when <code>.gitattributes</code> tracks LFS paths and <code>git-lfs</code> is in the job image, otherwise it warns and leaves pointer files. <code>true</code> fails the checkout when <code>git-lfs</code> is missing. The runner's default job image (<code>gitflare-ci:node22</code>, built on the runner host from <code>packages/runner/ci-image</code>) includes git-lfs; a custom <code>CI_IMAGE</code> must install it.</p>
 
   <h2>Not supported</h2>
   <ul>

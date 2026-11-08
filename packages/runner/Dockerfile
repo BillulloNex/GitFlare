@@ -17,6 +17,9 @@ WORKDIR /app
 COPY --from=builder /app/package.json /app/package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=builder /app/dist ./dist/
+# Default CI job image recipe (node + git-lfs); built on the host daemon at
+# startup unless CI_IMAGE is set (src/docker.ts ensureDefaultCiImage).
+COPY ci-image/ ./ci-image/
 
 ENV NODE_ENV=production \
     PORT=7654 \
