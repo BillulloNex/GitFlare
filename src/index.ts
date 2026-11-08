@@ -15,6 +15,7 @@ import ciApp from './api/ci.ts';
 import commitsApp from './api/commits.ts';
 import deployApp from './api/deploy.ts';
 import mirrorsApp from './api/mirrors.ts';
+import onshapeApp from './api/onshape.ts';
 import bootstrapApp from './api/bootstrap.ts';
 import internalCi, { deployCallbackApp } from './api/internal-ci.ts';
 import internalMerge from './api/internal-merge.ts';
@@ -26,6 +27,7 @@ import { handleCIJob, handleDeployJob } from './queue/ci-consumer.ts';
 import { handleMirrorSyncBatch } from './lib/github-mirror.ts';
 import type { MirrorSyncMessage } from './env.ts';
 import { runScheduledMaintenance } from './lib/maintenance.ts';
+import { runOnshapeSync } from './lib/onshape-sync.ts';
 import dashboardHtml from './dashboard/index.html';
 import lfsDocsHtml from './docs/lfs.html';
 import { LOGO_SVG, FAVICON_SVG, WORDMARK_SVG } from './lib/brand';
@@ -165,6 +167,9 @@ app.route('/api/repos', deployApp);
 // GitHub Mirror: /api/repos/:repo/mirror/*
 app.route('/api/repos', mirrorsApp);
 
+// Onshape sync: /api/repos/:repo/onshape/*
+app.route('/api/repos', onshapeApp);
+
 // Tickets & Merge Queue: /api/repos/:repo/tickets/*
 app.route('/api/repos', ticketsApp);
 
@@ -210,8 +215,9 @@ export default {
 		}
 	},
 
-	/** Cron (wrangler.jsonc triggers.crons): fail stuck runs/deployments, purge expired sessions. */
+	/** Cron (wrangler.jsonc triggers.crons): fail stuck runs/deployments, purge expired sessions, Onshape sync. */
 	async scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext) {
 		ctx.waitUntil(runScheduledMaintenance(env));
+		ctx.waitUntil(runOnshapeSync(env));
 	},
 };
