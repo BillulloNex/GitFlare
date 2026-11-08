@@ -3,10 +3,15 @@
  * one commit per Onshape Version, holding every Part Studio and Assembly as
  * GLB / STEP / STL, stored as Git LFS objects in R2.
  *
- * Driven by the cron (every 5 min) and by "Sync now". Each tick works through
- * a small state machine per link, so nothing has to finish in one invocation:
+ * New Versions are pulled in two ways only, to save Onshape API calls:
+ *   - once a day, by the cron (CHECK_INTERVAL_MS after the last check)
+ *   - "Pull latest" in the dashboard (POST /api/repos/:repo/onshape/sync)
+ * The cron runs every 5 min, but between daily checks it only moves along
+ * exports already started; it calls Onshape only while a version is exporting.
+ * Each tick works through a small state machine per link, so nothing has to
+ * finish in one invocation:
  *
- *   1. discover  (when due: every `interval_minutes`)
+ *   1. discover  (once a day, or on "Pull latest")
  *                list each document's Versions; new ones → onshape_versions
  *                `pending`. Costs ~1 Onshape call per document.
  *   2. export    for up to IN_FLIGHT versions, oldest first:
@@ -66,7 +71,9 @@ import { mintToken } from './runner-client.ts';
 
 // ─── Tunables ───────────────────────────────────────────────────
 
-/** Wall-clock budget for one tick (cron or "Sync now"). */
+/** Time between automatic checks for new Versions. "Pull latest" checks in between. */
+export const CHECK_INTERVAL_MS = 24 * 3600_000;
+/** Wall-clock budget for one tick (cron or "Pull latest"). */
 export const TICK_BUDGET_MS = 25_000;
 /** Versions exporting at the same time per link. */
 const IN_FLIGHT = 3;
@@ -115,7 +122,6 @@ export interface OnshapeLinkRow {
 	documents: string;
 	branch: string;
 	formats: string;
-	interval_minutes: number;
 	backfill: 'latest' | 'all';
 	next_check_at: string | null;
 	retry_after: string | null;
@@ -398,7 +404,7 @@ export async function branchIsProtected(
 // ─── Entry point ────────────────────────────────────────────────
 
 /**
- * One sync tick over every enabled link (or just `linkId`, for "Sync now").
+ * One sync tick over every enabled link (or just `linkId`, for "Pull latest").
  * Never throws: errors are recorded on the link / version rows.
  */
 export async function runOnshapeSync(env: Env, opts: { linkId?: string; budgetMs?: number } = {}): Promise<void> {
@@ -408,7 +414,7 @@ export async function runOnshapeSync(env: Env, opts: { linkId?: string; budgetMs
 		const where = opts.linkId ? 'l.id = ? AND l.is_enabled = 1' : 'l.is_enabled = 1';
 		const stmt = env.DB.prepare(
 			`SELECT l.id, l.repo_id, r.name AS repo_name, r.default_branch, l.base_url, l.access_key_encrypted, l.secret_key_encrypted,
-			        l.documents, l.branch, l.formats, l.interval_minutes, l.backfill, l.next_check_at, l.retry_after, r.lfs_enabled
+			        l.documents, l.branch, l.formats, l.backfill, l.next_check_at, l.retry_after, r.lfs_enabled
 			 FROM onshape_links l JOIN repositories r ON r.id = l.repo_id
 			 WHERE ${where}
 			 ORDER BY l.next_check_at IS NOT NULL, l.next_check_at`
@@ -514,8 +520,8 @@ async function syncLink(env: Env, link: OnshapeLinkRow, deadline: number, opts: 
 				}
 			}
 			const now = new Date();
-			// Document errors retry within the hour; a clean check waits the full interval.
-			const nextMs = docErrors.length ? Math.min(link.interval_minutes * 60_000, 3600_000) : link.interval_minutes * 60_000;
+			// Next automatic check in a day, errors or not: "Pull latest" retries sooner.
+			const nextMs = CHECK_INTERVAL_MS;
 			await env.DB.prepare('UPDATE onshape_links SET last_check_at = ?, next_check_at = ? WHERE id = ?')
 				.bind(now.toISOString(), new Date(now.getTime() + nextMs).toISOString(), link.id)
 				.run();
@@ -561,7 +567,7 @@ async function syncLink(env: Env, link: OnshapeLinkRow, deadline: number, opts: 
 			}
 
 			if (!progressed) {
-				// Only "Sync now" waits for Onshape inside the tick; the cron moves on to other links.
+				// Only "Pull latest" waits for Onshape inside the tick; the cron moves on to other links.
 				if (!opts.mayWait) break;
 				const wait = await msUntilNextStep(env, link.id);
 				if (wait === null || Date.now() + wait >= deadline - 3_000) break;

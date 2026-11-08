@@ -246,9 +246,10 @@ Version's; trailers carry `Onshape-Document`, `Onshape-Version` and
   protection check as `git.ts`. CI does not run on these commits.
 - Each document gets its own folder. Two documents with the same name do not
   share one. Adding a document requires entering the API keys again.
-- Schedule: the `*/5` cron checks each link every `interval_minutes` (default
-  daily) and moves exports along. "Sync now" checks immediately, at most once
-  a minute. A failed export does not block its version and does not delete the
+- Pulling new Versions happens two ways only: once a day (the `*/5` cron checks
+  a link 24 h after its last check), or **Pull latest** in the CAD tab, at most
+  once a minute. In between, the cron only moves exports that already started
+  along. Saving the Onshape settings also checks once. A failed export does not block its version and does not delete the
   previous file: the error goes into `onshape.json` and the commit message.
 - Quota: Onshape Free/Standard plans allow 2,500 API calls a year. A check is
   ~1 call per document. Each exported version costs a start, polls, and a

@@ -5,7 +5,7 @@
  *   PUT    /api/repos/:repo/onshape                         create / update (admin); checks the keys and documents
  *                                                          access_secret_id / secret_key_secret_id copy saved secrets; save_access_as / save_secret_as store pasted keys on the user
  *   DELETE /api/repos/:repo/onshape                         remove the link (admin); commits already made stay
- *   POST   /api/repos/:repo/onshape/sync                    check for new versions now (write)
+ *   POST   /api/repos/:repo/onshape/sync                    "Pull latest": check for new versions now (write); otherwise checked daily
  *   POST   /api/repos/:repo/onshape/versions/:id/retry      re-export a failed version (write)
  *
  * All routes run behind repoAccess (src/index.ts): GET needs read, other
@@ -38,7 +38,7 @@ import {
 	type ExportFormat,
 	type OnshapeDocumentSummary,
 } from '../lib/onshape.ts';
-import { assignFolders, branchIsProtected, runOnshapeSync, type LinkedDocument } from '../lib/onshape-sync.ts';
+import { CHECK_INTERVAL_MS, assignFolders, branchIsProtected, runOnshapeSync, type LinkedDocument } from '../lib/onshape-sync.ts';
 
 const app = new Hono<{ Bindings: Env; Variables: RepoVariables }>();
 
@@ -50,10 +50,8 @@ function safeThumbnailType(value: string | null | undefined): string | null {
 	return SAFE_THUMBNAIL_TYPES.has(type) ? type : null;
 }
 
-const MIN_INTERVAL_MINUTES = 60;
-const MAX_INTERVAL_MINUTES = 7 * 24 * 60;
 const MAX_DOCUMENTS = 10;
-/** "Sync now" won't start another discovery inside this window. */
+/** "Pull latest" won't start another discovery inside this window. */
 const SYNC_COOLDOWN_MS = 60_000;
 
 interface LinkRow {
@@ -65,7 +63,6 @@ interface LinkRow {
 	documents: string;
 	branch: string;
 	formats: string;
-	interval_minutes: number;
 	backfill: 'latest' | 'all';
 	is_enabled: number;
 	next_check_at: string | null;
@@ -92,7 +89,6 @@ function publicLink(row: LinkRow, accessSecretName: string | null, secretKeySecr
 		documents: assignFolders(JSON.parse(row.documents) as LinkedDocument[]),
 		branch: row.branch,
 		formats: JSON.parse(row.formats) as ExportFormat[],
-		interval_minutes: row.interval_minutes,
 		backfill: row.backfill,
 		is_enabled: row.is_enabled === 1,
 		next_check_at: row.next_check_at,
@@ -105,9 +101,9 @@ function publicLink(row: LinkRow, accessSecretName: string | null, secretKeySecr
 	};
 }
 
-/** Rough Onshape API calls per year for discovery alone (exports come on top, per version). */
-function estimateCallsPerYear(intervalMinutes: number, documentCount: number): number {
-	return Math.round(((365 * 24 * 60) / intervalMinutes) * documentCount);
+/** Rough Onshape API calls per year for the daily checks alone (exports and "Pull latest" come on top). */
+function estimateCallsPerYear(documentCount: number): number {
+	return Math.round(((365 * 24 * 3600_000) / CHECK_INTERVAL_MS) * documentCount);
 }
 
 async function savedSecretName(db: Env['DB'], id: string | null): Promise<string | null> {
@@ -169,7 +165,7 @@ app.get('/:repo/onshape', async (c) => {
 
 	const link = await withSavedSecret(c.env.DB, row);
 	return c.json({
-		link: { ...link, discovery_calls_per_year: estimateCallsPerYear(link.interval_minutes, link.documents.length) },
+		link: { ...link, discovery_calls_per_year: estimateCallsPerYear(link.documents.length) },
 		counts: Object.fromEntries((counts.results ?? []).map((r) => [r.status, r.n])),
 		versions: (results ?? []).map(({ exports, ...v }) => {
 			const tasks = (exports ? (JSON.parse(exports) as { tasks?: { state: string }[] }).tasks : null) ?? [];
@@ -287,7 +283,6 @@ app.put('/:repo/onshape', requireRepoLevel('admin'), async (c) => {
 		base_url: string;
 		branch: string;
 		formats: string[];
-		interval_minutes: number;
 		backfill: string;
 		is_enabled: boolean;
 	}>(c);
@@ -348,12 +343,6 @@ app.put('/:repo/onshape', requireRepoLevel('admin'), async (c) => {
 		formats = EXPORT_FORMATS.filter((f) => body.formats!.includes(f));
 	}
 
-	if (body.interval_minutes !== undefined) {
-		const n = body.interval_minutes;
-		if (typeof n !== 'number' || !Number.isInteger(n) || n < MIN_INTERVAL_MINUTES || n > MAX_INTERVAL_MINUTES) {
-			return c.json({ error: `interval_minutes must be a whole number from ${MIN_INTERVAL_MINUTES} to ${MAX_INTERVAL_MINUTES}` }, 400);
-		}
-	}
 	if (body.backfill !== undefined && body.backfill !== 'latest' && body.backfill !== 'all') return c.json({ error: "backfill must be 'latest' or 'all'" }, 400);
 	if (body.is_enabled !== undefined && typeof body.is_enabled !== 'boolean') return c.json({ error: 'is_enabled must be a boolean' }, 400);
 
@@ -461,7 +450,6 @@ app.put('/:repo/onshape', requireRepoLevel('admin'), async (c) => {
 		documents: JSON.stringify(documents),
 		branch,
 		formats: JSON.stringify(formats ?? (existing ? JSON.parse(existing.formats) : ['glb', 'step'])),
-		interval_minutes: body.interval_minutes ?? existing?.interval_minutes ?? 1440,
 		backfill: body.backfill ?? existing?.backfill ?? 'latest',
 		is_enabled: body.is_enabled === undefined ? (existing?.is_enabled ?? 1) : body.is_enabled ? 1 : 0,
 	};
@@ -471,19 +459,19 @@ app.put('/:repo/onshape', requireRepoLevel('admin'), async (c) => {
 		id = existing.id;
 		await DB.prepare(
 			`UPDATE onshape_links SET base_url = ?, access_key_encrypted = ?, secret_key_encrypted = ?, access_key_hint = ?, saved_secret_id = ?, secret_key_secret_id = ?, documents = ?,
-			   branch = ?, formats = ?, interval_minutes = ?, backfill = ?, is_enabled = ?, next_check_at = NULL, retry_after = NULL, last_error = NULL, updated_at = ?
+			   branch = ?, formats = ?, backfill = ?, is_enabled = ?, next_check_at = NULL, retry_after = NULL, last_error = NULL, updated_at = ?
 			 WHERE id = ?`
 		)
-			.bind(values.base_url, values.access_key_encrypted, values.secret_key_encrypted, values.access_key_hint, values.saved_secret_id, values.secret_key_secret_id, values.documents, values.branch, values.formats, values.interval_minutes, values.backfill, values.is_enabled, now, id)
+			.bind(values.base_url, values.access_key_encrypted, values.secret_key_encrypted, values.access_key_hint, values.saved_secret_id, values.secret_key_secret_id, values.documents, values.branch, values.formats, values.backfill, values.is_enabled, now, id)
 			.run();
 	} else {
 		id = crypto.randomUUID();
 		await DB.prepare(
 			`INSERT INTO onshape_links (id, repo_id, base_url, access_key_encrypted, secret_key_encrypted, access_key_hint, saved_secret_id, secret_key_secret_id, documents, branch,
-			   formats, interval_minutes, backfill, is_enabled, created_by, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			   formats, backfill, is_enabled, created_by, created_at, updated_at)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 		)
-			.bind(id, repo.id, values.base_url, values.access_key_encrypted, values.secret_key_encrypted, values.access_key_hint, values.saved_secret_id, values.secret_key_secret_id, values.documents, values.branch, values.formats, values.interval_minutes, values.backfill, values.is_enabled, auditContext(c).actor, now, now)
+			.bind(id, repo.id, values.base_url, values.access_key_encrypted, values.secret_key_encrypted, values.access_key_hint, values.saved_secret_id, values.secret_key_secret_id, values.documents, values.branch, values.formats, values.backfill, values.is_enabled, auditContext(c).actor, now, now)
 			.run();
 	}
 
@@ -502,7 +490,7 @@ app.put('/:repo/onshape', requireRepoLevel('admin'), async (c) => {
 		repoId: repo.id,
 		...auditContext(c),
 		action: existing ? 'onshape.update' : 'onshape.create',
-		details: { documents: documents.map((d) => d.id), branch: values.branch, formats: values.formats, interval_minutes: values.interval_minutes },
+		details: { documents: documents.map((d) => d.id), branch: values.branch, formats: values.formats },
 	});
 
 	// First check right away (short budget; the cron carries on from there).

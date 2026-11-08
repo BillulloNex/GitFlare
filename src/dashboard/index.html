@@ -1743,16 +1743,6 @@
                     </div>
                 </div>
                 <div class="form-row">
-                    <div class="form-group">
-                        <label for="onshapeInterval">Check for new versions</label>
-                        <select id="onshapeInterval" class="form-control">
-                            <option value="60">Every hour</option>
-                            <option value="360">Every 6 hours</option>
-                            <option value="720">Every 12 hours</option>
-                            <option value="1440" selected>Daily</option>
-                            <option value="10080">Weekly</option>
-                        </select>
-                    </div>
                     <div class="form-group" id="onshapeBackfillGroup">
                         <label for="onshapeBackfill">Existing versions</label>
                         <select id="onshapeBackfill" class="form-control">
@@ -2602,12 +2592,6 @@
         let onshapeData = null;
         let onshapeRefreshTimer = null;
 
-        const ONSHAPE_INTERVALS = { 60: 'Every hour', 360: 'Every 6 hours', 720: 'Every 12 hours', 1440: 'Daily', 10080: 'Weekly' };
-
-        function onshapeIntervalLabel(minutes) {
-            return ONSHAPE_INTERVALS[minutes] || `Every ${Math.round(minutes / 60)} h`;
-        }
-
         function onshapeVersionBadge(v) {
             if (v.status === 'committed') return `<span class="badge badge-success">${icon('check', 12)} Committed</span>`;
             if (v.status === 'failed') return `<span class="badge badge-danger">${icon('x', 12)} Failed</span>`;
@@ -2661,7 +2645,7 @@
             }
 
             actions.innerHTML = `
-                <button class="btn btn-sm" data-action="onshape-sync" ${link.is_enabled ? '' : 'disabled'}>${icon('refresh', 14)} Sync now</button>
+                <button class="btn btn-sm" data-action="onshape-sync" ${link.is_enabled ? '' : 'disabled'} title="Check Onshape for new versions now">${icon('refresh', 14)} Pull latest</button>
                 <button class="btn btn-sm" data-action="onshape-edit">Settings</button>`;
 
             const docsById = Object.fromEntries(link.documents.map(d => [d.id, d]));
@@ -2716,7 +2700,7 @@
                         <dt>Documents</dt><dd style="white-space:normal">${docLinks}</dd>
                         <dt>Branch</dt><dd><code>${esc(link.branch)}</code></dd>
                         <dt>Formats</dt><dd>${esc(link.formats.map(f => f.toUpperCase()).join(' · '))}</dd>
-                        <dt>Checks</dt><dd>${esc(onshapeIntervalLabel(link.interval_minutes))}</dd>
+                        <dt>Checks</dt><dd>Daily · or Pull latest</dd>
                         <dt>Last check</dt><dd>${esc(link.last_check_at ? timeAgo(link.last_check_at) : 'never')}</dd>
                         <dt>API calls</dt><dd title="Onshape counts API calls against your plan's yearly allowance">${esc(String(link.api_calls))} used · ~${esc(String(link.discovery_calls_per_year))}/yr for checks</dd>
                     </dl>
@@ -2730,12 +2714,11 @@
         }
 
         function updateOnshapeQuotaHint() {
-            const interval = Number(document.getElementById('onshapeInterval').value);
             const refs = onshapeSelectedRefs();
             const docs = refs.length || 1;
-            const perYear = Math.round((365 * 24 * 60 / interval) * docs);
+            const perYear = 365 * docs;
             document.getElementById('onshapeQuotaHint').textContent =
-                `${docs} document${docs === 1 ? '' : 's'} · checks cost ~${perYear.toLocaleString()} Onshape API calls a year. Each new version also costs a start, several status checks, and a download per part and format — a large document can use hundreds of calls. Free and Standard plans get 2,500 calls a year.`;
+                `New versions are pulled in once a day, or when you press Pull latest. ${docs} document${docs === 1 ? '' : 's'} · daily checks cost ~${perYear.toLocaleString()} Onshape API calls a year. Each new version also costs a start, several status checks, and a download per part and format — a large document can use hundreds of calls. Free and Standard plans get 2,500 calls a year.`;
         }
 
         let savedSecrets = [];
@@ -3021,9 +3004,6 @@
             document.getElementById('onshapeDocuments').value = '';
             const formats = link ? link.formats : ['glb', 'step'];
             document.querySelectorAll('input[name="onshapeFormat"]').forEach(cb => { cb.checked = formats.includes(cb.value); });
-            const interval = document.getElementById('onshapeInterval');
-            interval.value = String(link ? link.interval_minutes : 1440);
-            if (!interval.value) interval.value = '1440';
             document.getElementById('onshapeBackfillGroup').style.display = link ? 'none' : '';
             document.getElementById('onshapeBranch').value = link ? link.branch : '';
             document.getElementById('onshapeDocSearch').value = '';
@@ -3113,7 +3093,6 @@
             const body = {
                 documents: onshapeSelectedRefs(),
                 formats: [...document.querySelectorAll('input[name="onshapeFormat"]:checked')].map(cb => cb.value),
-                interval_minutes: Number(document.getElementById('onshapeInterval').value),
             };
             const accessChoice = readOnshapeKey('onshapeAccessSource', 'onshapeAccessKey', 'onshapeSaveAccess', 'onshapeSaveAccessName', 'access_secret_id', 'access_key', 'save_access_as', body);
             const secretChoice = readOnshapeKey('onshapeSecretSource', 'onshapeSecretKey', 'onshapeSaveSecretKey', 'onshapeSaveSecretName', 'secret_key_secret_id', 'secret_key', 'save_secret_as', body);
@@ -3169,10 +3148,10 @@
                 const res = await apiFetch(`${repoApi()}/onshape/sync`, { method: 'POST', headers: authHeaders() });
                 const data = await res.json().catch(() => ({}));
                 if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-                toast('Checking Onshape for new versions', 'success');
+                toast('Pulling the latest versions from Onshape', 'success');
                 setTimeout(() => { if (currentTab === 'cad') fetchOnshape(); }, 5000);
             } catch (e) {
-                toast(`Sync failed: ${e.message}`, 'error');
+                toast(`Pull failed: ${e.message}`, 'error');
             }
         }
 
@@ -3237,7 +3216,6 @@
             openCommitDetail(sha);
         }
 
-        document.getElementById('onshapeInterval').addEventListener('change', updateOnshapeQuotaHint);
         document.getElementById('onshapeDocSearch').addEventListener('input', () => { if (onshapeStep === 2) renderOnshapePicker(); });
         document.getElementById('onshapeSubmitBtn').addEventListener('click', submitOnshapeLink);
         document.getElementById('onshapeBackBtn').addEventListener('click', () => { if (onshapeStep > 1) onshapeGoTo(onshapeStep - 1); });
