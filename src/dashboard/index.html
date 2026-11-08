@@ -890,6 +890,61 @@
         .check-row label { display: inline-flex; gap: 6px; align-items: center; margin: 0; color: var(--text-secondary); font-size: var(--text-sm); font-weight: 400; }
         .check-row input { accent-color: var(--accent-flare); }
 
+        /* ─── Onshape connect wizard ────────────────────────────── */
+        dialog.dialog-onshape { max-width: 760px; }
+        .onshape-wizard { display: grid; gap: 20px; }
+        .onshape-wizard-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+        .onshape-wizard-head .dialog-lead { margin-bottom: 0; }
+        .onshape-brand { display: flex; gap: 12px; align-items: flex-start; min-width: 0; }
+        .onshape-brand-mark { width: 38px; height: 38px; flex-shrink: 0; border-radius: 10px; display: grid; place-items: center;
+            background: var(--accent-soft); color: var(--accent-flare); border: 1px solid var(--accent-ring); }
+        .onshape-steps-indicator { display: flex; gap: 6px; list-style: none; flex-shrink: 0; }
+        .onshape-steps-indicator li { font-size: var(--text-xs); color: var(--text-muted); padding: 5px 11px;
+            border: 1px solid var(--border-default); border-radius: var(--radius-pill); white-space: nowrap; transition: all .15s ease; }
+        .onshape-steps-indicator li.is-active { color: var(--accent-flare); border-color: var(--accent-ring); background: var(--accent-soft); }
+        .onshape-steps-indicator li.is-done { color: var(--success-fg); border-color: var(--success-border); background: var(--success-bg); }
+        @media (max-width: 640px) { .onshape-wizard-head { flex-direction: column; } .onshape-steps-indicator { flex-wrap: wrap; } }
+
+        .onshape-step-pane { display: grid; gap: 16px; }
+        .onshape-step-pane[hidden] { display: none; }
+        .onshape-step-title { font-size: var(--text-sm); font-weight: 600; }
+        .onshape-connect-error { padding: 10px 12px; border-radius: var(--radius-sm); font-size: var(--text-xs);
+            background: var(--danger-bg); color: var(--danger-fg); border: 1px solid var(--danger-border); overflow-wrap: anywhere; }
+
+        .onshape-picker-toolbar { display: flex; gap: 12px; align-items: center; }
+        .onshape-search { position: relative; flex: 1; }
+        .onshape-search .i { position: absolute; left: 11px; top: 50%; transform: translateY(-50%); color: var(--text-muted); pointer-events: none; }
+        .onshape-search input { width: 100%; height: 38px; background: var(--bg-canvas); border: 1px solid var(--border-default);
+            border-radius: var(--radius-sm); padding: 0 12px 0 34px; color: var(--text-primary); font-size: var(--text-sm); font-family: inherit; }
+        .onshape-search input:focus { outline: none; border-color: var(--accent-flare); box-shadow: 0 0 0 3px var(--accent-soft); }
+        .onshape-picker-count { font-size: var(--text-xs); color: var(--text-muted); white-space: nowrap; }
+
+        .onshape-doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px;
+            max-height: 380px; overflow-y: auto; padding: 2px; }
+        .onshape-doc-card { position: relative; border: 1px solid var(--border-default); border-radius: var(--radius-md);
+            overflow: hidden; background: var(--bg-canvas); cursor: pointer; transition: border-color .12s ease, box-shadow .12s ease; }
+        .onshape-doc-card:hover { border-color: var(--border-strong); }
+        .onshape-doc-card.is-selected { border-color: var(--accent-flare); box-shadow: 0 0 0 3px var(--accent-soft); }
+        .onshape-doc-thumb { aspect-ratio: 16 / 10; background: var(--bg-muted); display: grid; place-items: center; color: var(--text-faint); }
+        .onshape-doc-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .onshape-doc-thumb .onshape-doc-initials { font-family: var(--font-display); font-weight: 700; font-size: 22px; letter-spacing: -0.02em; }
+        .onshape-doc-body { padding: 10px 12px 12px; }
+        .onshape-doc-name { font-weight: 600; font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .onshape-doc-owner { font-size: var(--text-xs); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .onshape-doc-check { position: absolute; top: 8px; right: 8px; width: 20px; height: 20px; border-radius: 50%;
+            background: var(--accent-flare); color: #221203; display: grid; place-items: center; opacity: 0; transform: scale(.6); transition: all .12s ease; }
+        .onshape-doc-card.is-selected .onshape-doc-check { opacity: 1; transform: none; }
+        .onshape-picker-empty { padding: 36px 20px; text-align: center; color: var(--text-muted); font-size: var(--text-sm);
+            border: 1px dashed var(--border-default); border-radius: var(--radius-md); }
+        .onshape-paste { border: 1px dashed var(--border-default); border-radius: var(--radius-sm); padding: 10px 12px; }
+        .onshape-paste summary { cursor: pointer; font-size: var(--text-sm); color: var(--text-secondary); }
+        .onshape-paste textarea { width: 100%; margin-top: 10px; background: var(--bg-canvas); border: 1px solid var(--border-default);
+            border-radius: var(--radius-sm); color: var(--text-primary); padding: 8px 12px; font-family: var(--font-mono); font-size: var(--text-xs); line-height: 1.6; resize: vertical; }
+        .onshape-wizard-actions { margin-top: 0; }
+        .onshape-wizard-actions .btn:first-child { margin-right: auto; }
+        .onshape-quota { font-size: var(--text-xs); color: var(--text-muted); padding: 10px 12px; border-radius: var(--radius-sm);
+            background: var(--bg-muted); border: 1px solid var(--border-muted); line-height: 1.6; }
+
         /* ─── Dialogs & menus ────────────────────────────────────── */
         dialog {
             margin: auto;
@@ -1127,6 +1182,7 @@
         <symbol id="i-server" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2"/><rect x="2" y="14" width="20" height="8" rx="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></symbol>
         <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></symbol>
         <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
+        <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
         <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/></symbol>
     </svg>
 
@@ -1167,7 +1223,7 @@
                             <svg class="i" width="16" height="16" aria-hidden="true"><use href="#i-log-out"/></svg>
                             Sign out
                         </button>
-                        <div class="menu-foot">GitFlare v1.1.2</div>
+                        <div class="menu-foot">GitFlare v1.1.3</div>
                     </div>
                 </div>
             </div>
@@ -1520,73 +1576,113 @@
         </div>
     </dialog>
 
-    <dialog id="onshapeModal" class="dialog-wide">
-        <h3 id="onshapeModalTitle">Connect Onshape</h3>
-        <p class="dialog-lead">Every new Onshape Version becomes a commit here, with each Part Studio and Assembly saved as files in Git LFS.</p>
-        <div class="form-row">
-            <div class="form-group">
-                <label for="onshapeAccessSource">Access key</label>
-                <select id="onshapeAccessSource" class="form-control"></select>
-                <div id="onshapeAccessEntry">
-                    <input type="text" id="onshapeAccessKey" class="form-control" autocomplete="off" spellcheck="false" style="margin-top:8px;">
-                    <div class="check-row" style="margin-top:8px;">
-                        <label><input type="checkbox" id="onshapeSaveAccess"> Save for other repositories</label>
+    <dialog id="onshapeModal" class="dialog-onshape">
+        <div class="onshape-wizard">
+            <div class="onshape-wizard-head">
+                <div class="onshape-brand">
+                    <div class="onshape-brand-mark"><img src="/favicon.svg" width="22" height="22" alt="" style="object-fit:contain;"></div>
+                    <div>
+                        <h3 id="onshapeModalTitle">Connect Onshape</h3>
+                        <p class="dialog-lead" id="onshapeModalLead">Every new Onshape Version becomes a commit here, with each Part Studio and Assembly saved in Git LFS.</p>
                     </div>
-                    <input type="text" id="onshapeSaveAccessName" class="form-control" maxlength="80" placeholder="Name, for example Onshape access" autocomplete="off" style="margin-top:8px; display:none;">
                 </div>
+                <ol class="onshape-steps-indicator" id="onshapeStepsIndicator">
+                    <li data-step="1" class="is-active">1 · Connect</li>
+                    <li data-step="2">2 · Documents</li>
+                    <li data-step="3">3 · Configure</li>
+                </ol>
             </div>
-            <div class="form-group">
-                <label for="onshapeSecretSource">Secret key</label>
-                <select id="onshapeSecretSource" class="form-control"></select>
-                <div id="onshapeSecretEntry">
-                    <input type="password" id="onshapeSecretKey" class="form-control" autocomplete="new-password" style="margin-top:8px;">
-                    <div class="check-row" style="margin-top:8px;">
-                        <label><input type="checkbox" id="onshapeSaveSecretKey"> Save for other repositories</label>
+
+            <section class="onshape-step-pane" data-pane="connect">
+                <div class="form-group" style="margin-bottom:16px;">
+                    <label for="onshapeBaseUrl">Onshape instance <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label>
+                    <input type="text" id="onshapeBaseUrl" class="form-control" placeholder="https://cad.onshape.com" autocomplete="off" spellcheck="false">
+                    <div class="form-hint">Enterprise? Use your <code>company.onshape.com</code> address.</div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="onshapeAccessSource">Access key</label>
+                        <select id="onshapeAccessSource" class="form-control"></select>
+                        <div id="onshapeAccessEntry">
+                            <input type="text" id="onshapeAccessKey" class="form-control" autocomplete="off" spellcheck="false" style="margin-top:8px;">
+                            <div class="check-row" style="margin-top:8px;">
+                                <label><input type="checkbox" id="onshapeSaveAccess"> Save for other repositories</label>
+                            </div>
+                            <input type="text" id="onshapeSaveAccessName" class="form-control" maxlength="80" placeholder="Name, for example Onshape access" autocomplete="off" style="margin-top:8px; display:none;">
+                        </div>
                     </div>
-                    <input type="text" id="onshapeSaveSecretName" class="form-control" maxlength="80" placeholder="Name, for example Onshape secret" autocomplete="off" style="margin-top:8px; display:none;">
+                    <div class="form-group">
+                        <label for="onshapeSecretSource">Secret key</label>
+                        <select id="onshapeSecretSource" class="form-control"></select>
+                        <div id="onshapeSecretEntry">
+                            <input type="password" id="onshapeSecretKey" class="form-control" autocomplete="new-password" style="margin-top:8px;">
+                            <div class="check-row" style="margin-top:8px;">
+                                <label><input type="checkbox" id="onshapeSaveSecretKey"> Save for other repositories</label>
+                            </div>
+                            <input type="text" id="onshapeSaveSecretName" class="form-control" maxlength="80" placeholder="Name, for example Onshape secret" autocomplete="off" style="margin-top:8px; display:none;">
+                        </div>
+                    </div>
                 </div>
+                <div class="form-hint" id="onshapeKeyHint" style="margin-top:-8px;">Create a key pair with read access at <a href="https://dev-portal.onshape.com/keys" target="_blank" rel="noopener">dev-portal.onshape.com/keys</a>. Saved secrets live on your account; picking one copies it into this repository.</div>
+                <div class="onshape-connect-error" id="onshapeConnectError" hidden></div>
+            </section>
+
+            <section class="onshape-step-pane" data-pane="documents" hidden>
+                <div class="onshape-picker-toolbar">
+                    <div class="onshape-search">
+                        <svg class="i" width="15" height="15" aria-hidden="true"><use href="#i-search"/></svg>
+                        <input type="search" id="onshapeDocSearch" placeholder="Search your Onshape documents" autocomplete="off" spellcheck="false">
+                    </div>
+                    <div class="onshape-picker-count" id="onshapePickerCount"></div>
+                </div>
+                <div class="onshape-doc-grid" id="onshapeDocGrid" aria-live="polite"></div>
+                <div class="onshape-picker-empty" id="onshapeDocEmpty" hidden></div>
+                <details class="onshape-paste">
+                    <summary>Paste document URLs instead</summary>
+                    <textarea id="onshapeDocuments" rows="3" placeholder="https://cad.onshape.com/documents/… (one per line)" spellcheck="false"></textarea>
+                </details>
+            </section>
+
+            <section class="onshape-step-pane" data-pane="configure" hidden>
+                <div class="form-group">
+                    <label>Export formats</label>
+                    <div class="check-row">
+                        <label><input type="checkbox" name="onshapeFormat" value="glb" checked> GLB <span style="color:var(--text-muted)">· 3D preview</span></label>
+                        <label><input type="checkbox" name="onshapeFormat" value="step" checked> STEP <span style="color:var(--text-muted)">· any CAD</span></label>
+                        <label><input type="checkbox" name="onshapeFormat" value="stl"> STL <span style="color:var(--text-muted)">· printing</span></label>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="onshapeInterval">Check for new versions</label>
+                        <select id="onshapeInterval" class="form-control">
+                            <option value="60">Every hour</option>
+                            <option value="360">Every 6 hours</option>
+                            <option value="720">Every 12 hours</option>
+                            <option value="1440" selected>Daily</option>
+                            <option value="10080">Weekly</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="onshapeBackfillGroup">
+                        <label for="onshapeBackfill">Existing versions</label>
+                        <select id="onshapeBackfill" class="form-control">
+                            <option value="latest" selected>Latest only</option>
+                            <option value="all">All, oldest first</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="onshapeBranch">Branch <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label>
+                    <input type="text" id="onshapeBranch" class="form-control" placeholder="Default branch if the repo is empty, otherwise “onshape”" spellcheck="false">
+                </div>
+                <div class="onshape-quota" id="onshapeQuotaHint"></div>
+            </section>
+
+            <div class="dialog-actions onshape-wizard-actions">
+                <button class="btn" id="onshapeBackBtn" type="button" hidden>Back</button>
+                <button class="btn" onclick="document.getElementById('onshapeModal').close()" type="button">Cancel</button>
+                <button class="btn btn-primary" id="onshapeSubmitBtn" type="button">Continue</button>
             </div>
-        </div>
-        <div class="form-hint" id="onshapeKeyHint" style="margin-top:-8px; margin-bottom:16px;">Create a key pair with read access at <a href="https://dev-portal.onshape.com/keys" target="_blank" rel="noopener">dev-portal.onshape.com/keys</a>. Saved secrets live on your account; picking one copies it into this repository.</div>
-        <div class="form-group">
-            <label for="onshapeDocuments">Documents <span style="color:var(--text-muted); font-weight:400;">(one Onshape URL per line)</span></label>
-            <textarea id="onshapeDocuments" class="form-control" rows="3" placeholder="https://cad.onshape.com/documents/…" spellcheck="false"></textarea>
-        </div>
-        <div class="form-group">
-            <label>Export formats</label>
-            <div class="check-row">
-                <label><input type="checkbox" name="onshapeFormat" value="glb" checked> GLB <span style="color:var(--text-muted)">· 3D preview</span></label>
-                <label><input type="checkbox" name="onshapeFormat" value="step" checked> STEP <span style="color:var(--text-muted)">· any CAD</span></label>
-                <label><input type="checkbox" name="onshapeFormat" value="stl"> STL <span style="color:var(--text-muted)">· printing</span></label>
-            </div>
-        </div>
-        <div class="form-row">
-            <div class="form-group">
-                <label for="onshapeInterval">Check for new versions</label>
-                <select id="onshapeInterval" class="form-control">
-                    <option value="60">Every hour</option>
-                    <option value="360">Every 6 hours</option>
-                    <option value="720">Every 12 hours</option>
-                    <option value="1440" selected>Daily</option>
-                    <option value="10080">Weekly</option>
-                </select>
-            </div>
-            <div class="form-group" id="onshapeBackfillGroup">
-                <label for="onshapeBackfill">Existing versions</label>
-                <select id="onshapeBackfill" class="form-control">
-                    <option value="latest" selected>Latest only</option>
-                    <option value="all">All, oldest first</option>
-                </select>
-            </div>
-        </div>
-        <div class="form-group">
-            <label for="onshapeBranch">Branch <span style="color:var(--text-muted); font-weight:400;">(optional)</span></label>
-            <input type="text" id="onshapeBranch" class="form-control" placeholder="Default branch if the repo is empty, otherwise “onshape”" spellcheck="false">
-        </div>
-        <div class="form-hint" id="onshapeQuotaHint"></div>
-        <div class="dialog-actions" style="margin-top:20px;">
-            <button class="btn" onclick="document.getElementById('onshapeModal').close()">Cancel</button>
-            <button class="btn btn-primary" id="onshapeSubmitBtn" onclick="submitOnshapeLink()">Connect</button>
         </div>
     </dialog>
 
@@ -2462,7 +2558,7 @@
                             <p>GitFlare checks your Onshape documents on a schedule. Each new Onshape <em>Version</em> becomes a commit with every Part Studio and Assembly exported, so the history is yours and opens in any CAD tool.</p>
                         </div>
                         <div class="onshape-steps">
-                            <div class="onshape-step"><strong>1 · Connect</strong>Pick saved secrets, or paste a key pair, and add the document URLs.</div>
+                            <div class="onshape-step"><strong>1 · Connect</strong>Pick saved secrets or paste a key pair, then browse your documents with previews.</div>
                             <div class="onshape-step"><strong>2 · Save a version</strong>In Onshape, create a Version as usual.</div>
                             <div class="onshape-step"><strong>3 · Browse</strong>GLB, STEP and STL land in Git LFS. Open a .glb here to spin it in 3D.</div>
                         </div>
@@ -2542,10 +2638,11 @@
 
         function updateOnshapeQuotaHint() {
             const interval = Number(document.getElementById('onshapeInterval').value);
-            const docs = document.getElementById('onshapeDocuments').value.split('\n').filter(l => l.trim()).length || 1;
+            const refs = onshapeSelectedRefs();
+            const docs = refs.length || 1;
             const perYear = Math.round((365 * 24 * 60 / interval) * docs);
             document.getElementById('onshapeQuotaHint').textContent =
-                `Checks cost ~${perYear.toLocaleString()} Onshape API calls a year. Each new version also costs a start, several status checks, and a download per part and format — a large document can use hundreds of calls. Free and Standard plans get 2,500 calls a year.`;
+                `${docs} document${docs === 1 ? '' : 's'} · checks cost ~${perYear.toLocaleString()} Onshape API calls a year. Each new version also costs a start, several status checks, and a download per part and format — a large document can use hundreds of calls. Free and Standard plans get 2,500 calls a year.`;
         }
 
         let savedSecrets = [];
@@ -2696,19 +2793,138 @@
             });
         }
 
+        // ─── Onshape connect wizard state ─────────────────────────────
+        let onshapeStep = 1;
+        let onshapePickerDocs = [];       // documents shown in step 2
+        let onshapePickedIds = new Set(); // selected document ids (picker mode)
+        let onshapePreviewCalls = 0;      // Onshape API calls the last preview used
+        const ONSHAPE_PREVIEW_LIMIT = 20;
+        const ONSHAPE_MAX_DOCUMENTS = 10;
+        const ONSHAPE_STEP_PANES = ['connect', 'documents', 'configure'];
+
+        function onshapeKeepingKeys() {
+            return document.getElementById('onshapeAccessSource').value === '__keep__'
+                && document.getElementById('onshapeSecretSource').value === '__keep__';
+        }
+
+        /** Document refs to hand to the PUT: pasted URLs win over picked ids. */
+        function onshapeSelectedRefs() {
+            const pasted = document.getElementById('onshapeDocuments').value.split('\n').map(l => l.trim()).filter(Boolean);
+            if (pasted.length) return pasted;
+            return [...onshapePickedIds];
+        }
+
+        function onshapeCredentialsForPreview() {
+            const body = {};
+            const baseUrl = document.getElementById('onshapeBaseUrl').value.trim();
+            if (baseUrl) body.base_url = baseUrl;
+            const accessSource = document.getElementById('onshapeAccessSource').value;
+            if (accessSource && accessSource !== '__keep__') body.access_secret_id = accessSource;
+            else body.access_key = document.getElementById('onshapeAccessKey').value.trim();
+            const secretSource = document.getElementById('onshapeSecretSource').value;
+            if (secretSource && secretSource !== '__keep__') body.secret_key_secret_id = secretSource;
+            else body.secret_key = document.getElementById('onshapeSecretKey').value.trim();
+            return body;
+        }
+
+        function onshapeShowConnectError(message) {
+            const el = document.getElementById('onshapeConnectError');
+            if (!message) { el.hidden = true; el.textContent = ''; return; }
+            el.textContent = message;
+            el.hidden = false;
+        }
+
+        function onshapeGoTo(step) {
+            onshapeStep = step;
+            renderOnshapeWizard();
+        }
+
+        function renderOnshapeWizard() {
+            document.getElementById('onshapeStepsIndicator').querySelectorAll('li').forEach(li => {
+                const n = Number(li.dataset.step);
+                li.classList.toggle('is-active', n === onshapeStep);
+                li.classList.toggle('is-done', n < onshapeStep);
+            });
+            document.querySelectorAll('.onshape-step-pane').forEach(pane => {
+                pane.hidden = pane.dataset.pane !== ONSHAPE_STEP_PANES[onshapeStep - 1];
+            });
+            document.getElementById('onshapeBackBtn').hidden = onshapeStep === 1;
+            document.getElementById('onshapeSubmitBtn').textContent =
+                onshapeStep === 3 ? (onshapeData?.link ? 'Save' : 'Connect') : 'Continue';
+            if (onshapeStep === 2) renderOnshapePicker();
+            if (onshapeStep === 3) updateOnshapeQuotaHint();
+        }
+
+        function onshapePickerCountText() {
+            const callsNote = onshapePreviewCalls ? ` · ${onshapePreviewCalls} API call${onshapePreviewCalls === 1 ? '' : 's'} used` : '';
+            if (onshapeKeepingKeys()) return `${onshapePickedIds.size} of ${onshapePickerDocs.length} linked`;
+            return `${onshapePickedIds.size} of ${onshapePickerDocs.length} selected${callsNote}`;
+        }
+
+        function renderOnshapePicker() {
+            const grid = document.getElementById('onshapeDocGrid');
+            const empty = document.getElementById('onshapeDocEmpty');
+            const count = document.getElementById('onshapePickerCount');
+            const q = (document.getElementById('onshapeDocSearch').value || '').toLowerCase().trim();
+            const docs = onshapePickerDocs.filter(d =>
+                !q || (d.name || '').toLowerCase().includes(q) || (d.owner || '').toLowerCase().includes(q)
+            );
+            count.textContent = onshapePickerCountText();
+            if (!docs.length) {
+                grid.innerHTML = '';
+                empty.hidden = false;
+                empty.textContent = onshapePickerDocs.length
+                    ? `No documents match “${q}”.`
+                    : 'No documents found for these keys. Create a document in Onshape, or paste a URL below.';
+                return;
+            }
+            empty.hidden = true;
+            grid.innerHTML = docs.map(d => {
+                const selected = onshapePickedIds.has(d.id);
+                const thumb = d.thumbnail
+                    ? `<img src="${esc(d.thumbnail)}" alt="" loading="lazy">`
+                    : `<span class="onshape-doc-initials">${esc(initials(d.name))}</span>`;
+                const sub = d.owner ? esc(d.owner) : (d._existing ? 'Already linked' : 'Onshape');
+                return `<div class="onshape-doc-card${selected ? ' is-selected' : ''}" data-action="onshape-pick" data-id="${esc(d.id)}" role="button" tabindex="0" aria-pressed="${selected}">
+                    <div class="onshape-doc-thumb">${thumb}</div>
+                    <div class="onshape-doc-body">
+                        <div class="onshape-doc-name" title="${esc(d.name)}">${esc(d.name)}</div>
+                        <div class="onshape-doc-owner">${sub}</div>
+                    </div>
+                    <span class="onshape-doc-check">${icon('check', 12)}</span>
+                </div>`;
+            }).join('');
+        }
+
+        function onshapePickerPick(id) {
+            if (!onshapePickedIds.has(id) && onshapePickedIds.size >= ONSHAPE_MAX_DOCUMENTS) {
+                return toast(`At most ${ONSHAPE_MAX_DOCUMENTS} documents per repository`, 'error');
+            }
+            if (onshapePickedIds.has(id)) onshapePickedIds.delete(id);
+            else onshapePickedIds.add(id);
+            const card = document.querySelector(`.onshape-doc-card[data-id="${CSS.escape(id)}"]`);
+            if (card) {
+                card.classList.toggle('is-selected', onshapePickedIds.has(id));
+                card.setAttribute('aria-pressed', String(onshapePickedIds.has(id)));
+            }
+            document.getElementById('onshapePickerCount').textContent = onshapePickerCountText();
+        }
+
         async function openOnshapeModal() {
             const link = onshapeData?.link;
-            const modal = document.getElementById('onshapeModal');
             document.getElementById('onshapeModalTitle').textContent = link ? 'Onshape settings' : 'Connect Onshape';
-            document.getElementById('onshapeSubmitBtn').textContent = link ? 'Save' : 'Connect';
+            document.getElementById('onshapeModalLead').textContent = link
+                ? 'Update the key pair, documents, or sync schedule for this repository.'
+                : 'Every new Onshape Version becomes a commit here, with each Part Studio and Assembly saved in Git LFS.';
             document.getElementById('onshapeAccessKey').value = '';
             document.getElementById('onshapeSecretKey').value = '';
+            document.getElementById('onshapeBaseUrl').value = link ? link.base_url : '';
             for (const [check, name] of [['onshapeSaveAccess', 'onshapeSaveAccessName'], ['onshapeSaveSecretKey', 'onshapeSaveSecretName']]) {
                 document.getElementById(check).checked = false;
                 document.getElementById(name).value = '';
                 document.getElementById(name).style.display = 'none';
             }
-            document.getElementById('onshapeDocuments').value = link ? link.documents.map(d => `${link.base_url}/documents/${d.id}`).join('\n') : '';
+            document.getElementById('onshapeDocuments').value = '';
             const formats = link ? link.formats : ['glb', 'step'];
             document.querySelectorAll('input[name="onshapeFormat"]').forEach(cb => { cb.checked = formats.includes(cb.value); });
             const interval = document.getElementById('onshapeInterval');
@@ -2716,9 +2932,16 @@
             if (!interval.value) interval.value = '1440';
             document.getElementById('onshapeBackfillGroup').style.display = link ? 'none' : '';
             document.getElementById('onshapeBranch').value = link ? link.branch : '';
-            updateOnshapeQuotaHint();
+            document.getElementById('onshapeDocSearch').value = '';
+            onshapeShowConnectError(null);
+
+            onshapeStep = 1;
+            onshapePickerDocs = [];
+            onshapePickedIds = new Set();
+            onshapePreviewCalls = 0;
             await fillOnshapeKeySource();
-            modal.showModal();
+            renderOnshapeWizard();
+            document.getElementById('onshapeModal').showModal();
         }
 
         /** 'keep' | 'saved' | 'typed' | 'empty' | 'need-name'. Writes the chosen key onto body. */
@@ -2741,17 +2964,69 @@
             return 'typed';
         }
 
-        async function submitOnshapeLink() {
+        async function onshapeStep1Continue() {
+            onshapeShowConnectError(null);
+            const btn = document.getElementById('onshapeSubmitBtn');
+            if (onshapeKeepingKeys()) {
+                onshapePickerDocs = (onshapeData?.link?.documents || []).map(d => ({ id: d.id, name: d.name, owner: null, modified_at: null, thumbnail: null, _existing: true }));
+                onshapePickedIds = new Set(onshapePickerDocs.map(d => d.id));
+                onshapePreviewCalls = 0;
+                onshapeGoTo(2);
+                return;
+            }
+            const creds = onshapeCredentialsForPreview();
+            if (!creds.access_key && !creds.access_secret_id) return onshapeShowConnectError('Enter the Onshape access key, or pick a saved secret.');
+            if (!creds.secret_key && !creds.secret_key_secret_id) return onshapeShowConnectError('Enter the Onshape secret key, or pick a saved secret.');
+
+            btn.disabled = true;
+            btn.textContent = 'Loading documents…';
+            try {
+                const res = await apiFetch(`${repoApi()}/onshape/documents/preview`, {
+                    method: 'POST', headers: authHeaders(),
+                    body: JSON.stringify({ ...creds, limit: ONSHAPE_PREVIEW_LIMIT }),
+                });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.details || data.error || `HTTP ${res.status}`);
+
+                const existing = (onshapeData?.link?.documents || []).map(d => ({ id: d.id, name: d.name, owner: null, modified_at: null, thumbnail: null, _existing: true }));
+                const existingIds = new Set(existing.map(d => d.id));
+                const merged = new Map();
+                for (const d of existing) merged.set(d.id, d);
+                for (const d of (data.documents || [])) merged.set(d.id, { ...d, _existing: existingIds.has(d.id) });
+                onshapePickerDocs = [...merged.values()];
+                onshapePickedIds = new Set(existing.map(d => d.id));
+                onshapePreviewCalls = data.calls_used || 0;
+                document.getElementById('onshapeDocSearch').value = '';
+                onshapeGoTo(2);
+            } catch (e) {
+                onshapeShowConnectError(e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Continue';
+            }
+        }
+
+        function onshapeStep2Continue() {
+            const refs = onshapeSelectedRefs();
+            if (!refs.length) return toast('Pick at least one document, or paste a document URL', 'error');
+            if (refs.length > ONSHAPE_MAX_DOCUMENTS) return toast(`At most ${ONSHAPE_MAX_DOCUMENTS} documents per repository`, 'error');
+            onshapeGoTo(3);
+        }
+
+        async function onshapeStep3Save() {
             const link = onshapeData?.link;
             const btn = document.getElementById('onshapeSubmitBtn');
             const body = {
-                documents: document.getElementById('onshapeDocuments').value.split('\n').map(l => l.trim()).filter(Boolean),
+                documents: onshapeSelectedRefs(),
                 formats: [...document.querySelectorAll('input[name="onshapeFormat"]:checked')].map(cb => cb.value),
                 interval_minutes: Number(document.getElementById('onshapeInterval').value),
             };
             const accessChoice = readOnshapeKey('onshapeAccessSource', 'onshapeAccessKey', 'onshapeSaveAccess', 'onshapeSaveAccessName', 'access_secret_id', 'access_key', 'save_access_as', body);
             const secretChoice = readOnshapeKey('onshapeSecretSource', 'onshapeSecretKey', 'onshapeSaveSecretKey', 'onshapeSaveSecretName', 'secret_key_secret_id', 'secret_key', 'save_secret_as', body);
             if (accessChoice === 'need-name' || secretChoice === 'need-name') return toast('Name the secret to save it for other repositories', 'error');
+            const baseUrl = document.getElementById('onshapeBaseUrl').value.trim();
+            // Only send the instance when it differs: an unchanged one must not force a re-check of the stored keys.
+            if (baseUrl && (!link || baseUrl !== link.base_url)) body.base_url = baseUrl;
             const branch = document.getElementById('onshapeBranch').value.trim();
             if (branch) body.branch = branch;
             if (!link) body.backfill = document.getElementById('onshapeBackfill').value;
@@ -2768,7 +3043,7 @@
                 const reused = (choice) => choice === 'keep' || choice === 'empty';
                 if (adding && (reused(accessChoice) || reused(secretChoice))) return toast('Enter both keys again, or pick saved secrets, to add a document', 'error');
             }
-            if (!body.documents.length) return toast('Add at least one Onshape document URL', 'error');
+            if (!body.documents.length) return toast('Add at least one Onshape document', 'error');
             if (!body.formats.length) return toast('Pick at least one export format', 'error');
 
             btn.disabled = true;
@@ -2787,6 +3062,12 @@
                 btn.disabled = false;
                 btn.textContent = link ? 'Save' : 'Connect';
             }
+        }
+
+        async function submitOnshapeLink() {
+            if (onshapeStep === 1) return onshapeStep1Continue();
+            if (onshapeStep === 2) return onshapeStep2Continue();
+            return onshapeStep3Save();
         }
 
         async function onshapeSyncNow() {
@@ -2863,9 +3144,28 @@
         }
 
         document.getElementById('onshapeInterval').addEventListener('change', updateOnshapeQuotaHint);
-        document.getElementById('onshapeDocuments').addEventListener('input', updateOnshapeQuotaHint);
-        document.getElementById('onshapeAccessSource').addEventListener('change', () => onSecretSourceChange('onshapeAccessSource', 'onshapeAccessEntry'));
-        document.getElementById('onshapeSecretSource').addEventListener('change', () => onSecretSourceChange('onshapeSecretSource', 'onshapeSecretEntry'));
+        document.getElementById('onshapeDocSearch').addEventListener('input', () => { if (onshapeStep === 2) renderOnshapePicker(); });
+        document.getElementById('onshapeSubmitBtn').addEventListener('click', submitOnshapeLink);
+        document.getElementById('onshapeBackBtn').addEventListener('click', () => { if (onshapeStep > 1) onshapeGoTo(onshapeStep - 1); });
+
+        function onOnshapeKeySourceChange(e) {
+            const changed = e?.target;
+            const access = document.getElementById('onshapeAccessSource');
+            const secret = document.getElementById('onshapeSecretSource');
+            if (changed && changed.value === '__keep__') {
+                // Pairing up: the stored access and secret keys travel together.
+                access.value = '__keep__';
+                secret.value = '__keep__';
+            } else if (access.value === '__keep__' || secret.value === '__keep__') {
+                // Leaving keep: drop the other half so it asks for a key again.
+                if (access.value === '__keep__') access.value = '';
+                if (secret.value === '__keep__') secret.value = '';
+            }
+            onSecretSourceChange('onshapeAccessSource', 'onshapeAccessEntry');
+            onSecretSourceChange('onshapeSecretSource', 'onshapeSecretEntry');
+        }
+        document.getElementById('onshapeAccessSource').addEventListener('change', onOnshapeKeySourceChange);
+        document.getElementById('onshapeSecretSource').addEventListener('change', onOnshapeKeySourceChange);
         for (const [check, name, preset] of [
             ['onshapeSaveAccess', 'onshapeSaveAccessName', 'Onshape access'],
             ['onshapeSaveSecretKey', 'onshapeSaveSecretName', 'Onshape secret'],
@@ -3658,6 +3958,9 @@
                     break;
                 case 'onshape-edit':
                     openOnshapeModal();
+                    break;
+                case 'onshape-pick':
+                    onshapePickerPick(d.id);
                     break;
                 case 'onshape-sync':
                     onshapeSyncNow();

@@ -12,6 +12,7 @@ import {
 	normalizeBaseUrl,
 	parseDocumentRef,
 	signRequest,
+	thumbnailFor,
 } from '../src/lib/onshape.ts';
 import {
 	assignFolders,
@@ -116,6 +117,73 @@ describe('onshape helpers', () => {
 	it('picks new versions in creation order', () => {
 		const v = (id: string, createdAt: string) => ({ id, name: id, createdAt });
 		expect(newVersions([v('c', '2026-03-01'), v('a', '2026-01-01'), v('b', '2026-02-01')], new Set(['a'])).map((x) => x.id)).toEqual(['b', 'c']);
+	});
+
+	it('picks the thumbnail closest to the target width', () => {
+		const doc = (sizes?: { size: string; href: string; mediaType?: string }[]) => ({
+			id: 'd',
+			name: 'Doc',
+			thumbnail: { sizes },
+		});
+		expect(thumbnailFor(doc([{ size: '70x70', href: '/70' }, { size: '300x300', href: '/300' }]), 320)?.href).toBe('/300');
+		expect(thumbnailFor(doc([{ size: '40x40', href: '/40' }]), 320)?.href).toBe('/40');
+		expect(thumbnailFor(doc([{ size: '300x300', href: '/300' }, { size: '600x340', href: '/600' }]), 320)?.href).toBe('/600');
+		expect(thumbnailFor(doc([]))).toBeNull();
+		expect(thumbnailFor(doc(undefined))).toBeNull();
+	});
+
+	it('lists documents with the pagination params Onshape expects', async () => {
+		const seen: URL[] = [];
+		const client = new OnshapeClient(
+			{ baseUrl: 'https://cad.onshape.com', accessKey: 'ACCESS', secretKey: 'SECRET' },
+			async (input, init) => {
+				const req = new Request(input, init);
+				seen.push(new URL(req.url));
+				return Response.json({ items: [{ id: 'a'.repeat(24), name: 'Doc' }] });
+			}
+		);
+		const page = await client.documents(0, 50);
+		expect(Array.isArray(page)).toBe(false);
+		expect((page as { items: unknown[] }).items).toHaveLength(1);
+		expect(seen[0].pathname).toBe('/api/v17/documents');
+		expect(seen[0].searchParams.get('offset')).toBe('0');
+		expect(seen[0].searchParams.get('limit')).toBe('20'); // clamped to Onshape's cap
+		expect(seen[0].searchParams.get('sortColumn')).toBe('modifiedAt');
+		expect(seen[0].searchParams.get('sortOrder')).toBe('desc');
+	});
+
+	it('never sends the HMAC signature to a non-Onshape thumbnail host', async () => {
+		const fetched: { url: string; auth: string | null }[] = [];
+		const client = new OnshapeClient(
+			{ baseUrl: 'https://cad.onshape.com', accessKey: 'ACCESS', secretKey: 'SECRET' },
+			async (input, init) => {
+				const req = new Request(input, init);
+				fetched.push({ url: req.url, auth: req.headers.get('Authorization') });
+				return new Response('ok');
+			}
+		);
+		await client.thumbnail('https://cdn.example.com/thumb.png');
+		expect(fetched[0].url).toBe('https://cdn.example.com/thumb.png');
+		expect(fetched[0].auth).toBeNull();
+
+		const before = fetched.length;
+		const res = await client.thumbnail('http://cdn.example.com/thumb.png');
+		expect(res.status).toBe(400); // non-https off-host is refused without fetching
+		expect(fetched.length).toBe(before);
+	});
+
+	it('signs on-host thumbnail requests', async () => {
+		const fetched: { auth: string | null }[] = [];
+		const client = new OnshapeClient(
+			{ baseUrl: 'https://cad.onshape.com', accessKey: 'ACCESS', secretKey: 'SECRET' },
+			async (input, init) => {
+				const req = new Request(input, init);
+				fetched.push({ auth: req.headers.get('Authorization') });
+				return new Response('ok');
+			}
+		);
+		await client.thumbnail('https://cad.onshape.com/api/thumbnails/d/x/s/300x300');
+		expect(fetched[0].auth).toMatch(/^On ACCESS:HmacSHA256:/);
 	});
 
 	it('detects the exported file type', () => {

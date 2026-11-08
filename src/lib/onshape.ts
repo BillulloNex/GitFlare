@@ -67,6 +67,24 @@ export interface OnshapeTranslation {
 	failureReason?: string | null;
 }
 
+/** One entry from `GET /api/documents` — what the picker needs to show a card. */
+export interface OnshapeDocumentSummary {
+	id: string;
+	name: string;
+	description?: string | null;
+	owner?: { id?: string; name?: string } | null;
+	thumbnail?: { sizes?: OnshapeThumbnailSize[] } | null;
+	modifiedAt?: string | null;
+	createdAt?: string | null;
+	defaultWorkspace?: { id?: string; name?: string } | null;
+}
+
+export interface OnshapeThumbnailSize {
+	size: string;
+	href: string;
+	mediaType?: string | null;
+}
+
 // ─── URLs ───────────────────────────────────────────────────────
 
 /**
@@ -114,9 +132,26 @@ export function documentUrl(baseUrl: string, documentId: string, versionId?: str
 	return versionId ? `${baseUrl}/documents/${documentId}/v/${versionId}` : `${baseUrl}/documents/${documentId}`;
 }
 
+/**
+ * Best thumbnail for a document card: the smallest size at least `minWidth`
+ * wide (so 1x and 2x screens get a crisp image), or the largest available
+ * when the document has none that big. Returns null when there is no thumbnail.
+ */
+export function thumbnailFor(doc: OnshapeDocumentSummary, minWidth = 320): { href: string; mediaType: string } | null {
+	const sizes = doc.thumbnail?.sizes;
+	if (!sizes?.length) return null;
+	const parsed = sizes
+		.map((s) => ({ ...s, width: (Number.parseInt(s.size.split('x')[0], 10) || 0) }))
+		.filter((s) => s.width > 0)
+		.sort((a, b) => a.width - b.width);
+	if (!parsed.length) return null;
+	const pick = parsed.find((s) => s.width >= minWidth) ?? parsed[parsed.length - 1];
+	return { href: pick.href, mediaType: pick.mediaType || 'image/png' };
+}
+
 // ─── Signing ────────────────────────────────────────────────────
 
-function base64(bytes: Uint8Array): string {
+export function bytesToBase64(bytes: Uint8Array): string {
 	let s = '';
 	for (const b of bytes) s += String.fromCharCode(b);
 	return btoa(s);
@@ -143,7 +178,7 @@ export async function signRequest(
 	const query = url.search.startsWith('?') ? url.search.slice(1) : url.search;
 	const toSign = `${method}\n${onNonce}\n${date}\n${contentType}\n${url.pathname}\n${query}\n`.toLowerCase();
 	const key = await crypto.subtle.importKey('raw', encoder.encode(creds.secretKey), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-	const signature = base64(new Uint8Array(await crypto.subtle.sign('HMAC', key, encoder.encode(toSign))));
+	const signature = bytesToBase64(new Uint8Array(await crypto.subtle.sign('HMAC', key, encoder.encode(toSign))));
 	return {
 		Date: date,
 		'On-Nonce': onNonce,
@@ -223,6 +258,23 @@ export class OnshapeClient {
 
 	document(documentId: string): Promise<{ id: string; name: string; defaultWorkspace?: { id: string } }> {
 		return this.json('GET', `/documents/${documentId}`);
+	}
+
+	/** One page of the user's documents, newest first. Onshape caps `limit` at 20. */
+	documents(offset = 0, limit = 20): Promise<{ items: OnshapeDocumentSummary[]; next?: string | null } | OnshapeDocumentSummary[]> {
+		const pageLimit = Math.max(1, Math.min(20, Math.floor(limit)));
+		return this.json('GET', '/documents', { query: { offset: String(offset), limit: String(pageLimit), sortColumn: 'modifiedAt', sortOrder: 'desc' } });
+	}
+
+	/** A thumbnail (absolute or API-relative `href` from a document summary). */
+	thumbnail(href: string): Promise<Response> {
+		const url = new URL(href.startsWith('http') ? href : href, this.creds.baseUrl);
+		if (url.hostname !== 'onshape.com' && !url.hostname.endsWith('.onshape.com')) {
+			// Off-Onshape thumbnail (CDN): fetch it directly — never send our signature there.
+			if (url.protocol !== 'https:') return Promise.resolve(new Response(null, { status: 400 }));
+			return this.fetchImpl(url.toString(), { redirect: 'follow' });
+		}
+		return this.request('GET', url.toString(), { accept: 'image/png, image/jpeg, image/webp, image/*' });
 	}
 
 	/** One page of a document's versions (Onshape caps `limit` at 20). */

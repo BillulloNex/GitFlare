@@ -31,13 +31,24 @@ import {
 	EXPORT_FORMATS,
 	OnshapeClient,
 	OnshapeError,
+	bytesToBase64,
 	normalizeBaseUrl,
 	parseDocumentRef,
+	thumbnailFor,
 	type ExportFormat,
+	type OnshapeDocumentSummary,
 } from '../lib/onshape.ts';
 import { assignFolders, branchIsProtected, runOnshapeSync, type LinkedDocument } from '../lib/onshape-sync.ts';
 
 const app = new Hono<{ Bindings: Env; Variables: RepoVariables }>();
+
+const SAFE_THUMBNAIL_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+/** Only allow image/* content types we render as an `<img src>`; anything else falls back to png. */
+function safeThumbnailType(value: string | null | undefined): string | null {
+	if (!value) return null;
+	const type = value.split(';')[0].trim().toLowerCase();
+	return SAFE_THUMBNAIL_TYPES.has(type) ? type : null;
+}
 
 const MIN_INTERVAL_MINUTES = 60;
 const MAX_INTERVAL_MINUTES = 7 * 24 * 60;
@@ -170,6 +181,98 @@ app.get('/:repo/onshape', async (c) => {
 			};
 		}),
 	});
+});
+
+/**
+ * List documents (and their thumbnails) the supplied keys can see, so the
+ * connect wizard can offer a picker instead of making the user paste URLs.
+ * Thumbnails are inlined as data URIs: the keys never reach the browser as a
+ * reusable thumbnail URL and no temporary credential store is needed.
+ */
+app.post('/:repo/onshape/documents/preview', requireRepoLevel('admin'), async (c) => {
+	const body = await readJsonObject<{
+		access_key: string;
+		secret_key: string;
+		access_secret_id: string;
+		secret_key_secret_id: string;
+		base_url: string;
+		offset: number;
+		limit: number;
+		thumbnails: boolean;
+	}>(c);
+	if (!body) return c.json({ error: 'Invalid JSON body' }, 400);
+
+	const accessSecretPick = typeof body.access_secret_id === 'string' ? body.access_secret_id.trim() : '';
+	const secretKeyPick = typeof body.secret_key_secret_id === 'string' ? body.secret_key_secret_id.trim() : '';
+	if (accessSecretPick && body.access_key !== undefined) return c.json({ error: 'Send a saved secret or an access key, not both' }, 400);
+	if (secretKeyPick && body.secret_key !== undefined) return c.json({ error: 'Send a saved secret or a secret key, not both' }, 400);
+
+	let baseUrl: string | null = null;
+	if (body.base_url !== undefined) {
+		baseUrl = typeof body.base_url === 'string' ? normalizeBaseUrl(body.base_url) : null;
+		if (!baseUrl) return c.json({ error: 'base_url must be an https://*.onshape.com origin' }, 400);
+	}
+	baseUrl ??= normalizeBaseUrl(null)!;
+
+	const userId = c.get('principal').userId;
+	let accessKey = '';
+	let secretKey = '';
+	try {
+		if (accessSecretPick) {
+			if (!userId) return c.json({ error: 'Saved secrets belong to a signed-in user. Paste the keys instead.' }, 400);
+			accessKey = await secretField(await ownedSecret(c.env.DB, userId, accessSecretPick), 'access', c.env.ENCRYPTION_KEY, c.env.SESSION_SECRET);
+		} else if (typeof body.access_key === 'string') {
+			accessKey = body.access_key.trim();
+		}
+		if (secretKeyPick) {
+			if (!userId) return c.json({ error: 'Saved secrets belong to a signed-in user. Paste the keys instead.' }, 400);
+			secretKey = await secretField(await ownedSecret(c.env.DB, userId, secretKeyPick), 'secret', c.env.ENCRYPTION_KEY, c.env.SESSION_SECRET);
+		} else if (typeof body.secret_key === 'string') {
+			secretKey = body.secret_key.trim();
+		}
+	} catch (err) {
+		if (err instanceof Error && err.message === 'Saved secret not found') return c.json({ error: 'Saved secret not found' }, 404);
+		return c.json({ error: 'That saved secret could not be read — replace it' }, 400);
+	}
+	if (!accessKey || !secretKey) return c.json({ error: 'Enter the Onshape access key and secret key' }, 400);
+
+	const offset = typeof body.offset === 'number' && Number.isInteger(body.offset) && body.offset >= 0 ? body.offset : 0;
+	const rawLimit = typeof body.limit === 'number' ? body.limit : 20;
+	const limit = Math.max(1, Math.min(20, Math.floor(rawLimit)));
+	const withThumbnails = body.thumbnails !== false;
+
+	const client = new OnshapeClient({ baseUrl, accessKey, secretKey });
+	let page: { items: OnshapeDocumentSummary[]; next?: string | null } | OnshapeDocumentSummary[];
+	try {
+		page = await client.documents(offset, limit);
+	} catch (err) {
+		const details = err instanceof OnshapeError ? err.message : `Could not reach Onshape: ${err instanceof Error ? err.message : String(err)}`;
+		return c.json({ error: 'Onshape check failed', details }, 400);
+	}
+	const items = Array.isArray(page) ? page : (page.items ?? []);
+	const hasMore = items.length >= limit;
+
+	const documents = await Promise.all(
+		items.map(async (doc): Promise<{ id: string; name: string; owner: string | null; modified_at: string | null; thumbnail: string | null }> => {
+			const summary = { id: doc.id, name: doc.name || doc.id, owner: doc.owner?.name || null, modified_at: doc.modifiedAt || doc.createdAt || null, thumbnail: null as string | null };
+			if (!withThumbnails) return summary;
+			const thumb = thumbnailFor(doc, 300);
+			if (!thumb) return summary;
+			try {
+				const res = await client.thumbnail(thumb.href);
+				if (!res.ok) return summary;
+				const bytes = new Uint8Array(await res.arrayBuffer());
+				if (!bytes.length || bytes.length > 256 * 1024) return summary;
+				const type = safeThumbnailType(res.headers.get('content-type')) ?? safeThumbnailType(thumb.mediaType) ?? 'image/png';
+				summary.thumbnail = `data:${type};base64,${bytesToBase64(bytes)}`;
+			} catch {
+				// Thumbnails are best-effort: a missing preview never blocks picking.
+			}
+			return summary;
+		})
+	);
+
+	return c.json({ documents, offset, has_more: hasMore, calls_used: client.calls, base_url: baseUrl });
 });
 
 app.put('/:repo/onshape', requireRepoLevel('admin'), async (c) => {
