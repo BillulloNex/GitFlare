@@ -13,6 +13,7 @@
  */
 import { AwsClient } from 'aws4fetch';
 import type { Env } from '../env.ts';
+import { contentDisposition } from './media.ts';
 
 export interface PresignConfig {
 	accountId: string;
@@ -66,12 +67,18 @@ export async function presignUpload(cfg: PresignConfig, key: string, oid: string
 	return { url: signed.url, headers };
 }
 
-export async function presignDownload(cfg: PresignConfig, key: string, ttlSeconds: number, filename?: string): Promise<string> {
+export async function presignDownload(
+	cfg: PresignConfig,
+	key: string,
+	ttlSeconds: number,
+	filename?: string,
+	override?: { contentType?: string; disposition?: 'inline' | 'attachment' }
+): Promise<string> {
 	const query: Record<string, string> = {};
 	if (filename) {
-		const ascii = filename.replace(/[^\x20-\x7e]|["\\]/g, '_');
-		query['response-content-disposition'] = `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+		query['response-content-disposition'] = contentDisposition(override?.disposition ?? 'attachment', filename);
 	}
+	if (override?.contentType) query['response-content-type'] = override.contentType;
 	query['X-Amz-Expires'] = String(ttlSeconds);
 	const signed = await client(cfg).sign(new Request(objectUrl(cfg, key, query), { method: 'GET' }), { aws: { signQuery: true } });
 	return signed.url;

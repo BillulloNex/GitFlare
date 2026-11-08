@@ -828,6 +828,21 @@
         }
         .model-hud .btn { pointer-events: auto; }
 
+        /* ─── Video player ───────────────────────────────────────── */
+        .media-player {
+            padding: 16px;
+            background: var(--bg-code);
+            border-top: 1px solid var(--border-muted);
+        }
+        .media-player video {
+            display: block;
+            width: 100%;
+            max-height: min(70vh, 720px);
+            background: #000;
+            border-radius: var(--radius-sm);
+        }
+        .media-player-note { margin: 12px 0 0; color: var(--text-secondary); font-size: var(--text-sm); }
+
         /* ─── Onshape (CAD tab) ──────────────────────────────────── */
         .onshape-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; align-items: start; }
         @media (max-width: 960px) { .onshape-grid { grid-template-columns: 1fr; } }
@@ -1275,7 +1290,7 @@
                                     <button id="btnPreviewMode" onclick="toggleMarkdownPreview('preview')">Preview</button>
                                     <button id="btnCodeMode" onclick="toggleMarkdownPreview('code')">Code</button>
                                 </div>
-                                <button class="btn btn-sm" onclick="copyViewerContent()">
+                                <button class="btn btn-sm" id="btnCopyViewer" onclick="copyViewerContent()">
                                     <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-copy"/></svg><span class="btn-label">Copy</span>
                                 </button>
                                 <button class="btn btn-sm" onclick="openRawFile()">
@@ -1304,6 +1319,10 @@
                                 <span class="hud-dims" id="modelDims" style="display:none;"></span>
                                 <button class="btn btn-sm" id="modelResetBtn" style="display:none;" onclick="resetModelView()">Reset view</button>
                             </div>
+                        </div>
+                        <div id="mediaPlayer" class="media-player" style="display:none;">
+                            <video id="mediaVideo" controls playsinline preload="metadata"></video>
+                            <p id="mediaPlayerNote" class="media-player-note" style="display:none;"></p>
                         </div>
                         <div id="fileContentCode" class="code-display">
                             <div class="line-numbers" id="fileLineNumbers"></div>
@@ -1987,6 +2006,7 @@
             if (/\.(json|jsonc|ya?ml|toml)$/i.test(name)) return icon('braces', 16);
             if (/\.(ts|tsx|js|jsx|mjs|cjs|py|sh|go|rs|rb|css|html|sql)$/i.test(name)) return icon('file-code', 16);
             if (name === 'Dockerfile' || MODEL_FILE_RE.test(name) || /\.(step|stp)$/i.test(name)) return icon('box', 16);
+            if (VIDEO_FILE_RE.test(name)) return icon('play', 16);
             return icon('file', 16);
         }
 
@@ -2001,6 +2021,7 @@
 
                 activeViewerFile = data;
                 activeViewerContent = data.content;
+                stopVideo();
 
                 document.getElementById('fileTreeBox').style.display = 'none';
                 document.getElementById('readmeCard').style.display = 'none';
@@ -2008,9 +2029,12 @@
                 viewer.style.display = 'block';
 
                 document.getElementById('viewerFileName').textContent = data.name;
+                const videoKindName = videoKind(data.name);
                 document.getElementById('viewerFileMeta').textContent = data.lfs
                     ? `Git LFS · ${formatBytes(data.lfs.size)}`
-                    : `${data.lines} lines · ${formatBytes(data.size)}`;
+                    : videoKindName
+                        ? formatBytes(data.size)
+                        : `${data.lines} lines · ${formatBytes(data.size)}`;
 
                 // Git LFS pointer: show the object, not the 3-line pointer text.
                 const lfsCard = document.getElementById('lfsCard');
@@ -2037,6 +2061,15 @@
                     return;
                 }
                 disposeModel();
+
+                // Browser-playable video (and a note for containers the browser can't decode).
+                const canPlayVideo = videoKindName && (!data.lfs || data.lfs.state === 'ready');
+                if (canPlayVideo) {
+                    document.getElementById('fileContentCode').style.display = 'none';
+                    document.getElementById('fileContentPreview').style.display = 'none';
+                    showVideo(data, videoKindName);
+                    return;
+                }
 
                 // Fill line numbers and code
                 document.getElementById('fileLineNumbers').innerHTML = data.is_binary ? '' : Array.from({ length: data.lines }, (_, i) => i + 1).join('<br>');
@@ -2077,6 +2110,7 @@
 
         function closeFileViewer() {
             disposeModel();
+            stopVideo();
             document.getElementById('fileViewerBox').style.display = 'none';
             document.getElementById('fileTreeBox').style.display = 'block';
             activeViewerFile = null;
@@ -2093,6 +2127,62 @@
             if (activeViewerFile) {
                 window.open(`${repoApi()}/raw?path=${encodeURIComponent(activeViewerFile.path)}&ref=${encodeURIComponent(currentBranch)}`, '_blank', 'noopener');
             }
+        }
+
+        // ─── Video player ───────────────────────────────────────────────
+        const PLAYABLE_VIDEO_RE = /\.(mp4|m4v|webm|ogv|mov)$/i;
+        const VIDEO_FILE_RE = /\.(mp4|m4v|webm|ogv|mov|mkv|avi|mpeg|mpg|wmv|flv|3gp)$/i;
+
+        function videoKind(name) {
+            if (PLAYABLE_VIDEO_RE.test(name)) return 'playable';
+            if (VIDEO_FILE_RE.test(name)) return 'unsupported';
+            return null;
+        }
+
+        function videoSourceUrl(file) {
+            if (file.lfs) {
+                // proxy=1 keeps the bytes same-origin (session cookie + Range). inline=1 sets a video Content-Type.
+                return `${file.lfs.download_url}${file.lfs.download_url.includes('?') ? '&' : '?'}proxy=1&inline=1`;
+            }
+            return `${repoApi()}/raw?path=${encodeURIComponent(file.path)}&ref=${encodeURIComponent(currentBranch)}`;
+        }
+
+        function stopVideo() {
+            const video = document.getElementById('mediaVideo');
+            const player = document.getElementById('mediaPlayer');
+            const note = document.getElementById('mediaPlayerNote');
+            const copy = document.getElementById('btnCopyViewer');
+            if (video) {
+                video.onerror = null;
+                video.pause();
+                video.removeAttribute('src');
+                video.load();
+                video.style.display = '';
+            }
+            if (note) note.style.display = 'none';
+            if (player) player.style.display = 'none';
+            if (copy) copy.style.display = '';
+        }
+
+        function showVideo(file, kind) {
+            const player = document.getElementById('mediaPlayer');
+            const video = document.getElementById('mediaVideo');
+            const note = document.getElementById('mediaPlayerNote');
+            player.style.display = 'block';
+            document.getElementById('btnCopyViewer').style.display = 'none';
+            if (kind !== 'playable') {
+                video.style.display = 'none';
+                note.style.display = 'block';
+                note.textContent = "Browsers can't play this format. Use Download or Raw to open the file.";
+                return;
+            }
+            video.style.display = 'block';
+            note.style.display = 'none';
+            video.onerror = () => {
+                note.textContent = "Couldn't play this video. Use Download or Raw to open the file.";
+                note.style.display = 'block';
+            };
+            video.src = videoSourceUrl(file);
         }
 
         // ─── 3D Model Viewer (three.js, loaded on demand) ───────────────

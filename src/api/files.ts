@@ -2,6 +2,8 @@ import { Hono } from 'hono';
 import type { Env } from '../env.ts';
 import type { RepoVariables } from '../middleware/repo-access.ts';
 import { getArtifactBlob, getArtifactRefs, getArtifactRawFile, getArtifactTree } from '../lib/artifact-reader.ts';
+import { parseLfsPointer } from '../lib/lfs.ts';
+import { byteRangeResponse, contentDisposition, fileExtension, videoContentType } from '../lib/media.ts';
 import { publicOrigin } from './lfs.ts';
 
 // All routes run behind repoAccess (src/index.ts), which 404s unknown repos
@@ -22,19 +24,6 @@ const INLINE_IMAGE_TYPES: Record<string, string> = {
 
 /** Extensions a browser could render as an active document — always downloaded, never displayed. */
 const FORCE_DOWNLOAD_EXTENSIONS = new Set(['html', 'htm', 'xhtml', 'xht', 'shtml', 'svg', 'svgz', 'xml', 'xsl', 'mht', 'mhtml']);
-
-function fileExtension(path: string): string {
-  const name = path.split('/').pop() ?? '';
-  const dot = name.lastIndexOf('.');
-  return dot > 0 ? name.slice(dot + 1).toLowerCase() : '';
-}
-
-/** RFC 6266 `Content-Disposition` with an ASCII fallback and a UTF-8 filename*. */
-function contentDisposition(type: 'inline' | 'attachment', path: string): string {
-  const name = path.split('/').pop() || 'file';
-  const ascii = name.replace(/[^\x20-\x7e]|["\\]/g, '_');
-  return `${type}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
-}
 
 /**
  * GET /:repo/branches
@@ -113,8 +102,10 @@ app.get('/:repo/blob', async (c) => {
  * GET /:repo/raw
  * Serve raw file contents. Repo content is attacker-controlled, so it must
  * never execute on this origin: everything is text/plain except allowlisted
- * raster images, sniffing is off, the response is CSP-sandboxed, and
- * HTML/SVG-like files are forced to download.
+ * raster images and browser-playable video, sniffing is off, the response is
+ * CSP-sandboxed, and HTML/SVG-like files are forced to download.
+ * Video responses honor Range so the dashboard player can seek. An LFS
+ * pointer that happens to be named .mp4 stays text — the bytes live in R2.
  */
 app.get('/:repo/raw', async (c) => {
   const repo = c.get('repoRecord');
@@ -126,6 +117,31 @@ app.get('/:repo/raw', async (c) => {
   if (!file) return c.text('Not Found', 404);
 
   const ext = fileExtension(filePath);
+  const videoType = videoContentType(filePath);
+  if (videoType) {
+    // Git blobs are at most 32 MB, so buffering for Range is bounded.
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    if (!parseLfsPointer(bytes)) {
+      return byteRangeResponse(bytes, c.req.raw, {
+        contentType: videoType,
+        filename: filePath,
+        disposition: 'inline',
+        cacheControl: 'private, max-age=60, no-transform',
+        sandbox: true,
+      });
+    }
+    return new Response(bytes, {
+      headers: {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Content-Disposition': contentDisposition('inline', filePath),
+        'X-Content-Type-Options': 'nosniff',
+        'Content-Security-Policy': "sandbox; default-src 'none'",
+        'Cross-Origin-Resource-Policy': 'same-origin',
+        'Cache-Control': 'private, max-age=60',
+      },
+    });
+  }
+
   const imageType = INLINE_IMAGE_TYPES[ext];
   const forceDownload = FORCE_DOWNLOAD_EXTENSIONS.has(ext);
 

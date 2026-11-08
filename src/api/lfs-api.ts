@@ -7,6 +7,8 @@
  *   GET  /:repo/lfs                 stats, policy, tracked patterns, endpoint
  *   GET  /:repo/lfs/objects         paginated object list
  *   GET  /:repo/lfs/objects/:oid    download (302 to presigned R2 URL, or stream)
+ *                                   ?proxy=1 streams through the Worker
+ *                                   ?inline=1 + a video filename serves it for playback (Range, video Content-Type)
  *   POST /:repo/lfs/token           mint a short-lived LFS bearer token
  */
 import { Hono } from 'hono';
@@ -16,6 +18,7 @@ import { getArtifactFileContent } from '../lib/artifact-reader.ts';
 import { isValidOid, lfsObjectKey, lfsTrackedPatterns } from '../lib/lfs.ts';
 import { lfsRepoStats } from '../lib/lfs-storage.ts';
 import { mintLfsToken } from '../lib/lfs-token.ts';
+import { mediaHeaders, parseByteRange, videoContentType } from '../lib/media.ts';
 import { presignConfig, presignDownload } from '../lib/r2-presign.ts';
 import { lfsDocsUrl, lfsMaxObjectBytes, lfsTransferMode, lfsUrlTtlSeconds, publicOrigin } from './lfs.ts';
 
@@ -65,29 +68,77 @@ app.get('/:repo/lfs/objects/:oid', async (c) => {
 	if (!isValidOid(oid)) return c.json({ error: 'oid must be a lowercase hex sha256' }, 400);
 	const filename = (c.req.query('filename') || oid).split('/').pop() || oid;
 	const key = lfsObjectKey(repo.id, oid);
+	// inline=1 only changes the response for allowlisted video extensions.
+	const videoType = c.req.query('inline') === '1' ? videoContentType(filename) : null;
 
-	// ?proxy=1 streams through the Worker even in presigned mode: the dashboard's 3D viewer
-	// needs same-origin bytes (a cross-origin redirect to R2 would need bucket CORS).
+	// ?proxy=1 streams through the Worker even in presigned mode: the dashboard's
+	// 3D viewer and video player need same-origin bytes (and Range, for video).
 	const presign = c.req.query('proxy') === '1' ? null : presignConfig(c.env);
 	if (presign) {
 		const head = await c.env.STORAGE.head(key);
 		if (!head) return c.json({ error: 'Object not found' }, 404);
-		return c.redirect(await presignDownload(presign, key, lfsUrlTtlSeconds(c.env), filename), 302);
+		const url = await presignDownload(
+			presign,
+			key,
+			lfsUrlTtlSeconds(c.env),
+			filename,
+			videoType ? { disposition: 'inline', contentType: videoType } : undefined
+		);
+		return c.redirect(url, 302);
 	}
-	const object = await c.env.STORAGE.get(key);
-	if (!object) return c.json({ error: 'Object not found' }, 404);
-	const ascii = filename.replace(/[^\x20-\x7e]|["\\]/g, '_');
-	return new Response(object.body, {
-		status: 200,
-		headers: {
-			'Content-Type': 'application/octet-stream',
-			'Content-Length': String(object.size),
-			'Content-Disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
-			'X-Content-Type-Options': 'nosniff',
-			'Cache-Control': 'private, no-transform',
-		},
-	});
+	return streamStoredObject(c.env.STORAGE, key, c.req.raw, filename, videoType);
 });
+
+/** Stream an R2 object. A Range header returns 206 so a <video> element can seek without pulling the whole file. */
+async function streamStoredObject(
+	bucket: Env['STORAGE'],
+	key: string,
+	request: Request,
+	filename: string,
+	videoType: string | null
+): Promise<Response> {
+	const headersFor = (extra?: Record<string, string>) => {
+		const headers = videoType
+			? mediaHeaders({
+					contentType: videoType,
+					filename,
+					disposition: 'inline',
+					cacheControl: 'private, no-transform',
+					sandbox: true,
+				})
+			: mediaHeaders({
+					contentType: 'application/octet-stream',
+					filename,
+					disposition: 'attachment',
+					cacheControl: 'private, no-transform',
+				});
+		if (extra) for (const [name, value] of Object.entries(extra)) headers.set(name, value);
+		return headers;
+	};
+
+	const rangeHeader = request.headers.get('Range');
+	if (!rangeHeader) {
+		const object = await bucket.get(key);
+		if (!object) return new Response(JSON.stringify({ error: 'Object not found' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
+		const headers = headersFor();
+		headers.set('Content-Length', String(object.size));
+		return new Response(object.body, { status: 200, headers });
+	}
+
+	const head = await bucket.head(key);
+	if (!head) return new Response(JSON.stringify({ error: 'Object not found' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
+	const range = parseByteRange(rangeHeader, head.size);
+	if (range === 'invalid' || !range) {
+		return new Response(null, { status: 416, headers: headersFor({ 'Content-Range': `bytes */${head.size}` }) });
+	}
+	const object = await bucket.get(key, { range: { offset: range.start, length: range.end - range.start + 1 } });
+	if (!object) return new Response(JSON.stringify({ error: 'Object not found' }), { status: 404, headers: { 'Content-Type': 'application/json' } });
+	const headers = headersFor({
+		'Content-Length': String(range.end - range.start + 1),
+		'Content-Range': `bytes ${range.start}-${range.end}/${head.size}`,
+	});
+	return new Response(object.body, { status: 206, headers });
+}
 
 /**
  * Mint a bearer token for scripts that need LFS without an API key (same
