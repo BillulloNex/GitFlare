@@ -612,6 +612,50 @@
         .markdown-body hr { border: none; border-top: 1px dashed var(--border-default); margin: 24px 0; }
         .markdown-body blockquote { border-left: 2px solid var(--accent-flare); padding-left: 14px; color: var(--text-secondary); margin-bottom: 14px; }
 
+        /* ─── Ideas ──────────────────────────────────────────────── */
+        .idea-capture { padding: 12px 14px; margin-bottom: 16px; }
+        .idea-capture-row { display: flex; gap: 8px; align-items: center; }
+        .idea-capture input { flex: 1; height: 36px; background: transparent; border: 0; outline: none; color: var(--text-primary); font: 500 var(--text-base)/1 var(--font-sans); }
+        .idea-capture input::placeholder { color: var(--text-muted); }
+        .idea-capture textarea, .idea-note-box textarea, .idea-body-edit textarea {
+            width: 100%; min-height: 84px; margin-top: 10px; resize: vertical;
+            background: var(--bg-canvas); border: 1px solid var(--border-default); border-radius: var(--radius-sm);
+            padding: 10px 12px; color: var(--text-primary); font: 400 var(--text-sm)/1.6 var(--font-sans);
+        }
+        .idea-capture textarea:focus, .idea-note-box textarea:focus, .idea-body-edit textarea:focus { outline: none; border-color: var(--accent-ring); }
+        .idea-capture-hint { font-size: var(--text-xs); color: var(--text-muted); margin-top: 8px; display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+        .idea-row { padding: 14px 16px; border-bottom: 1px solid var(--border-muted); display: flex; gap: 12px; align-items: flex-start; cursor: pointer; transition: background 0.15s; }
+        .idea-row:last-child { border-bottom: none; }
+        .idea-row:hover { background: var(--bg-muted); }
+        .idea-row-main { flex: 1; min-width: 0; }
+        .idea-row-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 3px; }
+        .idea-row-snippet { font-size: var(--text-xs); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 4px; }
+        .idea-meta { font-size: var(--text-xs); color: var(--text-muted); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+        .idea-meta strong { color: var(--text-secondary); font-weight: 500; }
+        .badge-dropped { color: var(--text-muted); text-decoration: line-through; }
+        .idea-head { padding: 20px 24px; margin-bottom: 16px; }
+        .idea-head-top { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+        .idea-title { font-family: var(--font-display); font-size: 24px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.25; cursor: text; outline: none; border-radius: 4px; }
+        .idea-title[contenteditable="true"] { box-shadow: 0 0 0 1px var(--accent-ring); padding: 0 4px; }
+        .idea-head .segmented { margin-top: 14px; }
+        .idea-body { margin-top: 16px; padding-top: 16px; border-top: 1px dashed var(--border-default); }
+        .idea-body .markdown-body { padding: 0; max-width: none; }
+        .idea-body-empty { color: var(--text-muted); font-size: var(--text-sm); }
+        .idea-body-actions { display: flex; gap: 8px; margin-top: 10px; justify-content: flex-end; }
+        .idea-section-title { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin: 24px 0 10px; }
+        .idea-log { position: relative; margin-bottom: 16px; }
+        .idea-log-entry { display: flex; gap: 12px; padding: 0 0 18px; position: relative; }
+        .idea-log-entry::before { content: ''; position: absolute; left: 11px; top: 28px; bottom: 0; width: 1px; background: var(--border-default); }
+        .idea-log-entry:last-child::before { display: none; }
+        .idea-log-card { flex: 1; min-width: 0; padding: 12px 14px; }
+        .idea-log-card .markdown-body { padding: 6px 0 0; max-width: none; font-size: var(--text-sm); }
+        .idea-log-card .markdown-body p { margin-bottom: 8px; }
+        .idea-log-status { flex: 1; font-size: var(--text-xs); color: var(--text-muted); padding-top: 5px; }
+        .idea-log-status .note { color: var(--text-secondary); margin-top: 4px; white-space: pre-wrap; font-size: var(--text-sm); }
+        .idea-log-refs { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+        .idea-note-box { padding: 12px 14px; }
+        .idea-note-box textarea { margin-top: 0; }
+
         /* ─── Commits ────────────────────────────────────────────── */
         .commit-timeline-list { margin-bottom: 24px; }
         .commit-row {
@@ -1171,6 +1215,8 @@
         <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/></symbol>
         <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
         <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></symbol>
+        <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></symbol>
+        <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></symbol>
         <symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="M12 5v14"/></symbol>
         <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></symbol>
         <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
@@ -1283,6 +1329,11 @@
                             <svg class="i" aria-hidden="true"><use href="#i-commit"/></svg>
                             Commits
                             <span class="tab-badge" id="commitsCountBadge" style="display:none;"></span>
+                        </button>
+                        <button class="nav-tab" id="tab-btn-ideas" role="tab" aria-selected="false" onclick="switchMainTab('ideas')">
+                            <svg class="i" aria-hidden="true"><use href="#i-bulb"/></svg>
+                            Ideas
+                            <span class="tab-badge" id="ideasCountBadge" style="display:none;"></span>
                         </button>
                         <button class="nav-tab" id="tab-btn-ci" role="tab" aria-selected="false" onclick="switchMainTab('ci')">
                             <svg class="i" aria-hidden="true"><use href="#i-play"/></svg>
@@ -1432,6 +1483,45 @@
                         </button>
                         <div class="card diff-header-card" id="commitDetailHeader"></div>
                         <div id="commitDiffsList"></div>
+                    </div>
+                </div>
+
+                <!-- TAB: IDEAS -->
+                <div id="view-ideas" style="display:none;">
+                    <div id="ideasListMode">
+                        <div class="page-head">
+                            <div class="page-head-left">
+                                <div class="page-title">Ideas</div>
+                                <div class="segmented" id="ideaFilter" role="group" aria-label="Filter ideas">
+                                    <button class="is-active" data-filter="" data-action="idea-filter">All</button>
+                                    <button data-filter="open" data-action="idea-filter">Open</button>
+                                    <button data-filter="exploring" data-action="idea-filter">Exploring</button>
+                                    <button data-filter="done" data-action="idea-filter">Done</button>
+                                    <button data-filter="dropped" data-action="idea-filter">Dropped</button>
+                                </div>
+                            </div>
+                            <button class="btn btn-sm btn-icon" onclick="fetchIdeas()" aria-label="Refresh ideas">
+                                <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-refresh"/></svg>
+                            </button>
+                        </div>
+                        <div class="card idea-capture">
+                            <div class="idea-capture-row">
+                                <svg class="i" width="16" height="16" aria-hidden="true" style="color:var(--accent-flare)"><use href="#i-bulb"/></svg>
+                                <input id="ideaTitleInput" type="text" maxlength="200" placeholder="Got an idea? Write it down…" autocomplete="off" aria-label="New idea title">
+                                <button class="btn btn-sm btn-ghost" id="ideaDetailsToggle" onclick="toggleIdeaDetails()">Add details</button>
+                                <button class="btn btn-sm btn-primary" onclick="submitIdea()">Save</button>
+                            </div>
+                            <textarea id="ideaBodyInput" style="display:none;" placeholder="Why it matters, what to try, how you'd know it worked… (markdown)"></textarea>
+                            <div class="idea-capture-hint" id="ideaCaptureHint" style="display:none;"><span>Enter to save · ⌘/Ctrl+Enter from details</span></div>
+                        </div>
+                        <div id="ideasContainer"></div>
+                    </div>
+
+                    <div id="ideaDetailMode" style="display:none;">
+                        <button class="back-link" onclick="exitIdeaDetail()">
+                            <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-arrow-left"/></svg> All ideas
+                        </button>
+                        <div id="ideaDetail"></div>
                     </div>
                 </div>
 
@@ -1930,6 +2020,7 @@
             document.getElementById('currentBranchName').textContent = currentBranch;
             setCountBadge('commitsCountBadge', null);
             setCountBadge('runsCountBadge', null);
+            setCountBadge('ideasCountBadge', null);
             exitCommitDetail();
             exitRunDetail();
 
@@ -1972,6 +2063,7 @@
             if (!activeRepo) return;
             if (currentTab === 'code') loadTree('');
             else if (currentTab === 'commits') fetchCommits();
+            else if (currentTab === 'ideas') { exitIdeaDetail(); fetchIdeas(); }
             else if (currentTab === 'ci') fetchCIRuns();
             else if (currentTab === 'deploys') fetchDeployTargets();
             else if (currentTab === 'cad') fetchOnshape();
@@ -2044,7 +2136,7 @@
         function switchMainTab(tab) {
             closeSecrets();
             currentTab = tab;
-            ['code', 'commits', 'ci', 'deploys', 'cad'].forEach(t => {
+            ['code', 'commits', 'ideas', 'ci', 'deploys', 'cad'].forEach(t => {
                 const btn = document.getElementById(`tab-btn-${t}`);
                 const view = document.getElementById(`view-${t}`);
                 if (btn) {
@@ -2058,6 +2150,7 @@
             if (!activeRepo) return;
             if (tab === 'code') loadTree();
             else if (tab === 'commits') fetchCommits();
+            else if (tab === 'ideas') { exitIdeaDetail(); fetchIdeas(); }
             else if (tab === 'ci') fetchCIRuns();
             else if (tab === 'deploys') fetchDeployTargets();
             else if (tab === 'cad') fetchOnshape();
@@ -3700,6 +3793,287 @@
             openRunDetail(runId);
         }
 
+
+        // ─── Ideas ──────────────────────────────────────────────────────
+        const IDEA_STATUSES = ['open', 'exploring', 'done', 'dropped'];
+        let ideaFilter = '';
+        let activeIdea = null;
+
+        function ideaBadge(status) {
+            const cls = { open: 'badge-queued', exploring: 'badge-running', done: 'badge-success', dropped: 'badge-dropped' }[status] || 'badge-queued';
+            const ic = { open: 'circle', exploring: 'loader', done: 'check', dropped: 'ban' }[status] || 'circle';
+            return `<span class="badge ${cls}">${icon(ic, 12)} ${esc(status)}</span>`;
+        }
+
+        function ideaUrl(id = '') {
+            return `${repoApi()}/ideas${id ? '/' + encodeURIComponent(id) : ''}`;
+        }
+
+        function toggleIdeaDetails(force) {
+            const ta = document.getElementById('ideaBodyInput');
+            const show = force ?? ta.style.display === 'none';
+            ta.style.display = show ? '' : 'none';
+            document.getElementById('ideaCaptureHint').style.display = show ? '' : 'none';
+            document.getElementById('ideaDetailsToggle').textContent = show ? 'Hide details' : 'Add details';
+            if (show) ta.focus();
+        }
+
+        function filterIdeas(status) {
+            ideaFilter = status;
+            document.querySelectorAll('#ideaFilter button').forEach(b => b.classList.toggle('is-active', (b.dataset.filter || '') === status));
+            fetchIdeas();
+        }
+
+        async function fetchIdeas() {
+            const container = document.getElementById('ideasContainer');
+            container.innerHTML = `<div class="card">${skeletonList(4)}</div>`;
+            const repoAtStart = activeRepo;
+            try {
+                const q = ideaFilter ? `?status=${encodeURIComponent(ideaFilter)}` : '';
+                const res = await apiFetch(`${ideaUrl()}${q}`, { headers: authHeaders() });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const { data } = await res.json();
+                if (activeRepo !== repoAtStart) return;
+                const list = Array.isArray(data) ? data : [];
+                if (!ideaFilter) setCountBadge('ideasCountBadge', list.filter(i => i.status === 'open' || i.status === 'exploring').length || null);
+                if (!list.length) {
+                    const msg = ideaFilter ? `No ${esc(ideaFilter)} ideas.` : '<strong>No ideas yet.</strong> Write the first one above.';
+                    container.innerHTML = `<div class="card">${emptyState(msg, { iconName: 'bulb' })}</div>`;
+                    return;
+                }
+                container.innerHTML = `<div class="card">${list.map(i => {
+                    const snippet = (i.body || '').replace(/[#*`>\-]/g, '').replace(/\s+/g, ' ').trim();
+                    const notes = i.log_count ? `<span>·</span><span>${i.log_count} note${i.log_count === 1 ? '' : 's'}</span>` : '';
+                    return `<div class="idea-row" data-action="open-idea" data-id="${esc(i.id)}" role="button" tabindex="0">
+                        <div class="idea-row-main">
+                            <div class="idea-row-title">${esc(i.title)}</div>
+                            ${snippet ? `<div class="idea-row-snippet">${esc(snippet.slice(0, 180))}</div>` : ''}
+                            <div class="idea-meta"><strong>${esc(i.created_by)}</strong>${notes}<span>·</span><span>updated ${esc(timeAgo(i.updated_at))}</span></div>
+                        </div>
+                        ${ideaBadge(i.status)}
+                    </div>`;
+                }).join('')}</div>`;
+            } catch (e) {
+                container.innerHTML = `<div class="card">${emptyState('Failed to load ideas.', { error: true })}</div>`;
+            }
+        }
+
+        async function submitIdea() {
+            const titleEl = document.getElementById('ideaTitleInput');
+            const bodyEl = document.getElementById('ideaBodyInput');
+            const title = titleEl.value.trim();
+            if (!title) { titleEl.focus(); return; }
+            titleEl.disabled = true;
+            try {
+                const res = await apiFetch(ideaUrl(), { method: 'POST', headers: authHeaders(), body: JSON.stringify({ title, body: bodyEl.value }) });
+                const json = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+                titleEl.value = '';
+                bodyEl.value = '';
+                toggleIdeaDetails(false);
+                toast('Idea saved', 'success');
+                fetchIdeas();
+            } catch (e) {
+                toast(`Couldn't save idea: ${e.message}`, 'error');
+            } finally {
+                titleEl.disabled = false;
+                titleEl.focus();
+            }
+        }
+
+        document.getElementById('ideaTitleInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); submitIdea(); }
+        });
+        document.getElementById('ideaBodyInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submitIdea(); }
+        });
+
+        function exitIdeaDetail() {
+            activeIdea = null;
+            document.getElementById('ideaDetailMode').style.display = 'none';
+            document.getElementById('ideasListMode').style.display = 'block';
+        }
+
+        async function openIdea(id) {
+            document.getElementById('ideasListMode').style.display = 'none';
+            document.getElementById('ideaDetailMode').style.display = 'block';
+            const host = document.getElementById('ideaDetail');
+            host.innerHTML = `<div class="card">${skeletonList(3)}</div>`;
+            try {
+                const res = await apiFetch(ideaUrl(id), { headers: authHeaders() });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                activeIdea = (await res.json()).data;
+                renderIdeaDetail();
+            } catch (e) {
+                host.innerHTML = `<div class="card">${emptyState('Failed to load idea.', { error: true })}</div>`;
+            }
+        }
+
+        function renderIdeaLogEntry(l) {
+            if (l.kind === 'status') {
+                const [line, ...rest] = String(l.text).split('\n\n');
+                const note = rest.join('\n\n');
+                return `<div class="idea-log-entry">
+                    <div class="avatar-circle">${icon('refresh', 12)}</div>
+                    <div class="idea-log-status"><strong style="color:var(--text-secondary)">${esc(l.author)}</strong> · ${esc(line.replace(/^Status: /, 'moved '))} · ${esc(timeAgo(l.created_at))}
+                        ${note ? `<div class="note">${esc(note)}</div>` : ''}</div>
+                </div>`;
+            }
+            const refs = l.refs || {};
+            const pills = [
+                ...(refs.commits || []).map(sha => `<span class="sha-pill" role="button" tabindex="0" data-action="idea-open-commit" data-sha="${esc(sha)}" title="Open commit">${icon('commit', 12)}${esc(shortSha(sha))}</span>`),
+                refs.branch ? `<span class="badge">${icon('branch', 12)} ${esc(refs.branch)}</span>` : '',
+                refs.ci_run_id ? `<span class="sha-pill" role="button" tabindex="0" data-action="jump-ci-run" data-run-id="${esc(refs.ci_run_id)}">${icon('play', 12)} CI run</span>` : '',
+            ].filter(Boolean).join('');
+            return `<div class="idea-log-entry">
+                <div class="avatar-circle">${esc(initials(l.author))}</div>
+                <div class="card idea-log-card">
+                    <div class="idea-meta"><strong>${esc(l.author)}</strong><span>·</span><span>${esc(timeAgo(l.created_at))}</span></div>
+                    <div class="markdown-body">${renderSimpleMarkdown(l.text)}</div>
+                    ${pills ? `<div class="idea-log-refs">${pills}</div>` : ''}
+                </div>
+            </div>`;
+        }
+
+        function renderIdeaDetail() {
+            const i = activeIdea;
+            if (!i) return;
+            const host = document.getElementById('ideaDetail');
+            const statusButtons = IDEA_STATUSES.map(s =>
+                `<button class="${s === i.status ? 'is-active' : ''}" data-action="idea-status" data-status="${s}">${esc(s[0].toUpperCase() + s.slice(1))}</button>`).join('');
+            const logs = i.logs || [];
+            host.innerHTML = `
+                <div class="card idea-head">
+                    <div class="idea-head-top">
+                        <div style="min-width:0; flex:1;">
+                            <div class="idea-title" id="ideaTitle" data-action="idea-edit-title" title="Click to edit">${esc(i.title)}</div>
+                            <div class="idea-meta" style="margin-top:6px;">${ideaBadge(i.status)}<span>by <strong>${esc(i.created_by)}</strong></span><span>·</span><span>${esc(timeAgo(i.created_at))}</span></div>
+                        </div>
+                        <button class="btn btn-sm btn-ghost btn-danger" data-action="idea-delete">${icon('trash', 14)} Delete</button>
+                    </div>
+                    <div class="segmented" role="group" aria-label="Status">${statusButtons}</div>
+                    <div class="idea-body" id="ideaBody">
+                        ${i.body ? `<div class="markdown-body">${renderSimpleMarkdown(i.body)}</div>` : `<div class="idea-body-empty">No details yet.</div>`}
+                        <div class="idea-body-actions"><button class="btn btn-sm" data-action="idea-edit-body">Edit details</button></div>
+                    </div>
+                </div>
+                <div class="idea-section-title">Work log${logs.length ? ` · ${logs.length}` : ''}</div>
+                <div class="idea-log">${logs.length ? logs.map(renderIdeaLogEntry).join('') : `<div class="idea-body-empty" style="margin-bottom:12px;">Nothing logged yet. Add what you tried, what happened, and what's next.</div>`}</div>
+                <div class="card idea-note-box">
+                    <textarea id="ideaNoteInput" placeholder="Log progress: what you tried, what happened, what's next… (markdown)"></textarea>
+                    <div class="idea-capture-hint"><span>⌘/Ctrl+Enter to add</span><button class="btn btn-sm btn-primary" data-action="idea-add-note">${icon('plus', 12)} Add note</button></div>
+                </div>`;
+            document.getElementById('ideaNoteInput').addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addIdeaNote(); }
+            });
+        }
+
+        async function patchIdea(changes) {
+            const res = await apiFetch(ideaUrl(activeIdea.id), { method: 'PATCH', headers: authHeaders(), body: JSON.stringify(changes) });
+            const json = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+            return json.data;
+        }
+
+        async function setIdeaStatus(status) {
+            if (!activeIdea || status === activeIdea.status) return;
+            let note = null;
+            if (status === 'done' || status === 'dropped') {
+                note = prompt(status === 'done' ? 'What came of it? (optional)' : 'Why drop it? (optional)', '');
+                if (note === null) return; // cancelled
+            }
+            try {
+                await patchIdea({ status, note: note || undefined });
+                await openIdea(activeIdea.id);
+            } catch (e) {
+                toast(`Couldn't change status: ${e.message}`, 'error');
+            }
+        }
+
+        function editIdeaTitle() {
+            const el = document.getElementById('ideaTitle');
+            if (!el || el.isContentEditable) return;
+            el.contentEditable = 'true';
+            el.focus();
+            document.getSelection()?.selectAllChildren(el);
+            const finish = async (save) => {
+                el.contentEditable = 'false';
+                el.removeEventListener('keydown', onKey);
+                el.removeEventListener('blur', onBlur);
+                const title = el.textContent.trim();
+                if (!save || !title || title === activeIdea.title) { el.textContent = activeIdea.title; return; }
+                try {
+                    activeIdea = { ...activeIdea, ...(await patchIdea({ title })) };
+                    renderIdeaDetail();
+                } catch (e) {
+                    el.textContent = activeIdea.title;
+                    toast(`Couldn't rename: ${e.message}`, 'error');
+                }
+            };
+            const onKey = (e) => {
+                if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+                else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+            };
+            const onBlur = () => finish(true);
+            el.addEventListener('keydown', onKey);
+            el.addEventListener('blur', onBlur);
+        }
+
+        function editIdeaBody() {
+            const host = document.getElementById('ideaBody');
+            host.innerHTML = `<div class="idea-body-edit"><textarea id="ideaBodyEdit" style="min-height:180px; margin-top:0;"></textarea></div>
+                <div class="idea-body-actions"><button class="btn btn-sm" data-action="idea-cancel-body">Cancel</button><button class="btn btn-sm btn-primary" data-action="idea-save-body">Save</button></div>`;
+            const ta = document.getElementById('ideaBodyEdit');
+            ta.value = activeIdea.body || '';
+            ta.focus();
+            ta.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); saveIdeaBody(); }
+                else if (e.key === 'Escape') renderIdeaDetail();
+            });
+        }
+
+        async function saveIdeaBody() {
+            const ta = document.getElementById('ideaBodyEdit');
+            if (!ta) return;
+            try {
+                activeIdea = { ...activeIdea, ...(await patchIdea({ body: ta.value })) };
+                renderIdeaDetail();
+            } catch (e) {
+                toast(`Couldn't save: ${e.message}`, 'error');
+            }
+        }
+
+        async function addIdeaNote() {
+            const ta = document.getElementById('ideaNoteInput');
+            const text = ta?.value.trim();
+            if (!text) { ta?.focus(); return; }
+            ta.disabled = true;
+            try {
+                const res = await apiFetch(`${ideaUrl(activeIdea.id)}/log`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ text }) });
+                const json = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+                await openIdea(activeIdea.id);
+                document.getElementById('ideaNoteInput')?.focus();
+            } catch (e) {
+                ta.disabled = false;
+                toast(`Couldn't add note: ${e.message}`, 'error');
+            }
+        }
+
+        async function deleteIdea() {
+            if (!activeIdea) return;
+            if (!confirm(`Delete "${activeIdea.title}" and its work log?\n\nIf it just didn't work out, mark it Dropped instead so the record stays.`)) return;
+            try {
+                const res = await apiFetch(ideaUrl(activeIdea.id), { method: 'DELETE', headers: authHeaders() });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                toast('Idea deleted', 'success');
+                exitIdeaDetail();
+                fetchIdeas();
+            } catch (e) {
+                toast(`Couldn't delete: ${e.message}`, 'error');
+            }
+        }
+
         // ─── Feature 4: Deployments ─────────────────────────────────────
         function shortSha(sha) { return sha ? String(sha).slice(0, 7) : ''; }
 
@@ -3924,6 +4298,37 @@
             if (!el) return;
             const d = el.dataset;
             switch (d.action) {
+                case 'idea-filter':
+                    filterIdeas(d.filter || '');
+                    break;
+                case 'open-idea':
+                    openIdea(d.id);
+                    break;
+                case 'idea-status':
+                    setIdeaStatus(d.status);
+                    break;
+                case 'idea-edit-body':
+                    editIdeaBody();
+                    break;
+                case 'idea-save-body':
+                    saveIdeaBody();
+                    break;
+                case 'idea-cancel-body':
+                    renderIdeaDetail();
+                    break;
+                case 'idea-edit-title':
+                    editIdeaTitle();
+                    break;
+                case 'idea-add-note':
+                    addIdeaNote();
+                    break;
+                case 'idea-delete':
+                    deleteIdea();
+                    break;
+                case 'idea-open-commit':
+                    switchMainTab('commits');
+                    openCommitDetail(d.sha);
+                    break;
                 case 'load-tree':
                     loadTree(d.path || '');
                     break;

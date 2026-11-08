@@ -20,6 +20,7 @@ import bootstrapApp from './api/bootstrap.ts';
 import internalCi, { deployCallbackApp } from './api/internal-ci.ts';
 import internalMerge from './api/internal-merge.ts';
 import ticketsApp from './api/tickets.ts';
+import ideasApp from './api/ideas.ts';
 import authApp from './api/auth.ts';
 import keysApp from './api/keys.ts';
 import secretsApp from './api/secrets.ts';
@@ -176,6 +177,9 @@ app.route('/api/repos', onshapeApp);
 
 // Tickets & Merge Queue: /api/repos/:repo/tickets/*
 app.route('/api/repos', ticketsApp);
+
+// Ideas + work log: /api/repos/:repo/ideas/*
+app.route('/api/repos', ideasApp);
 
 // Repo CRUD: /api/repos
 app.route('/api/repos', reposApp);
