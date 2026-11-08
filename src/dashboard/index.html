@@ -919,23 +919,21 @@
         .onshape-search input:focus { outline: none; border-color: var(--accent-flare); box-shadow: 0 0 0 3px var(--accent-soft); }
         .onshape-picker-count { font-size: var(--text-xs); color: var(--text-muted); white-space: nowrap; }
 
-        .onshape-doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px;
-            max-height: 380px; overflow-y: auto; padding: 2px; }
-        .onshape-doc-card { position: relative; border: 1px solid var(--border-default); border-radius: var(--radius-md);
-            overflow: hidden; background: var(--bg-canvas); cursor: pointer; transition: border-color .12s ease, box-shadow .12s ease; }
-        .onshape-doc-card:hover { border-color: var(--border-strong); }
-        .onshape-doc-card.is-selected { border-color: var(--accent-flare); box-shadow: 0 0 0 3px var(--accent-soft); }
-        .onshape-doc-thumb { position: relative; aspect-ratio: 16 / 10; background: var(--bg-muted); display: grid; place-items: center; color: var(--text-faint); }
-        .onshape-doc-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-        .onshape-doc-thumb .onshape-doc-initials { font-family: var(--font-display); font-weight: 700; font-size: 22px; letter-spacing: -0.02em; }
-        .onshape-doc-title { position: absolute; left: 0; right: 0; bottom: 0; padding: 22px 10px 8px;
-            background: linear-gradient(to top, rgba(10, 10, 9, 0.92), rgba(10, 10, 9, 0));
-            color: var(--text-primary); font-weight: 600; font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .onshape-doc-body { padding: 8px 12px 10px; }
-        .onshape-doc-owner { font-size: var(--text-xs); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-        .onshape-doc-check { position: absolute; top: 8px; right: 8px; width: 20px; height: 20px; border-radius: 50%;
+        .onshape-doc-list { display: grid; gap: 8px; max-height: 380px; overflow-y: auto; padding: 2px; }
+        .onshape-doc-row { position: relative; display: flex; align-items: center; gap: 12px; border: 1px solid var(--border-default);
+            border-radius: var(--radius-md); background: var(--bg-canvas); padding: 8px 12px; cursor: pointer; transition: border-color .12s ease, box-shadow .12s ease; }
+        .onshape-doc-row:hover { border-color: var(--border-strong); }
+        .onshape-doc-row.is-selected { border-color: var(--accent-flare); box-shadow: 0 0 0 3px var(--accent-soft); }
+        .onshape-doc-row-thumb { width: 64px; height: 40px; flex-shrink: 0; border-radius: var(--radius-sm); overflow: hidden;
+            background: var(--bg-muted); display: grid; place-items: center; color: var(--text-faint); }
+        .onshape-doc-row-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .onshape-doc-row-thumb .onshape-doc-initials { font-family: var(--font-display); font-weight: 700; font-size: 15px; letter-spacing: -0.02em; }
+        .onshape-doc-row-body { min-width: 0; flex: 1; }
+        .onshape-doc-row-name { font-weight: 600; font-size: var(--text-sm); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .onshape-doc-row-meta { font-size: var(--text-xs); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+        .onshape-doc-check { width: 20px; height: 20px; flex-shrink: 0; border-radius: 50%;
             background: var(--accent-flare); color: #221203; display: grid; place-items: center; opacity: 0; transform: scale(.6); transition: all .12s ease; }
-        .onshape-doc-card.is-selected .onshape-doc-check { opacity: 1; transform: none; }
+        .onshape-doc-row.is-selected .onshape-doc-check { opacity: 1; transform: none; }
         .onshape-picker-empty { padding: 36px 20px; text-align: center; color: var(--text-muted); font-size: var(--text-sm);
             border: 1px dashed var(--border-default); border-radius: var(--radius-md); }
         .onshape-paste { border: 1px dashed var(--border-default); border-radius: var(--radius-sm); padding: 10px 12px; }
@@ -1637,7 +1635,7 @@
                     </div>
                     <div class="onshape-picker-count" id="onshapePickerCount"></div>
                 </div>
-                <div class="onshape-doc-grid" id="onshapeDocGrid" aria-live="polite"></div>
+                <div class="onshape-doc-list" id="onshapeDocGrid" aria-live="polite"></div>
                 <div class="onshape-picker-empty" id="onshapeDocEmpty" hidden></div>
                 <details class="onshape-paste">
                     <summary>Paste document URLs instead</summary>
@@ -2887,13 +2885,12 @@
                     ? `<img src="${esc(d.thumbnail)}" alt="" loading="lazy">`
                     : `<span class="onshape-doc-initials">${esc(initials(d.name))}</span>`;
                 const sub = d.owner ? esc(d.owner) : (d._existing ? 'Already linked' : 'Onshape');
-                return `<div class="onshape-doc-card${selected ? ' is-selected' : ''}" data-action="onshape-pick" data-id="${esc(d.id)}" role="button" tabindex="0" aria-pressed="${selected}">
-                    <div class="onshape-doc-thumb">
-                        ${thumb}
-                        <div class="onshape-doc-title" title="${esc(d.name)}">${esc(d.name)}</div>
-                    </div>
-                    <div class="onshape-doc-body">
-                        <div class="onshape-doc-owner">${sub}</div>
+                const when = d.modified_at ? ` · ${esc(timeAgo(d.modified_at))}` : '';
+                return `<div class="onshape-doc-row${selected ? ' is-selected' : ''}" data-action="onshape-pick" data-id="${esc(d.id)}" role="button" tabindex="0" aria-pressed="${selected}">
+                    <div class="onshape-doc-row-thumb">${thumb}</div>
+                    <div class="onshape-doc-row-body">
+                        <div class="onshape-doc-row-name" title="${esc(d.name)}">${esc(d.name)}</div>
+                        <div class="onshape-doc-row-meta">${sub}${when}</div>
                     </div>
                     <span class="onshape-doc-check">${icon('check', 12)}</span>
                 </div>`;
@@ -2906,7 +2903,7 @@
             }
             if (onshapePickedIds.has(id)) onshapePickedIds.delete(id);
             else onshapePickedIds.add(id);
-            const card = document.querySelector(`.onshape-doc-card[data-id="${CSS.escape(id)}"]`);
+            const card = document.querySelector(`.onshape-doc-row[data-id="${CSS.escape(id)}"]`);
             if (card) {
                 card.classList.toggle('is-selected', onshapePickedIds.has(id));
                 card.setAttribute('aria-pressed', String(onshapePickedIds.has(id)));
