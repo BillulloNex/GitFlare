@@ -284,6 +284,12 @@ any past time for backfilling). Posts are grouped by day; newest or oldest first
 - HEIC/HEIF photos are converted to JPEG in the browser before upload (Safari
   decodes natively; other browsers lazy-load libheif via `heic-to`, ~3 MB). HEIC
   stored through the API is converted on display in browsers that can't show it.
+- **Record** (desktop) opens an in-page recorder (`getUserMedia` + `MediaRecorder`,
+  MP4 where the browser supports it, else WebM): pick any connected camera and
+  microphone (or no sound), watch the mic level, review or retake, then the clip
+  joins the post like a picked file. The picked devices are remembered per browser
+  by id and name (browsers rotate device ids), and the lists follow devices being
+  plugged in or out.
 - Bytes live in R2 under `diary/<repo_id>/<media_id>/…` and are served with Range
   support. Uploads never attached to a post are deleted by the cron after a day.
 - Access follows the repo: readers see the diary, writers post, and only an

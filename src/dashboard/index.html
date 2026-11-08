@@ -736,6 +736,37 @@
         .diary-edit-actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center; flex-wrap: wrap; }
         .diary-more { display: flex; justify-content: center; margin: 8px 0 24px; }
 
+        .recorder { position: fixed; inset: 0; z-index: 1000; background: rgba(5,5,4,0.88); display: none; align-items: center; justify-content: center; padding: 24px; }
+        .recorder.show { display: flex; }
+        .recorder-panel { width: min(960px, 100%); background: var(--bg-subtle); border: 1px solid var(--border-default); border-radius: var(--radius-md); overflow: hidden; }
+        .recorder-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 16px; border-bottom: 1px solid var(--border-default); }
+        .recorder-title { font-family: var(--font-display); font-weight: 700; font-size: var(--text-md); margin-right: auto; }
+        .recorder-source { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 4px 0 10px; border: 1px solid var(--border-default); border-radius: var(--radius-pill); background: var(--bg-muted); color: var(--text-muted); }
+        .recorder-source:focus-within { border-color: var(--accent-ring); }
+        .recorder-source select { background: transparent; color: var(--text-secondary); border: 0; outline: none; height: 26px; font: 500 var(--text-xs) var(--font-sans); max-width: 220px; text-overflow: ellipsis; }
+        .recorder-source select:disabled { opacity: 0.6; }
+        .recorder-source select option { background: var(--bg-subtle); color: var(--text-primary); }
+        .recorder-level { display: inline-flex; align-items: center; gap: 8px; color: var(--text-muted); justify-self: start; }
+        .recorder-level.is-off { opacity: 0.4; }
+        .recorder-level-bar { width: 120px; height: 6px; border-radius: 3px; background: var(--bg-hover); overflow: hidden; }
+        .recorder-level-bar span { display: block; height: 100%; width: 0; background: var(--success-fg); border-radius: 3px; transition: width 0.06s linear; }
+        @media (max-width: 760px) { .recorder-head { flex-wrap: wrap; } .recorder-title { width: 100%; } }
+        .recorder-stage { position: relative; background: #000; aspect-ratio: 16 / 9; display: flex; align-items: center; justify-content: center; }
+        .recorder-stage video { width: 100%; height: 100%; object-fit: contain; display: block; }
+        #recorderLive.is-mirrored { transform: scaleX(-1); }
+        .recorder-status { position: absolute; color: var(--text-muted); font-size: var(--text-sm); text-align: center; padding: 0 24px; max-width: 520px; }
+        .recorder-status:empty { display: none; }
+        .recorder-timer { position: absolute; top: 12px; left: 12px; display: flex; align-items: center; gap: 8px; background: rgba(0,0,0,0.6); color: #fff; padding: 5px 10px; border-radius: var(--radius-pill); font: 600 var(--text-sm)/1 var(--font-mono); }
+        .recorder-timer .dot { width: 9px; height: 9px; border-radius: 50%; background: #ff3b30; animation: rec-blink 1s steps(2, start) infinite; }
+        @keyframes rec-blink { to { visibility: hidden; } }
+        .recorder-bar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; padding: 12px 16px; }
+        .recorder-main { justify-self: center; grid-column: 2; }
+        .recorder-hint { justify-self: end; grid-column: 3; font-size: var(--text-xs); color: var(--text-muted); }
+        .recorder-review-actions { grid-column: 2 / 4; justify-self: end; display: flex; gap: 8px; }
+        .recorder-shutter { width: 54px; height: 54px; border-radius: 50%; border: 3px solid #fff; background: transparent; display: flex; align-items: center; justify-content: center; cursor: pointer; padding: 0; }
+        .recorder-shutter span { width: 40px; height: 40px; border-radius: 50%; background: #ff3b30; transition: all 0.15s; }
+        .recorder-shutter.is-recording span { width: 20px; height: 20px; border-radius: 4px; }
+        .recorder-shutter:disabled { opacity: 0.4; cursor: default; }
         .lightbox { position: fixed; inset: 0; z-index: 1000; background: rgba(5,5,4,0.94); display: none; align-items: center; justify-content: center; }
         .lightbox.show { display: flex; }
         .lightbox img { max-width: calc(100vw - 120px); max-height: calc(100vh - 100px); object-fit: contain; border-radius: 4px; }
@@ -1337,6 +1368,8 @@
         <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M21.17 6.81a2.82 2.82 0 0 0-4-4L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/><path d="m15 5 4 4"/></symbol>
         <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
         <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+        <symbol id="i-video" viewBox="0 0 24 24"><path d="m16 13 5.22 3.48a.5.5 0 0 0 .78-.42V7.87a.5.5 0 0 0-.75-.43L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></symbol>
+        <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 19v3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><rect x="9" y="2" width="6" height="13" rx="3"/></symbol>
         <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/></symbol>
     </svg>
 
@@ -1377,7 +1410,7 @@
                             <svg class="i" width="16" height="16" aria-hidden="true"><use href="#i-log-out"/></svg>
                             Sign out
                         </button>
-                        <div class="menu-foot">GitFlare v1.1.10</div>
+                        <div class="menu-foot">GitFlare v1.1.11</div>
                     </div>
                 </div>
             </div>
@@ -1665,6 +1698,9 @@
                                 <button type="button" class="btn btn-sm" data-action="diary-pick">
                                     <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-camera"/></svg> Photo / video
                                 </button>
+                                <button type="button" class="btn btn-sm diary-record-btn" data-action="diary-record">
+                                    <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-video"/></svg> Record
+                                </button>
                                 <span class="hint" id="diaryHint">⌘/Ctrl+Enter to post</span>
                                 <button type="button" class="btn btn-sm btn-primary" id="diaryPostBtn" data-action="diary-post">Post</button>
                             </div>
@@ -1935,6 +1971,33 @@
         <button class="lb-btn lb-prev" data-action="lightbox-prev" aria-label="Previous"><svg class="i" width="20" height="20" aria-hidden="true"><use href="#i-chevron-left"/></svg></button>
         <button class="lb-btn lb-next" data-action="lightbox-next" aria-label="Next"><svg class="i" width="20" height="20" aria-hidden="true"><use href="#i-chevron-right"/></svg></button>
         <div class="lb-caption"><span id="diaryLightboxCount"></span><a id="diaryLightboxOpen" target="_blank" rel="noopener">Open original</a></div>
+    </div>
+    <div class="recorder" id="diaryRecorder" role="dialog" aria-modal="true" aria-label="Record a video">
+        <div class="recorder-panel">
+            <div class="recorder-head">
+                <span class="recorder-title">Record a video</span>
+                <label class="recorder-source" title="Camera"><svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-video"/></svg><select id="recorderCamera" aria-label="Camera"></select></label>
+                <label class="recorder-source" title="Microphone"><svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-mic"/></svg><select id="recorderMic" aria-label="Microphone"></select></label>
+                <button class="btn btn-sm btn-ghost btn-icon" data-action="recorder-close" aria-label="Close"><svg class="i" width="16" height="16" aria-hidden="true"><use href="#i-x"/></svg></button>
+            </div>
+            <div class="recorder-stage">
+                <video id="recorderLive" autoplay muted playsinline></video>
+                <video id="recorderReview" controls playsinline style="display:none;"></video>
+                <div class="recorder-status" id="recorderStatus">Starting camera…</div>
+                <div class="recorder-timer" id="recorderTimer" style="display:none;"><span class="dot"></span><span id="recorderTime">0:00</span></div>
+            </div>
+            <div class="recorder-bar">
+                <div class="recorder-level" id="recorderLevelWrap" title="Microphone level"><svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-mic"/></svg><div class="recorder-level-bar"><span id="recorderLevel"></span></div></div>
+                <div class="recorder-main">
+                    <button class="recorder-shutter" id="recorderShutter" data-action="recorder-toggle" aria-label="Start recording" disabled><span></span></button>
+                </div>
+                <div class="recorder-review-actions" id="recorderReviewActions" style="display:none;">
+                    <button class="btn btn-sm" data-action="recorder-retake">Retake</button>
+                    <button class="btn btn-sm btn-primary" data-action="recorder-use">Add to post</button>
+                </div>
+                <span class="recorder-hint" id="recorderHint">Space to start / stop</span>
+            </div>
+        </div>
     </div>
     <div class="toaster" id="toaster" aria-live="polite"></div>
 
@@ -2311,6 +2374,7 @@
             positionTabInk();
             if (tab !== 'cad') closeCadPreview();
             if (tab !== 'diary' && diaryLightbox) closeDiaryLightbox();
+            if (tab !== 'diary' && recorder.stream) closeRecorder();
 
             if (!activeRepo) return;
             if (tab === 'code') loadTree();
@@ -4878,7 +4942,8 @@
                         <textarea id="diaryEditText" maxlength="20000" aria-label="Entry text">${esc(e.text)}</textarea>
                         <div class="diary-tray"></div>
                         <div class="diary-edit-actions">
-                            <button class="btn btn-sm" data-action="diary-edit-pick" style="margin-right:auto;">${icon('camera', 14)} Add photo / video</button>
+                            <button class="btn btn-sm" data-action="diary-edit-pick">${icon('camera', 14)} Add photo / video</button>
+                            <button class="btn btn-sm diary-record-btn" data-action="diary-edit-record" style="margin-right:auto;">${icon('video', 14)} Record</button>
                             <button class="btn btn-sm" data-action="diary-edit-cancel">Cancel</button>
                             <button class="btn btn-sm btn-primary" data-action="diary-edit-save">Save</button>
                         </div>
@@ -5012,9 +5077,338 @@
             document.getElementById('diaryLightboxImg').removeAttribute('src');
         }
 
+        // ── Recorder (desktop webcam → MediaRecorder) ──
+        // Records into memory, shows the take for review, then hands the clip
+        // to a tray as a File so it uploads like any picked video.
+        const recorder = { tray: null, stream: null, media: null, chunks: [], mime: '', startedAt: 0, timer: null, blob: null, reviewUrl: null, cameraId: '', micId: '', audioCtx: null, meterRaf: 0, starting: 0 };
+        // The devices you last picked persist per browser, so the lab's cameras and
+        // mics stay chosen. Browsers may hand out new device ids between sessions
+        // (Safari always, Chrome without persisted permission), so the device's
+        // name is kept too and used to find it again. Only an explicit pick changes it.
+        const RECORDER_PREF_KEY = 'gitflare.recorder.devices';
+        let recorderPref = { cameraId: '', cameraLabel: '', micId: '', micLabel: '' };
+        try { recorderPref = { ...recorderPref, ...JSON.parse(localStorage.getItem(RECORDER_PREF_KEY) || '{}') }; } catch { /* storage unavailable */ }
+        function saveRecorderPref() {
+            try { localStorage.setItem(RECORDER_PREF_KEY, JSON.stringify(recorderPref)); } catch { /* storage unavailable */ }
+        }
+
+        /** Saved preference → a device id available right now ('' = browser default, 'none' = no sound). */
+        function resolveRecorderDevice(devices, kind, id, label) {
+            if (!id || id === 'none' || id === 'default') return id || '';
+            const list = devices.filter(d => d.kind === kind);
+            if (list.some(d => d.deviceId === id)) return id;
+            const byName = label && list.find(d => d.label === label);
+            if (byName) return byName.deviceId;
+            // Names visible but no match: the device is unplugged. No names yet (no permission this session): try the id.
+            return list.some(d => d.label) ? '' : id;
+        }
+
+        function recorderMime() {
+            const candidates = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/mp4', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+            return candidates.find(t => window.MediaRecorder?.isTypeSupported?.(t)) || '';
+        }
+
+        function recorderSupported() {
+            return Boolean(navigator.mediaDevices?.getUserMedia && window.MediaRecorder);
+        }
+
+        function recorderOpen() { return document.getElementById('diaryRecorder').classList.contains('show'); }
+
+        function setRecorderStatus(text) { document.getElementById('recorderStatus').textContent = text || ''; }
+
+        async function openRecorder(tray) {
+            if (!recorderSupported()) { toast("This browser can't record video", 'error'); return; }
+            recorder.tray = tray;
+            document.getElementById('diaryRecorder').classList.add('show');
+            showRecorderLive();
+            await startRecorderStream();
+        }
+
+        function stopRecorderMeter() {
+            cancelAnimationFrame(recorder.meterRaf);
+            recorder.meterRaf = 0;
+            recorder.audioCtx?.close().catch(() => {});
+            recorder.audioCtx = null;
+            document.getElementById('recorderLevel').style.width = '0';
+        }
+
+        function stopRecorderStream() {
+            stopRecorderMeter();
+            recorder.stream?.getTracks().forEach(t => t.stop());
+            recorder.stream = null;
+            document.getElementById('recorderLive').srcObject = null;
+        }
+
+        /** Live input level so it's obvious which microphone is picking up sound. */
+        function startRecorderMeter(stream) {
+            const wrap = document.getElementById('recorderLevelWrap');
+            const track = stream.getAudioTracks()[0];
+            wrap.classList.toggle('is-off', !track);
+            wrap.title = track ? `Microphone level: ${track.label || 'microphone'}` : 'No sound';
+            if (!track || !window.AudioContext) return;
+            const ctx = new AudioContext();
+            const analyser = ctx.createAnalyser();
+            analyser.fftSize = 1024;
+            ctx.createMediaStreamSource(new MediaStream([track])).connect(analyser);
+            recorder.audioCtx = ctx;
+            const data = new Float32Array(analyser.fftSize);
+            const bar = document.getElementById('recorderLevel');
+            const draw = () => {
+                analyser.getFloatTimeDomainData(data);
+                let sum = 0;
+                for (const v of data) sum += v * v;
+                const db = 20 * Math.log10(Math.sqrt(sum / data.length) || 1e-8);
+                bar.style.width = `${Math.max(0, Math.min(100, (db + 60) / 60 * 100))}%`;
+                recorder.meterRaf = requestAnimationFrame(draw);
+            };
+            draw();
+        }
+
+        async function getRecorderMedia() {
+            const videoBase = { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } };
+            const constraints = () => ({
+                video: { ...videoBase, ...(recorder.cameraId ? { deviceId: { exact: recorder.cameraId } } : {}) },
+                audio: recorder.micId === 'none' ? false : (recorder.micId ? { deviceId: { exact: recorder.micId } } : true),
+            });
+            try {
+                return await navigator.mediaDevices.getUserMedia(constraints());
+            } catch (e) {
+                if (e.name === 'NotAllowedError') throw e;
+                // A remembered device that's been unplugged: fall back to the default.
+                if ((e.name === 'OverconstrainedError' || e.name === 'NotFoundError' || e.name === 'NotReadableError') && (recorder.cameraId || (recorder.micId && recorder.micId !== 'none'))) {
+                    const cam = recorder.cameraId, mic = recorder.micId;
+                    if (cam) recorder.cameraId = '';
+                    if (mic !== 'none') recorder.micId = '';
+                    try {
+                        return await navigator.mediaDevices.getUserMedia(constraints());
+                    } catch { recorder.cameraId = cam; recorder.micId = mic; }
+                }
+                if (recorder.micId !== 'none') {
+                    // No usable microphone: record silent video rather than nothing.
+                    const stream = await navigator.mediaDevices.getUserMedia({ video: constraints().video, audio: false });
+                    recorder.micId = 'none';
+                    toast("Couldn't open a microphone, so this recording has no sound", 'error');
+                    return stream;
+                }
+                throw e;
+            }
+        }
+
+        async function startRecorderStream({ byName = false } = {}) {
+            const attempt = ++recorder.starting;
+            stopRecorderStream();
+            if (!byName) {
+                const known = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+                recorder.cameraId = resolveRecorderDevice(known, 'videoinput', recorderPref.cameraId, recorderPref.cameraLabel);
+                recorder.micId = resolveRecorderDevice(known, 'audioinput', recorderPref.micId, recorderPref.micLabel);
+            }
+            const shutter = document.getElementById('recorderShutter');
+            shutter.disabled = true;
+            setRecorderStatus('Starting camera…');
+            let stream;
+            try {
+                stream = await getRecorderMedia();
+            } catch (e) {
+                if (attempt !== recorder.starting) return;
+                setRecorderStatus(e.name === 'NotAllowedError'
+                    ? 'Camera or microphone access is blocked. Allow them for this site in the address bar, then reopen the recorder.'
+                    : e.name === 'NotFoundError' ? 'No camera found.' : `Couldn't start the camera: ${e.message || e.name}`);
+                await fillRecorderDevices();
+                return;
+            }
+            if (attempt !== recorder.starting || !recorderOpen()) { stream.getTracks().forEach(t => t.stop()); return; }
+            recorder.stream = stream;
+            const live = document.getElementById('recorderLive');
+            live.srcObject = stream;
+            const videoTrack = stream.getVideoTracks()[0];
+            const audioTrack = stream.getAudioTracks()[0];
+            const video = videoTrack?.getSettings?.() || {};
+            live.classList.toggle('is-mirrored', video.facingMode !== 'environment');
+            if (video.deviceId) recorder.cameraId = video.deviceId;
+            if (audioTrack?.getSettings?.().deviceId) recorder.micId = audioTrack.getSettings().deviceId;
+            else if (!audioTrack) recorder.micId = 'none';
+            // Device names only show once permission is granted; if the saved devices are
+            // here under new ids, switch to them now.
+            const wantCam = recorderPref.cameraLabel && videoTrack?.label !== recorderPref.cameraLabel ? recorderPref.cameraLabel : '';
+            const wantMic = recorderPref.micLabel && recorderPref.micId !== 'none' && audioTrack?.label !== recorderPref.micLabel ? recorderPref.micLabel : '';
+            if (wantCam || wantMic) {
+                const now = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+                const cam = wantCam && now.find(d => d.kind === 'videoinput' && d.label === wantCam);
+                const mic = wantMic && now.find(d => d.kind === 'audioinput' && d.label === wantMic);
+                if (!byName && (cam || mic)) {
+                    if (cam) recorder.cameraId = cam.deviceId;
+                    if (mic) recorder.micId = mic.deviceId;
+                    return startRecorderStream({ byName: true });
+                }
+                const missing = [wantCam && !cam ? wantCam : '', wantMic && !mic ? wantMic : ''].filter(Boolean);
+                if (missing.length) toast(`${missing.join(' and ')} ${missing.length === 1 ? 'is' : 'are'} not connected, so the default is in use`, 'info');
+            }
+            startRecorderMeter(stream);
+            setRecorderStatus('');
+            shutter.disabled = false;
+            shutter.focus();
+            await fillRecorderDevices();
+        }
+
+        /** Fill both pickers. Labels only appear once the site has camera/mic permission. */
+        async function fillRecorderDevices() {
+            const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+            const cams = devices.filter(d => d.kind === 'videoinput' && d.deviceId);
+            const mics = devices.filter(d => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'communications');
+            const cam = document.getElementById('recorderCamera');
+            const mic = document.getElementById('recorderMic');
+            cam.innerHTML = cams.length
+                ? cams.map((d, i) => `<option value="${esc(d.deviceId)}"${d.deviceId === recorder.cameraId ? ' selected' : ''}>${esc(d.label || `Camera ${i + 1}`)}</option>`).join('')
+                : '<option value="">No camera</option>';
+            mic.innerHTML = mics.map((d, i) => `<option value="${esc(d.deviceId)}"${d.deviceId === recorder.micId ? ' selected' : ''}>${esc(d.label || `Microphone ${i + 1}`)}</option>`).join('')
+                + `<option value="none"${recorder.micId === 'none' ? ' selected' : ''}>No sound</option>`;
+            return { cams, mics };
+        }
+
+        async function pickRecorderDevice(kind, value) {
+            if (recorder.media) return; // pickers are disabled while recording
+            document.getElementById('recorderShutter').disabled = true;
+            const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+            const label = devices.find(d => d.deviceId === value && d.kind === (kind === 'camera' ? 'videoinput' : 'audioinput'))?.label || '';
+            if (kind === 'camera') recorderPref = { ...recorderPref, cameraId: value, cameraLabel: label };
+            else recorderPref = { ...recorderPref, micId: value, micLabel: value === 'none' ? '' : label };
+            saveRecorderPref();
+            startRecorderStream();
+        }
+
+        /** Something was plugged in or unplugged while the recorder is open. */
+        async function onRecorderDeviceChange() {
+            if (!recorderOpen()) return;
+            const { cams, mics } = await fillRecorderDevices();
+            if (recorder.media) return; // never interrupt a take
+            const tracks = recorder.stream?.getTracks() || [];
+            const lost = tracks.some(t => t.readyState === 'ended')
+                || (recorder.cameraId && !cams.some(d => d.deviceId === recorder.cameraId))
+                || (recorder.micId && recorder.micId !== 'none' && !mics.some(d => d.deviceId === recorder.micId));
+            if (lost && !recorder.blob) startRecorderStream();
+        }
+
+        function showRecorderLive() {
+            if (recorder.reviewUrl) { URL.revokeObjectURL(recorder.reviewUrl); recorder.reviewUrl = null; }
+            recorder.blob = null;
+            const review = document.getElementById('recorderReview');
+            review.pause(); review.removeAttribute('src'); review.load();
+            review.style.display = 'none';
+            document.getElementById('recorderLive').style.display = '';
+            document.getElementById('recorderReviewActions').style.display = 'none';
+            document.querySelector('.recorder-main').style.display = '';
+            document.getElementById('recorderHint').style.display = '';
+            document.getElementById('recorderTimer').style.display = 'none';
+            document.getElementById('recorderCamera').disabled = false;
+            document.getElementById('recorderMic').disabled = false;
+        }
+
+        function toggleRecording() {
+            if (recorder.media && recorder.media.state === 'recording') stopRecording();
+            else startRecording();
+        }
+
+        function startRecording() {
+            if (!recorder.stream || recorder.media) return;
+            recorder.mime = recorderMime();
+            let media;
+            try {
+                media = new MediaRecorder(recorder.stream, { ...(recorder.mime ? { mimeType: recorder.mime } : {}), videoBitsPerSecond: 8_000_000 });
+            } catch (e) {
+                toast(`Couldn't start recording: ${e.message}`, 'error');
+                return;
+            }
+            recorder.media = media;
+            recorder.chunks = [];
+            media.ondataavailable = (e) => { if (e.data?.size) recorder.chunks.push(e.data); };
+            media.onstop = finishRecording;
+            media.start(1000);
+            recorder.startedAt = Date.now();
+            const shutter = document.getElementById('recorderShutter');
+            shutter.classList.add('is-recording');
+            shutter.setAttribute('aria-label', 'Stop recording');
+            document.getElementById('recorderCamera').disabled = true;
+            document.getElementById('recorderMic').disabled = true;
+            document.getElementById('recorderTimer').style.display = '';
+            const tick = () => {
+                const sec = Math.floor((Date.now() - recorder.startedAt) / 1000);
+                document.getElementById('recorderTime').textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+            };
+            tick();
+            recorder.timer = setInterval(tick, 250);
+        }
+
+        function stopRecording() {
+            if (recorder.media?.state === 'recording') recorder.media.stop();
+        }
+
+        function finishRecording() {
+            clearInterval(recorder.timer);
+            const type = (recorder.media?.mimeType || recorder.mime || 'video/webm').split(';')[0];
+            recorder.media = null;
+            const shutter = document.getElementById('recorderShutter');
+            shutter.classList.remove('is-recording');
+            shutter.setAttribute('aria-label', 'Start recording');
+            if (!document.getElementById('diaryRecorder').classList.contains('show')) { recorder.chunks = []; return; }
+            recorder.blob = new Blob(recorder.chunks, { type });
+            recorder.chunks = [];
+            if (!recorder.blob.size) { toast('Nothing was recorded', 'error'); showRecorderLive(); return; }
+            recorder.reviewUrl = URL.createObjectURL(recorder.blob);
+            const review = document.getElementById('recorderReview');
+            review.src = recorder.reviewUrl;
+            review.style.display = '';
+            document.getElementById('recorderLive').style.display = 'none';
+            document.getElementById('recorderTimer').style.display = 'none';
+            document.querySelector('.recorder-main').style.display = 'none';
+            document.getElementById('recorderHint').style.display = 'none';
+            document.getElementById('recorderReviewActions').style.display = '';
+        }
+
+        function useRecording() {
+            if (!recorder.blob || !recorder.tray) return;
+            const ext = recorder.blob.type.includes('mp4') ? 'mp4' : 'webm';
+            const d = new Date();
+            const pad = (n) => String(n).padStart(2, '0');
+            const name = `recording-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.${ext}`;
+            const file = new File([recorder.blob], name, { type: recorder.blob.type });
+            const tray = recorder.tray;
+            closeRecorder();
+            addDiaryFiles(tray, [file]);
+            if (tray === diaryComposerTray) document.getElementById('diaryTextInput').focus();
+        }
+
+        function closeRecorder() {
+            if (recorder.media?.state === 'recording') {
+                if (!confirm('Discard this recording?')) return;
+                recorder.media.onstop = null;
+                recorder.media.stop();
+                recorder.media = null;
+                clearInterval(recorder.timer);
+                document.getElementById('recorderShutter').classList.remove('is-recording');
+            }
+            stopRecorderStream();
+            showRecorderLive();
+            recorder.tray = null;
+            document.getElementById('diaryRecorder').classList.remove('show');
+        }
+
         // ── Wiring ──
 
         (() => {
+            document.getElementById('recorderCamera').addEventListener('change', (e) => pickRecorderDevice('camera', e.target.value));
+            document.getElementById('recorderMic').addEventListener('change', (e) => pickRecorderDevice('mic', e.target.value));
+            navigator.mediaDevices?.addEventListener?.('devicechange', onRecorderDeviceChange);
+            document.addEventListener('keydown', (e) => {
+                if (!recorderOpen()) return;
+                if (e.key === 'Escape') { e.preventDefault(); closeRecorder(); }
+                else if (e.key === ' ' && !recorder.blob) {
+                    // Buttons and fields inside the dialog keep their own Space behaviour.
+                    if (e.target.closest?.('#diaryRecorder') && /^(SELECT|INPUT|BUTTON|VIDEO)$/.test(e.target.tagName)) return;
+                    e.preventDefault();
+                    toggleRecording();
+                }
+            });
+            if (!recorderSupported()) document.querySelectorAll('.diary-record-btn').forEach(b => { b.style.display = 'none'; });
             const composer = document.getElementById('diaryComposer');
             const textEl = document.getElementById('diaryTextInput');
             const fileInput = document.getElementById('diaryFileInput');
@@ -5332,6 +5726,12 @@
                 case 'diary-edit': startDiaryEdit(d.id); break;
                 case 'diary-delete': deleteDiaryEntry(d.id); break;
                 case 'diary-edit-pick': if (diaryEditing) pickDiaryFiles(diaryEditing.tray); break;
+                case 'diary-record': openRecorder(diaryComposerTray); break;
+                case 'diary-edit-record': if (diaryEditing) openRecorder(diaryEditing.tray); break;
+                case 'recorder-toggle': toggleRecording(); break;
+                case 'recorder-retake': showRecorderLive(); break;
+                case 'recorder-use': useRecording(); break;
+                case 'recorder-close': closeRecorder(); break;
                 case 'diary-edit-cancel': cancelDiaryEdit(); break;
                 case 'diary-edit-save': saveDiaryEdit(); break;
                 case 'lightbox-open': openDiaryLightbox(d.id); break;
