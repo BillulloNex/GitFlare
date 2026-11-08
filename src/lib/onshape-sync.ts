@@ -58,6 +58,7 @@ import {
 import { parseInfoRefs, parseReceivePackResponse } from './git-protocol.ts';
 import { triggerGitHubMirror } from './github-mirror.ts';
 import { buildLfsPointer, lfsObjectKey } from './lfs.ts';
+import { streamLfsObject } from './lfs-stream.ts';
 import {
 	OnshapeClient,
 	OnshapeError,
@@ -88,12 +89,23 @@ const MAX_DOWNLOADS = 3;
 /** Exports per version are capped to keep one version from eating the quota. */
 const MAX_ELEMENTS = 30;
 /**
- * Largest export we store. The file is held in memory once (plus its hash),
- * and a Worker has 128 MB, so this stays well below that.
+ * Largest export we store. Downloads with a Content-Length stream into R2
+ * (lib/lfs-stream.ts), so this is set by time and R2's ~5 GB upload cap, not
+ * by the Worker's 128 MB of memory.
  */
-export const MAX_EXPORT_BYTES = 40 * 1024 * 1024;
-/** Link lease: longer than a tick, so two ticks never work the same link. */
-const LEASE_MS = 3 * 60_000;
+export const MAX_EXPORT_BYTES = 2 * 1024 * 1024 * 1024;
+/** A download without a Content-Length is held in memory, so it stays well under 128 MB. */
+export const MAX_IN_MEMORY_BYTES = 40 * 1024 * 1024;
+/**
+ * Downloads over this wait for the cron (15 min per run). "Pull latest" runs
+ * in waitUntil, which Cloudflare stops 30 s after the response.
+ */
+const MAX_FOREGROUND_DOWNLOAD_BYTES = 64 * 1024 * 1024;
+/**
+ * Link lease: longer than any tick, including a cron run spent on a 2 GB
+ * download (15 min max), so two ticks never work the same link.
+ */
+const LEASE_MS = 16 * 60_000;
 /** Back-off for the whole link after an account-level error. */
 const AUTH_BACKOFF_MS = 3600_000;
 const QUOTA_BACKOFF_MS = 24 * 3600_000;
@@ -435,7 +447,8 @@ export async function runOnshapeSync(env: Env, opts: { linkId?: string; budgetMs
 		const lease = await acquireLease(env, link.id);
 		if (!lease) continue;
 		try {
-			await syncLink(env, link, linkDeadline, { mayWait: Boolean(opts.linkId) });
+			// linkId: "Pull latest" / save / retry, running in waitUntil (30 s). Otherwise the cron.
+			await syncLink(env, link, linkDeadline, { mayWait: Boolean(opts.linkId), cron: !opts.linkId });
 		} catch (err) {
 			console.error(`[onshape] sync of ${link.repo_name} crashed:`, err);
 			await setLinkStatus(env, link.id, 'error', errorMessage(err)).catch(() => {});
@@ -473,7 +486,7 @@ async function backOffLink(env: Env, linkId: string, err: unknown, ms: number): 
 		.run();
 }
 
-async function syncLink(env: Env, link: OnshapeLinkRow, deadline: number, opts: { mayWait: boolean }): Promise<void> {
+async function syncLink(env: Env, link: OnshapeLinkRow, deadline: number, opts: { mayWait: boolean; cron: boolean }): Promise<void> {
 	if (link.retry_after && Date.parse(link.retry_after) > Date.now()) return;
 	// A protected branch accepts at most its first commit. The sync writes many,
 	// so it stays off those branches entirely — including before any export starts.
@@ -544,7 +557,7 @@ async function syncLink(env: Env, link: OnshapeLinkRow, deadline: number, opts: 
 			for (const version of active) {
 				if (Date.now() >= deadline - 2_000) break;
 				if (triedThisTick.has(version.id)) continue;
-				const outcome = await advanceVersion(env, client, link, version, formats, deadline);
+				const outcome = await advanceVersion(env, client, link, version, formats, deadline, opts.cron);
 				if (outcome === 'error') triedThisTick.add(version.id);
 				progressed = progressed || outcome === 'progress';
 			}
@@ -658,7 +671,8 @@ async function advanceVersion(
 	link: OnshapeLinkRow,
 	version: VersionRow,
 	formats: ExportFormat[],
-	deadline: number
+	deadline: number,
+	cron: boolean
 ): Promise<StepOutcome> {
 	if (version.status === 'pending') {
 		let elements;
@@ -696,7 +710,7 @@ async function advanceVersion(
 		if ((task.state !== 'queued' && task.state !== 'active') || task.nextPollAt > Date.now()) continue;
 		try {
 			if (task.state === 'queued') await startTask(client, version, task);
-			else await pollTask(env, client, link, version, task, () => saveExports(env, version.id, 'exporting', state));
+			else await pollTask(env, client, link, version, task, () => saveExports(env, version.id, 'exporting', state), cron);
 		} catch (err) {
 			if (isAccountError(err)) {
 				await saveExports(env, version.id, 'exporting', state);
@@ -726,7 +740,8 @@ async function pollTask(
 	link: OnshapeLinkRow,
 	version: VersionRow,
 	task: ExportTask,
-	persist: () => Promise<void>
+	persist: () => Promise<void>,
+	cron = true
 ): Promise<void> {
 	if (!task.translationId) {
 		Object.assign(task, { state: 'failed', error: 'Export has no id' });
@@ -751,18 +766,43 @@ async function pollTask(
 	// Count the attempt BEFORE downloading: if the download kills the isolate, the count still moves.
 	task.downloads = (task.downloads ?? 0) + 1;
 	if (task.downloads > MAX_DOWNLOADS) {
-		Object.assign(task, { state: 'failed', error: `Download kept failing (files over ${MAX_EXPORT_BYTES / 1024 / 1024} MB are not synced)` });
+		Object.assign(task, { state: 'failed', error: 'Download kept failing' });
 		return;
 	}
 	await persist();
 	const res = await client.downloadResponse(version.document_id, fileId);
-	const bytes = await readCapped(res, MAX_EXPORT_BYTES);
+	const declared = Number(res.headers.get('Content-Length'));
+
+	if (res.body && Number.isFinite(declared) && declared > 0) {
+		if (declared > MAX_EXPORT_BYTES) {
+			await res.body.cancel().catch(() => {});
+			Object.assign(task, { state: 'failed', error: `File is ${formatMb(declared)}, over the ${formatMb(MAX_EXPORT_BYTES)} sync limit` });
+			return;
+		}
+		if (!cron && declared > MAX_FOREGROUND_DOWNLOAD_BYTES) {
+			// Too big to finish inside waitUntil's 30 s: leave it for the next cron run, without spending an attempt.
+			await res.body.cancel().catch(() => {});
+			task.downloads--;
+			task.nextPollAt = Date.now() + 60_000;
+			return;
+		}
+		const { oid, head } = await streamLfsObject(env.STORAGE, link.repo_id, res.body, declared);
+		await markLfsObjectReady(env, link.repo_id, oid, declared);
+		Object.assign(task, { state: 'done', oid, size: declared, ext: detectExtension(task.format, head) });
+		return;
+	}
+
+	const bytes = await readCapped(res, MAX_IN_MEMORY_BYTES);
 	if (!bytes) {
-		Object.assign(task, { state: 'failed', error: `File is over the ${MAX_EXPORT_BYTES / 1024 / 1024} MB sync limit` });
+		Object.assign(task, { state: 'failed', error: `File has no announced size and is over the ${formatMb(MAX_IN_MEMORY_BYTES)} limit for those` });
 		return;
 	}
 	const oid = await storeLfsObject(env, link.repo_id, bytes);
 	Object.assign(task, { state: 'done', oid, size: bytes.length, ext: detectExtension(task.format, bytes) });
+}
+
+function formatMb(bytes: number): string {
+	return bytes >= 1024 ** 3 ? `${(bytes / 1024 ** 3).toFixed(1)} GB` : `${Math.round(bytes / 1024 / 1024)} MB`;
 }
 
 /** Read a body up to `cap` bytes; null (and the stream cancelled) if it is bigger. */
@@ -833,13 +873,17 @@ export async function storeLfsObject(env: Pick<Env, 'STORAGE' | 'DB'>, repoId: s
 	if (!(await env.STORAGE.head(key))) {
 		await env.STORAGE.put(key, bytes, { httpMetadata: { contentType: 'application/octet-stream' } });
 	}
+	await markLfsObjectReady(env, repoId, oid, bytes.length);
+	return oid;
+}
+
+async function markLfsObjectReady(env: Pick<Env, 'DB'>, repoId: string, oid: string, size: number): Promise<void> {
 	await env.DB.prepare(
 		`INSERT INTO lfs_objects (repo_id, oid, size, state) VALUES (?, ?, ?, 'ready')
 		 ON CONFLICT(repo_id, oid) DO UPDATE SET state = 'ready'`
 	)
-		.bind(repoId, oid, bytes.length)
+		.bind(repoId, oid, size)
 		.run();
-	return oid;
 }
 
 // ─── Commit ─────────────────────────────────────────────────────

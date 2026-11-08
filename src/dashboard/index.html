@@ -1273,7 +1273,7 @@
                             <svg class="i" width="16" height="16" aria-hidden="true"><use href="#i-log-out"/></svg>
                             Sign out
                         </button>
-                        <div class="menu-foot">GitFlare v1.1.6</div>
+                        <div class="menu-foot">GitFlare v1.1.7</div>
                     </div>
                 </div>
             </div>
@@ -2458,9 +2458,13 @@
         let modelPrefix = 'model';
         const modelEl = part => document.getElementById(modelPrefix + part);
 
+        // Past this, the browser stalls downloading and meshing it: offer the download instead.
+        const MODEL_VIEW_MAX_BYTES = 300 * 1024 * 1024;
+
         function isViewableModel(file) {
             if (!MODEL_FILE_RE.test(file.name)) return false;
-            return file.lfs ? file.lfs.state === 'ready' : true;
+            if (!file.lfs) return true;
+            return file.lfs.state === 'ready' && !(file.lfs.size > MODEL_VIEW_MAX_BYTES);
         }
 
         function modelSourceUrl(file) {

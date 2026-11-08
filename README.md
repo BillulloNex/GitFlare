@@ -251,6 +251,12 @@ Version's; trailers carry `Onshape-Document`, `Onshape-Version` and
   once a minute. In between, the cron only moves exports that already started
   along. Saving the Onshape settings also checks once. A failed export does not block its version and does not delete the
   previous file: the error goes into `onshape.json` and the commit message.
+- Size: exports up to 2 GB per file. Downloads stream into R2 while they are
+  hashed (`src/lib/lfs-stream.ts`), so Worker memory is not the limit. Files
+  over 64 MB download in the next cron run (15 min wall time) rather than in
+  **Pull latest**, which Cloudflare stops 30 s after the response. A download
+  without a Content-Length is held in memory and capped at 40 MB. The file
+  viewer offers files over 300 MB as a download instead of rendering them.
 - Quota: Onshape Free/Standard plans allow 2,500 API calls a year. A check is
   ~1 call per document. Each exported version costs a start, polls, and a
   download per element and format, so a large document can use hundreds of

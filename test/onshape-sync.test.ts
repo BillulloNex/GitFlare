@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { encryptSecret } from '../src/lib/crypto.ts';
+import { installWorkersStreams, memoryR2 } from './workers-streams.ts';
 import {
 	OnshapeClient,
 	detectExtension,
@@ -285,11 +286,15 @@ function fakeOnshape(versions: FakeVersion[]) {
 			const t = translations.get(m[1])!;
 			const content = `${t.format}:${t.vid}:${t.eid}`;
 			const bytes = t.format === 'glb' ? `glTF${content}` : content;
-			return new Response(bytes);
+			// GLB announces its size (streamed into R2), STEP does not (buffered): both paths are covered.
+			const length = api.glbLength ?? new TextEncoder().encode(bytes).length;
+			return new Response(bytes, t.format === 'glb' ? { headers: { 'Content-Length': String(length) } } : {});
 		}
 		return new Response(`no route ${p}`, { status: 404 });
 	}
-	return { calls, handle };
+	/** glbLength: pretend GLB downloads are this big (Content-Length only). */
+	const api = { calls, handle, glbLength: null as number | null };
+	return api;
 }
 
 function fakeArtifacts(bare: string) {
@@ -339,6 +344,7 @@ function fakeArtifacts(bare: string) {
 }
 
 describe('Onshape sync end to end', () => {
+	installWorkersStreams();
 	let dir: string;
 	let bare: string;
 	let db: DatabaseSync;
@@ -418,10 +424,7 @@ describe('Onshape sync end to end', () => {
 			SESSION_SECRET: 'unused',
 			CLOUDFLARE_ACCOUNT_ID: ACCOUNT,
 			REPOS: { get: async (name: string) => (name === 'cad' ? artifacts.repo : null) },
-			STORAGE: {
-				head: async (k: string) => (r2.has(k) ? {} : null),
-				put: async (k: string, v: Uint8Array) => void r2.set(k, v),
-			},
+			STORAGE: memoryR2(r2),
 			REPO_COORDINATOR: {
 				idFromName: (n: string) => n,
 				get: () => ({ fetch: async (r: Request) => Response.json(new URL(r.url).pathname === '/lock' ? { lock_id: 'lock' } : {}) }),
@@ -505,6 +508,28 @@ describe('Onshape sync end to end', () => {
 		// Every 2xx/3xx Onshape call was counted.
 		const counted = (db.prepare('SELECT api_calls FROM onshape_links').get() as { api_calls: number }).api_calls;
 		expect(counted).toBe(onshape.calls.length);
+	});
+
+	it('leaves big downloads to the cron and refuses ones over 2 GB', async () => {
+		const tasks = () =>
+			(JSON.parse((db.prepare("SELECT exports FROM onshape_versions WHERE status = 'exporting'").get() as { exports: string }).exports) as ExportState).tasks;
+		await tick(); // discover + start exports
+		advance(5 * 60_000);
+		onshape.glbLength = 100 * 1024 * 1024;
+		// "Pull latest" runs in waitUntil (30 s): a 100 MB file waits for the cron, without using up an attempt.
+		await runOnshapeSync(env, { linkId: 'link1', budgetMs: 5_000 });
+		expect(tasks().filter((t) => t.format === 'glb').map((t) => [t.state, t.downloads])).toEqual([
+			['active', 0],
+			['active', 0],
+		]);
+		expect(tasks().filter((t) => t.format === 'step').every((t) => t.state === 'done')).toBe(true);
+
+		onshape.glbLength = 3 * 1024 ** 3;
+		advance(5 * 60_000);
+		await tick();
+		expect(statuses()['Thicker arms']).toBe('committed');
+		const manifest = JSON.parse(show('Drone Frame/onshape.json'));
+		expect(JSON.stringify(manifest)).toContain('3.0 GB, over the 2.0 GB sync limit');
 	});
 
 	it('backfills every version in order when asked', async () => {

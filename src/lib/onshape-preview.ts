@@ -13,12 +13,12 @@
  *   startPreview → { state: 'exporting', translation_id } → pollPreview … → 'ready'
  */
 import { detectExtension, type OnshapeClient } from './onshape.ts';
-import { MAX_EXPORT_BYTES, readCapped } from './onshape-sync.ts';
+import { MAX_IN_MEMORY_BYTES, readCapped } from './onshape-sync.ts';
 
 /**
  * Largest preview we keep. A download with a Content-Length streams straight
  * into R2, so this is not bound by Worker memory; one without is buffered and
- * capped at MAX_EXPORT_BYTES.
+ * capped at MAX_IN_MEMORY_BYTES.
  */
 export const MAX_PREVIEW_BYTES = 150 * 1024 * 1024;
 const mb = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`;
@@ -123,8 +123,8 @@ export async function pollPreview(
 		return { state: 'ready', element_id: elementId, microversion };
 	}
 
-	const bytes = await readCapped(res, MAX_EXPORT_BYTES);
-	if (!bytes) return { state: 'failed', error: `This model is over the ${mb(MAX_EXPORT_BYTES)} limit for downloads of unknown size. Pick a smaller Part Studio.` };
+	const bytes = await readCapped(res, MAX_IN_MEMORY_BYTES);
+	if (!bytes) return { state: 'failed', error: `This model is over the ${mb(MAX_IN_MEMORY_BYTES)} limit for downloads of unknown size. Pick a smaller Part Studio.` };
 	if (detectExtension('glb', bytes).endsWith('zip')) return zipped();
 	await storage.put(key, bytes, { httpMetadata: { contentType: 'application/octet-stream' } });
 	return { state: 'ready', element_id: elementId, microversion };
