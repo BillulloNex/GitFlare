@@ -3,7 +3,7 @@
  *
  *   GET    /api/repos/:repo/onshape                         link config (no secrets) + recent versions
  *   PUT    /api/repos/:repo/onshape                         create / update (admin); checks the keys and documents
- *                                                          secret_id copies a saved secret; save_as stores the pasted keys on the user
+ *                                                          access_secret_id / secret_key_secret_id copy saved secrets; save_access_as / save_secret_as store pasted keys on the user
  *   DELETE /api/repos/:repo/onshape                         remove the link (admin); commits already made stay
  *   POST   /api/repos/:repo/onshape/sync                    check for new versions now (write)
  *   POST   /api/repos/:repo/onshape/versions/:id/retry      re-export a failed version (write)
@@ -18,10 +18,11 @@ import { audit } from '../lib/audit.ts';
 import { decryptSecret, encryptSecret } from '../lib/crypto.ts';
 import {
 	MAX_SAVED_SECRETS,
-	decryptOnshapeSecret,
-	encryptOnshapeSecret,
+	encryptTextSecret,
 	onshapeHint,
 	parseSecretName,
+	secretField,
+	secretHint,
 	type SavedSecretRow,
 } from '../lib/saved-secrets.ts';
 import { readJsonObject } from '../lib/request.ts';
@@ -62,17 +63,20 @@ interface LinkRow {
 	last_error: string | null;
 	api_calls: number;
 	saved_secret_id: string | null;
+	secret_key_secret_id: string | null;
 	created_at: string;
 	updated_at: string;
 }
 
-function publicLink(row: LinkRow, savedSecretName: string | null) {
+function publicLink(row: LinkRow, accessSecretName: string | null, secretKeySecretName: string | null) {
 	return {
 		id: row.id,
 		base_url: row.base_url,
 		access_key_hint: row.access_key_hint,
-		saved_secret_id: row.saved_secret_id,
-		saved_secret_name: savedSecretName,
+		access_secret_id: row.saved_secret_id,
+		access_secret_name: accessSecretName,
+		secret_key_secret_id: row.secret_key_secret_id,
+		secret_key_secret_name: secretKeySecretName,
 		// `folder`: where the document's files live in the repo.
 		documents: assignFolders(JSON.parse(row.documents) as LinkedDocument[]),
 		branch: row.branch,
@@ -95,13 +99,45 @@ function estimateCallsPerYear(intervalMinutes: number, documentCount: number): n
 	return Math.round(((365 * 24 * 60) / intervalMinutes) * documentCount);
 }
 
+async function savedSecretName(db: Env['DB'], id: string | null): Promise<string | null> {
+	if (!id) return null;
+	const saved = await db.prepare('SELECT name FROM saved_secrets WHERE id = ?').bind(id).first<{ name: string }>();
+	return saved?.name ?? null;
+}
+
+async function ownedSecret(db: Env['DB'], userId: string, id: string): Promise<SavedSecretRow> {
+	const row = await db.prepare('SELECT * FROM saved_secrets WHERE id = ? AND user_id = ?').bind(id, userId).first<SavedSecretRow>();
+	if (!row) throw new Error('Saved secret not found');
+	return row;
+}
+
+async function insertTextSecret(
+	db: Env['DB'],
+	encryptionKey: string,
+	userId: string,
+	name: string,
+	value: string,
+	now: string,
+	auditInfo: { actor: string; ipAddress?: string }
+): Promise<string> {
+	const id = crypto.randomUUID();
+	await db
+		.prepare(
+			`INSERT INTO saved_secrets (id, user_id, name, kind, payload_encrypted, hint, created_at, updated_at)
+			 VALUES (?, ?, ?, 'text', ?, ?, ?, ?)`
+		)
+		.bind(id, userId, name, await encryptTextSecret(value, encryptionKey), secretHint(value), now, now)
+		.run();
+	await audit(db, { ...auditInfo, action: 'secret.create', details: { id, kind: 'text', name } });
+	return id;
+}
+
 async function withSavedSecret(db: Env['DB'], row: LinkRow) {
-	let name: string | null = null;
-	if (row.saved_secret_id) {
-		const saved = await db.prepare('SELECT name FROM saved_secrets WHERE id = ?').bind(row.saved_secret_id).first<{ name: string }>();
-		name = saved?.name ?? null;
-	}
-	return publicLink(row, name);
+	const [accessName, secretName] = await Promise.all([
+		savedSecretName(db, row.saved_secret_id),
+		savedSecretName(db, row.secret_key_secret_id ?? null),
+	]);
+	return publicLink(row, accessName, secretName);
 }
 
 app.get('/:repo/onshape', async (c) => {
@@ -140,8 +176,10 @@ app.put('/:repo/onshape', requireRepoLevel('admin'), async (c) => {
 	const body = await readJsonObject<{
 		access_key: string;
 		secret_key: string;
-		secret_id: string;
-		save_as: string;
+		access_secret_id: string;
+		secret_key_secret_id: string;
+		save_access_as: string;
+		save_secret_as: string;
 		documents: string[];
 		base_url: string;
 		branch: string;
@@ -159,16 +197,23 @@ app.put('/:repo/onshape', requireRepoLevel('admin'), async (c) => {
 	// ── Validate ──
 	if (body.access_key !== undefined && (typeof body.access_key !== 'string' || !body.access_key.trim())) return c.json({ error: 'access_key must be a non-empty string' }, 400);
 	if (body.secret_key !== undefined && (typeof body.secret_key !== 'string' || !body.secret_key.trim())) return c.json({ error: 'secret_key must be a non-empty string' }, 400);
-	if (body.secret_id !== undefined && typeof body.secret_id !== 'string') return c.json({ error: 'secret_id must be a string' }, 400);
-	if (body.save_as !== undefined && typeof body.save_as !== 'string') return c.json({ error: 'save_as must be a string' }, 400);
-	const secretId = typeof body.secret_id === 'string' ? body.secret_id.trim() : '';
-	const saveAs = body.save_as === undefined ? undefined : parseSecretName(body.save_as);
-	if (body.save_as !== undefined && !saveAs) return c.json({ error: 'save_as must be 1–80 characters' }, 400);
-	if (secretId && (body.access_key !== undefined || body.secret_key !== undefined || saveAs)) {
-		return c.json({ error: 'Send a saved secret or a key pair, not both' }, 400);
-	}
-	if (saveAs && (!body.access_key || !body.secret_key)) return c.json({ error: 'Enter the access key and secret key to save them' }, 400);
-	if (!existing && !secretId && (!body.access_key || !body.secret_key)) return c.json({ error: 'access_key and secret_key are required' }, 400);
+	if (body.access_secret_id !== undefined && typeof body.access_secret_id !== 'string') return c.json({ error: 'access_secret_id must be a string' }, 400);
+	if (body.secret_key_secret_id !== undefined && typeof body.secret_key_secret_id !== 'string') return c.json({ error: 'secret_key_secret_id must be a string' }, 400);
+	if (body.save_access_as !== undefined && typeof body.save_access_as !== 'string') return c.json({ error: 'save_access_as must be a string' }, 400);
+	if (body.save_secret_as !== undefined && typeof body.save_secret_as !== 'string') return c.json({ error: 'save_secret_as must be a string' }, 400);
+	const accessSecretPick = typeof body.access_secret_id === 'string' ? body.access_secret_id.trim() : '';
+	const secretKeyPick = typeof body.secret_key_secret_id === 'string' ? body.secret_key_secret_id.trim() : '';
+	const saveAccessAs = body.save_access_as === undefined ? undefined : parseSecretName(body.save_access_as);
+	const saveSecretAs = body.save_secret_as === undefined ? undefined : parseSecretName(body.save_secret_as);
+	if (body.save_access_as !== undefined && !saveAccessAs) return c.json({ error: 'save_access_as must be 1–80 characters' }, 400);
+	if (body.save_secret_as !== undefined && !saveSecretAs) return c.json({ error: 'save_secret_as must be 1–80 characters' }, 400);
+	if (accessSecretPick && (body.access_key !== undefined || saveAccessAs)) return c.json({ error: 'Send a saved secret or an access key, not both' }, 400);
+	if (secretKeyPick && (body.secret_key !== undefined || saveSecretAs)) return c.json({ error: 'Send a saved secret or a secret key, not both' }, 400);
+	if (saveAccessAs && !body.access_key) return c.json({ error: 'Enter the access key to save it' }, 400);
+	if (saveSecretAs && !body.secret_key) return c.json({ error: 'Enter the secret key to save it' }, 400);
+	if (saveAccessAs && saveSecretAs && saveAccessAs === saveSecretAs) return c.json({ error: 'Give the two saved secrets different names' }, 400);
+	if (!existing && !accessSecretPick && !body.access_key) return c.json({ error: 'access_key is required' }, 400);
+	if (!existing && !secretKeyPick && !body.secret_key) return c.json({ error: 'secret_key is required' }, 400);
 
 	let documentRefs: string[] | undefined;
 	if (body.documents !== undefined) {
@@ -223,38 +268,45 @@ app.put('/:repo/onshape', requireRepoLevel('admin'), async (c) => {
 		);
 	}
 
-	// ── Resolve keys: a saved secret, pasted keys, or the keys already stored on the link ──
+	// ── Resolve keys: saved secrets, pasted keys, or the keys already stored on the link ──
 	const userId = c.get('principal').userId;
-	if ((secretId || saveAs) && !userId) return c.json({ error: 'Saved secrets belong to a signed-in user. Paste the keys instead.' }, 400);
-	if (saveAs) {
-		const taken = await DB.prepare('SELECT id FROM saved_secrets WHERE user_id = ? AND kind = ? AND name = ?').bind(userId, 'onshape', saveAs).first();
-		if (taken) return c.json({ error: `You already have a saved Onshape key named "${saveAs}"` }, 409);
+	const saving = [saveAccessAs, saveSecretAs].filter((name): name is string => Boolean(name));
+	if ((accessSecretPick || secretKeyPick || saving.length) && !userId) {
+		return c.json({ error: 'Saved secrets belong to a signed-in user. Paste the keys instead.' }, 400);
+	}
+	if (saving.length) {
+		for (const name of saving) {
+			const taken = await DB.prepare('SELECT id FROM saved_secrets WHERE user_id = ? AND name = ?').bind(userId, name).first();
+			if (taken) return c.json({ error: `You already have a saved secret named "${name}"` }, 409);
+		}
 		const count = await DB.prepare('SELECT COUNT(*) AS n FROM saved_secrets WHERE user_id = ?').bind(userId).first<{ n: number }>();
-		if ((count?.n ?? 0) >= MAX_SAVED_SECRETS) return c.json({ error: `At most ${MAX_SAVED_SECRETS} saved secrets` }, 400);
+		if ((count?.n ?? 0) + saving.length > MAX_SAVED_SECRETS) return c.json({ error: `At most ${MAX_SAVED_SECRETS} saved secrets` }, 400);
 	}
 
-	let accessKey: string;
-	let secretKey: string;
-	let savedSecretId: string | null = null;
+	const replacingAccess = Boolean(accessSecretPick) || body.access_key !== undefined;
+	const replacingSecret = Boolean(secretKeyPick) || body.secret_key !== undefined;
+	let accessSecretId: string | null = replacingAccess ? accessSecretPick || null : (existing?.saved_secret_id ?? null);
+	let secretKeySecretId: string | null = replacingSecret ? secretKeyPick || null : (existing?.secret_key_secret_id ?? null);
+
+	let accessKey = '';
+	let secretKey = '';
 	try {
-		if (secretId) {
-			const saved = await DB.prepare('SELECT * FROM saved_secrets WHERE id = ? AND user_id = ?').bind(secretId, userId).first<SavedSecretRow>();
-			if (!saved || saved.kind !== 'onshape') return c.json({ error: 'Saved secret not found' }, 404);
-			const keys = await decryptOnshapeSecret(saved.payload_encrypted, c.env.ENCRYPTION_KEY, c.env.SESSION_SECRET);
-			accessKey = keys.access_key;
-			secretKey = keys.secret_key;
-			savedSecretId = saved.id;
-		} else {
-			accessKey = body.access_key?.trim() || (existing ? await decryptSecret(existing.access_key_encrypted, c.env.ENCRYPTION_KEY, c.env.SESSION_SECRET) : '');
-			secretKey = body.secret_key?.trim() || (existing ? await decryptSecret(existing.secret_key_encrypted, c.env.ENCRYPTION_KEY, c.env.SESSION_SECRET) : '');
-		}
-	} catch {
-		return c.json({ error: secretId ? 'That saved Onshape key could not be read — replace it' : 'The stored Onshape keys could not be decrypted — enter them again' }, 400);
+		if (accessSecretPick) accessKey = await secretField(await ownedSecret(DB, userId!, accessSecretPick), 'access', c.env.ENCRYPTION_KEY, c.env.SESSION_SECRET);
+		else if (body.access_key !== undefined) accessKey = body.access_key.trim();
+		else if (existing) accessKey = await decryptSecret(existing.access_key_encrypted, c.env.ENCRYPTION_KEY, c.env.SESSION_SECRET);
+
+		if (secretKeyPick) secretKey = await secretField(await ownedSecret(DB, userId!, secretKeyPick), 'secret', c.env.ENCRYPTION_KEY, c.env.SESSION_SECRET);
+		else if (body.secret_key !== undefined) secretKey = body.secret_key.trim();
+		else if (existing) secretKey = await decryptSecret(existing.secret_key_encrypted, c.env.ENCRYPTION_KEY, c.env.SESSION_SECRET);
+	} catch (err) {
+		if (err instanceof Error && err.message === 'Saved secret not found') return c.json({ error: 'Saved secret not found' }, 404);
+		const picked = Boolean(accessSecretPick || secretKeyPick);
+		return c.json({ error: picked ? 'That saved secret could not be read — replace it' : 'The stored Onshape keys could not be decrypted — enter them again' }, 400);
 	}
 	if (!accessKey || !secretKey) return c.json({ error: 'access_key and secret_key are required' }, 400);
 	const client = new OnshapeClient({ baseUrl, accessKey, secretKey });
 	let documents: LinkedDocument[] = existing ? (JSON.parse(existing.documents) as LinkedDocument[]) : [];
-	const replacingKeys = Boolean(secretId) || body.access_key !== undefined || body.secret_key !== undefined;
+	const replacingKeys = replacingAccess || replacingSecret;
 	const keysChanged = replacingKeys || body.base_url !== undefined;
 	try {
 		if (documentRefs) {
@@ -262,7 +314,9 @@ app.put('/:repo/onshape', requireRepoLevel('admin'), async (c) => {
 			const adding = parsedDocs.some(({ parsed }) => parsed && !previous.has(parsed.documentId));
 			// Stored keys belong to whoever connected the repo. Adding a document re-checks
 			// them, so another admin cannot point the sync at a document only those keys can see.
-			if (existing && adding && !secretId && (!body.access_key?.trim() || !body.secret_key?.trim())) {
+			const suppliedAccess = Boolean(accessSecretPick) || Boolean(body.access_key?.trim());
+			const suppliedSecret = Boolean(secretKeyPick) || Boolean(body.secret_key?.trim());
+			if (existing && adding && (!suppliedAccess || !suppliedSecret)) {
 				return c.json({ error: 'Enter the Onshape access key and secret key again to add a document' }, 400);
 			}
 			const resolved: LinkedDocument[] = [];
@@ -290,26 +344,17 @@ app.put('/:repo/onshape', requireRepoLevel('admin'), async (c) => {
 	// ── Save ──
 	const now = new Date().toISOString();
 	const hint = replacingKeys ? onshapeHint(accessKey) : existing!.access_key_hint;
-	// Pasted keys can also be stored on the user, then copied into this repo.
-	if (saveAs) {
-		savedSecretId = crypto.randomUUID();
-		await DB.prepare(
-			`INSERT INTO saved_secrets (id, user_id, name, kind, payload_encrypted, hint, created_at, updated_at)
-			 VALUES (?, ?, ?, 'onshape', ?, ?, ?, ?)`
-		)
-			.bind(savedSecretId, userId, saveAs, await encryptOnshapeSecret({ access_key: accessKey, secret_key: secretKey }, c.env.ENCRYPTION_KEY), hint, now, now)
-			.run();
-		await audit(DB, { ...auditContext(c), action: 'secret.create', details: { id: savedSecretId, kind: 'onshape', name: saveAs } });
-	}
+	if (saveAccessAs) accessSecretId = await insertTextSecret(DB, c.env.ENCRYPTION_KEY, userId!, saveAccessAs, accessKey, now, auditContext(c));
+	if (saveSecretAs) secretKeySecretId = await insertTextSecret(DB, c.env.ENCRYPTION_KEY, userId!, saveSecretAs, secretKey, now, auditContext(c));
 	const accessEnc = replacingKeys ? await encryptSecret(accessKey, c.env.ENCRYPTION_KEY) : existing!.access_key_encrypted;
 	const secretEnc = replacingKeys ? await encryptSecret(secretKey, c.env.ENCRYPTION_KEY) : existing!.secret_key_encrypted;
-	const linkSecretId = replacingKeys ? savedSecretId : (existing?.saved_secret_id ?? null);
 	const values = {
 		base_url: baseUrl,
 		access_key_encrypted: accessEnc,
 		secret_key_encrypted: secretEnc,
 		access_key_hint: hint,
-		saved_secret_id: linkSecretId,
+		saved_secret_id: accessSecretId,
+		secret_key_secret_id: secretKeySecretId,
 		documents: JSON.stringify(documents),
 		branch,
 		formats: JSON.stringify(formats ?? (existing ? JSON.parse(existing.formats) : ['glb', 'step'])),
@@ -322,20 +367,20 @@ app.put('/:repo/onshape', requireRepoLevel('admin'), async (c) => {
 	if (existing) {
 		id = existing.id;
 		await DB.prepare(
-			`UPDATE onshape_links SET base_url = ?, access_key_encrypted = ?, secret_key_encrypted = ?, access_key_hint = ?, saved_secret_id = ?, documents = ?,
+			`UPDATE onshape_links SET base_url = ?, access_key_encrypted = ?, secret_key_encrypted = ?, access_key_hint = ?, saved_secret_id = ?, secret_key_secret_id = ?, documents = ?,
 			   branch = ?, formats = ?, interval_minutes = ?, backfill = ?, is_enabled = ?, next_check_at = NULL, retry_after = NULL, last_error = NULL, updated_at = ?
 			 WHERE id = ?`
 		)
-			.bind(values.base_url, values.access_key_encrypted, values.secret_key_encrypted, values.access_key_hint, values.saved_secret_id, values.documents, values.branch, values.formats, values.interval_minutes, values.backfill, values.is_enabled, now, id)
+			.bind(values.base_url, values.access_key_encrypted, values.secret_key_encrypted, values.access_key_hint, values.saved_secret_id, values.secret_key_secret_id, values.documents, values.branch, values.formats, values.interval_minutes, values.backfill, values.is_enabled, now, id)
 			.run();
 	} else {
 		id = crypto.randomUUID();
 		await DB.prepare(
-			`INSERT INTO onshape_links (id, repo_id, base_url, access_key_encrypted, secret_key_encrypted, access_key_hint, saved_secret_id, documents, branch,
+			`INSERT INTO onshape_links (id, repo_id, base_url, access_key_encrypted, secret_key_encrypted, access_key_hint, saved_secret_id, secret_key_secret_id, documents, branch,
 			   formats, interval_minutes, backfill, is_enabled, created_by, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 		)
-			.bind(id, repo.id, values.base_url, values.access_key_encrypted, values.secret_key_encrypted, values.access_key_hint, values.saved_secret_id, values.documents, values.branch, values.formats, values.interval_minutes, values.backfill, values.is_enabled, auditContext(c).actor, now, now)
+			.bind(id, repo.id, values.base_url, values.access_key_encrypted, values.secret_key_encrypted, values.access_key_hint, values.saved_secret_id, values.secret_key_secret_id, values.documents, values.branch, values.formats, values.interval_minutes, values.backfill, values.is_enabled, auditContext(c).actor, now, now)
 			.run();
 	}
 

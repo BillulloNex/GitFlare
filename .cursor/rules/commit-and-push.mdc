@@ -1,0 +1,18 @@
+---
+description: Commit and push finished work by default
+alwaysApply: true
+---
+
+# Commit and push
+
+When a task changes this repo, finish by committing and pushing. Do not wait to be asked.
+
+Commit on the current branch and push to its upstream. On `main`, push to `origin/main`.
+
+- Never update git config.
+- Never force-push, hard-reset, or skip hooks unless the user explicitly asks.
+- Never commit secrets (`.env`, credentials, tokens). Leave those files out and say so.
+- If the user says not to commit or not to push, stop there.
+- One sentence, why rather than what, ending with a period. Pass the message with a HEREDOC.
+
+Bump the version in the same commit when the change touches product code.

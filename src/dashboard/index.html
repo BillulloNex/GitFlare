@@ -1167,7 +1167,7 @@
                             <svg class="i" width="16" height="16" aria-hidden="true"><use href="#i-log-out"/></svg>
                             Sign out
                         </button>
-                        <div class="menu-foot">GitFlare v1.1.1</div>
+                        <div class="menu-foot">GitFlare v1.1.2</div>
                     </div>
                 </div>
             </div>
@@ -1459,9 +1459,9 @@
                     <div class="page-head">
                         <div>
                             <div class="page-title">Saved secrets</div>
-                            <p class="page-lead">Keys stored on your account. Pick one when connecting Onshape to a repository. Each repository keeps its own encrypted copy, so deleting a saved key does not disconnect repos that already use it.</p>
+                            <p class="page-lead">Keys and tokens stored on your account. Pick one wherever a repository asks for a credential. Each repository keeps its own encrypted copy, so deleting a saved secret does not disconnect repos that already use it.</p>
                         </div>
-                        <button class="btn btn-primary" onclick="openSecretModal()">Add Onshape key</button>
+                        <button class="btn btn-primary" onclick="openSecretModal()">Add secret</button>
                     </div>
                     <div id="secretsList"></div>
                 </div>
@@ -1488,23 +1488,17 @@
     </dialog>
 
     <dialog id="secretModal">
-        <h3 id="secretModalTitle">Save Onshape key</h3>
-        <p class="dialog-lead" id="secretModalLead">Stored encrypted on your account. The key is not shown again after you save it.</p>
+        <h3 id="secretModalTitle">Save secret</h3>
+        <p class="dialog-lead" id="secretModalLead">Stored encrypted on your account. The value is not shown again after you save it.</p>
         <div class="form-group">
             <label for="secretName">Name</label>
-            <input type="text" id="secretName" class="form-control" maxlength="80" placeholder="Onshape" autocomplete="off">
+            <input type="text" id="secretName" class="form-control" maxlength="80" placeholder="Onshape access key" autocomplete="off">
         </div>
-        <div class="form-row">
-            <div class="form-group">
-                <label for="secretAccessKey">Access key</label>
-                <input type="text" id="secretAccessKey" class="form-control" autocomplete="off" spellcheck="false">
-            </div>
-            <div class="form-group">
-                <label for="secretSecretKey">Secret key</label>
-                <input type="password" id="secretSecretKey" class="form-control" autocomplete="new-password">
-            </div>
+        <div class="form-group">
+            <label for="secretValue">Secret</label>
+            <textarea id="secretValue" class="form-control" rows="3" autocomplete="off" spellcheck="false" placeholder="Paste a key, token, or JSON"></textarea>
         </div>
-        <div class="form-hint" id="secretKeyHint" style="margin-top:-8px;">Create a key pair with read access at <a href="https://dev-portal.onshape.com/keys" target="_blank" rel="noopener">dev-portal.onshape.com/keys</a>.</div>
+        <div class="form-hint" id="secretKeyHint" style="margin-top:-8px;">Use a name you'll recognize later, like “GitHub” or “Onshape secret key”.</div>
         <div class="dialog-actions" style="margin-top:20px;">
             <button class="btn" onclick="document.getElementById('secretModal').close()">Cancel</button>
             <button class="btn btn-primary" id="secretSubmitBtn" onclick="submitSecret()">Save</button>
@@ -1529,30 +1523,31 @@
     <dialog id="onshapeModal" class="dialog-wide">
         <h3 id="onshapeModalTitle">Connect Onshape</h3>
         <p class="dialog-lead">Every new Onshape Version becomes a commit here, with each Part Studio and Assembly saved as files in Git LFS.</p>
-        <div class="form-group" id="onshapeKeySourceGroup">
-            <label for="onshapeKeySource">API key</label>
-            <select id="onshapeKeySource" class="form-control"></select>
-            <div class="form-hint" id="onshapeKeySourceHint"></div>
-        </div>
-        <div id="onshapeKeyEntry">
-            <div class="form-row">
-                <div class="form-group">
-                    <label for="onshapeAccessKey">Access key</label>
-                    <input type="text" id="onshapeAccessKey" class="form-control" autocomplete="off" spellcheck="false">
-                </div>
-                <div class="form-group">
-                    <label for="onshapeSecretKey">Secret key</label>
-                    <input type="password" id="onshapeSecretKey" class="form-control" autocomplete="new-password">
+        <div class="form-row">
+            <div class="form-group">
+                <label for="onshapeAccessSource">Access key</label>
+                <select id="onshapeAccessSource" class="form-control"></select>
+                <div id="onshapeAccessEntry">
+                    <input type="text" id="onshapeAccessKey" class="form-control" autocomplete="off" spellcheck="false" style="margin-top:8px;">
+                    <div class="check-row" style="margin-top:8px;">
+                        <label><input type="checkbox" id="onshapeSaveAccess"> Save for other repositories</label>
+                    </div>
+                    <input type="text" id="onshapeSaveAccessName" class="form-control" maxlength="80" placeholder="Name, for example Onshape access" autocomplete="off" style="margin-top:8px; display:none;">
                 </div>
             </div>
-            <div class="form-hint" id="onshapeKeyHint" style="margin-top:-8px; margin-bottom:12px;">Create a key pair with read access at <a href="https://dev-portal.onshape.com/keys" target="_blank" rel="noopener">dev-portal.onshape.com/keys</a>. Keys are encrypted at rest.</div>
-            <div class="form-group" id="onshapeSaveGroup">
-                <div class="check-row">
-                    <label><input type="checkbox" id="onshapeSaveSecret"> Save this key for other repositories</label>
+            <div class="form-group">
+                <label for="onshapeSecretSource">Secret key</label>
+                <select id="onshapeSecretSource" class="form-control"></select>
+                <div id="onshapeSecretEntry">
+                    <input type="password" id="onshapeSecretKey" class="form-control" autocomplete="new-password" style="margin-top:8px;">
+                    <div class="check-row" style="margin-top:8px;">
+                        <label><input type="checkbox" id="onshapeSaveSecretKey"> Save for other repositories</label>
+                    </div>
+                    <input type="text" id="onshapeSaveSecretName" class="form-control" maxlength="80" placeholder="Name, for example Onshape secret" autocomplete="off" style="margin-top:8px; display:none;">
                 </div>
-                <input type="text" id="onshapeSaveName" class="form-control" maxlength="80" placeholder="Name, for example Onshape" autocomplete="off" style="margin-top:8px; display:none;">
             </div>
         </div>
+        <div class="form-hint" id="onshapeKeyHint" style="margin-top:-8px; margin-bottom:16px;">Create a key pair with read access at <a href="https://dev-portal.onshape.com/keys" target="_blank" rel="noopener">dev-portal.onshape.com/keys</a>. Saved secrets live on your account; picking one copies it into this repository.</div>
         <div class="form-group">
             <label for="onshapeDocuments">Documents <span style="color:var(--text-muted); font-weight:400;">(one Onshape URL per line)</span></label>
             <textarea id="onshapeDocuments" class="form-control" rows="3" placeholder="https://cad.onshape.com/documents/…" spellcheck="false"></textarea>
@@ -2467,7 +2462,7 @@
                             <p>GitFlare checks your Onshape documents on a schedule. Each new Onshape <em>Version</em> becomes a commit with every Part Studio and Assembly exported, so the history is yours and opens in any CAD tool.</p>
                         </div>
                         <div class="onshape-steps">
-                            <div class="onshape-step"><strong>1 · Connect</strong>Pick a saved Onshape key, or paste one, and add the document URLs.</div>
+                            <div class="onshape-step"><strong>1 · Connect</strong>Pick saved secrets, or paste a key pair, and add the document URLs.</div>
                             <div class="onshape-step"><strong>2 · Save a version</strong>In Onshape, create a Version as usual.</div>
                             <div class="onshape-step"><strong>3 · Browse</strong>GLB, STEP and STL land in Git LFS. Open a .glb here to spin it in 3D.</div>
                         </div>
@@ -2522,7 +2517,7 @@
                             <div class="deploy-type-icon cloudflare">${icon('box', 18)}</div>
                             <div style="min-width:0;">
                                 <div class="deploy-name">Onshape link</div>
-                                <div class="deploy-sub">${esc(link.base_url.replace(/^https:\/\//, ''))} · key ••••${esc(link.access_key_hint)}${link.saved_secret_name ? ` · ${esc(link.saved_secret_name)}` : ''}</div>
+                                <div class="deploy-sub">${esc(link.base_url.replace(/^https:\/\//, ''))} · key ••••${esc(link.access_key_hint)}${[link.access_secret_name, link.secret_key_secret_name].filter(Boolean).length ? ` · ${esc([link.access_secret_name, link.secret_key_secret_name].filter(Boolean).join(' / '))}` : ''}</div>
                             </div>
                         </div>
                         ${statusBadge}
@@ -2571,7 +2566,7 @@
             const container = document.getElementById('secretsList');
             container.innerHTML = `<div class="card">${skeletonList(3)}</div>`;
             try {
-                const res = await apiFetch(`${API_BASE}/secrets?kind=onshape`, { headers: authHeaders() });
+                const res = await apiFetch(`${API_BASE}/secrets`, { headers: authHeaders() });
                 const data = await res.json().catch(() => ({}));
                 if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
                 savedSecrets = data.secrets || [];
@@ -2584,14 +2579,14 @@
         function renderSecrets() {
             const container = document.getElementById('secretsList');
             if (!savedSecrets.length) {
-                container.innerHTML = `<div class="card">${emptyState('<strong>No saved keys yet.</strong> Add an Onshape key once, then pick it on any repository.', { iconName: 'lock' })}</div>`;
+                container.innerHTML = `<div class="card">${emptyState('<strong>No saved secrets yet.</strong> Add a key or token once, then pick it on any repository.', { iconName: 'lock' })}</div>`;
                 return;
             }
             container.innerHTML = `<div class="card">${savedSecrets.map(s => `
                 <div class="secret-row">
                     <div style="min-width:0;">
                         <div class="secret-name">${esc(s.name)}</div>
-                        <div class="secret-meta">Onshape · <code>••••${esc(s.hint)}</code> · saved ${esc(timeAgo(s.updated_at))}</div>
+                        <div class="secret-meta"><code>••••${esc(s.hint)}</code> · saved ${esc(timeAgo(s.updated_at))}</div>
                     </div>
                     <div class="page-actions">
                         <button class="btn btn-sm" data-action="secret-edit" data-id="${esc(s.id)}">Edit</button>
@@ -2603,38 +2598,28 @@
         function openSecretModal(id) {
             const existing = id ? savedSecrets.find(s => s.id === id) : null;
             editingSecretId = existing?.id || null;
-            document.getElementById('secretModalTitle').textContent = existing ? 'Edit saved key' : 'Save Onshape key';
+            document.getElementById('secretModalTitle').textContent = existing ? 'Edit secret' : 'Save secret';
             document.getElementById('secretModalLead').textContent = existing
-                ? 'Leave the key fields blank to keep the stored pair. Replacing the key does not update repositories that already copied it — pick this key again on each repo.'
-                : 'Stored encrypted on your account. The key is not shown again after you save it.';
+                ? 'Leave the secret blank to keep the stored value. Replacing it does not update repositories that already copied it — pick it again on each repo.'
+                : 'Stored encrypted on your account. The value is not shown again after you save it.';
             document.getElementById('secretName').value = existing?.name || '';
-            document.getElementById('secretAccessKey').value = '';
-            document.getElementById('secretSecretKey').value = '';
-            document.getElementById('secretAccessKey').placeholder = existing ? `••••${existing.hint} (leave blank to keep)` : '';
-            document.getElementById('secretSecretKey').placeholder = existing ? 'stored (leave blank to keep)' : '';
-            document.getElementById('secretSubmitBtn').textContent = existing ? 'Save' : 'Save key';
+            const value = document.getElementById('secretValue');
+            value.value = '';
+            value.placeholder = existing ? `••••${existing.hint} (leave blank to keep)` : 'Paste a key, token, or JSON';
+            document.getElementById('secretSubmitBtn').textContent = existing ? 'Save' : 'Save secret';
             document.getElementById('secretModal').showModal();
         }
 
         async function submitSecret() {
             const btn = document.getElementById('secretSubmitBtn');
             const name = document.getElementById('secretName').value.trim();
-            const access = document.getElementById('secretAccessKey').value.trim();
-            const secret = document.getElementById('secretSecretKey').value.trim();
-            if (!name) return toast('Name the key', 'error');
-            if ((access || secret) && (!access || !secret)) return toast('Enter both the access key and the secret key', 'error');
-            if (!editingSecretId && (!access || !secret)) return toast('Enter the Onshape access key and secret key', 'error');
+            const value = document.getElementById('secretValue').value.trim();
+            if (!name) return toast('Name the secret', 'error');
+            if (!editingSecretId && !value) return toast('Paste the secret', 'error');
             const body = { name };
-            if (!editingSecretId) {
-                body.kind = 'onshape';
-                body.access_key = access;
-                body.secret_key = secret;
-            } else if (access && secret) {
-                body.access_key = access;
-                body.secret_key = secret;
-            }
+            if (value) body.value = value;
             btn.disabled = true;
-            btn.textContent = (access || !editingSecretId) ? 'Checking Onshape…' : 'Saving…';
+            btn.textContent = 'Saving…';
             try {
                 const res = await apiFetch(editingSecretId ? `${API_BASE}/secrets/${encodeURIComponent(editingSecretId)}` : `${API_BASE}/secrets`, {
                     method: editingSecretId ? 'PATCH' : 'POST',
@@ -2644,69 +2629,71 @@
                 const data = await res.json().catch(() => ({}));
                 if (!res.ok) throw new Error(data.details || data.error || `HTTP ${res.status}`);
                 document.getElementById('secretModal').close();
-                toast(editingSecretId ? 'Saved key updated' : 'Onshape key saved', 'success');
+                toast(editingSecretId ? 'Secret updated' : 'Secret saved', 'success');
                 fetchSecrets();
             } catch (e) {
                 toast(e.message, 'error');
             } finally {
                 btn.disabled = false;
-                btn.textContent = editingSecretId ? 'Save' : 'Save key';
+                btn.textContent = editingSecretId ? 'Save' : 'Save secret';
             }
         }
 
         async function deleteSecret(id) {
             const secret = savedSecrets.find(s => s.id === id);
             if (!secret) return;
-            if (!confirm(`Delete “${secret.name}”? Repositories that already copied this key keep working.`)) return;
+            if (!confirm(`Delete “${secret.name}”? Repositories that already copied this secret keep working.`)) return;
             try {
                 const res = await apiFetch(`${API_BASE}/secrets/${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders() });
                 const data = await res.json().catch(() => ({}));
                 if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-                toast('Saved key deleted', 'success');
+                toast('Secret deleted', 'success');
                 fetchSecrets();
             } catch (e) {
                 toast(e.message, 'error');
             }
         }
 
-        function onOnshapeKeySourceChange() {
-            const source = document.getElementById('onshapeKeySource').value;
-            document.getElementById('onshapeKeyEntry').style.display = source === '' ? '' : 'none';
-            const hint = document.getElementById('onshapeKeySourceHint');
-            if (source && source !== '__keep__') {
-                hint.textContent = 'Copies this saved key into the repository. Changing the saved key later does not change this copy until you pick it again.';
-            } else if (source === '__keep__') {
-                hint.textContent = 'Keeps the keys already stored on this repository.';
-            } else {
-                hint.textContent = '';
-            }
-        }
-
-        async function fillOnshapeKeySource() {
-            let secrets = [];
-            try {
-                const res = await apiFetch(`${API_BASE}/secrets?kind=onshape`, { headers: authHeaders() });
-                if (res.ok) secrets = (await res.json()).secrets || [];
-            } catch (e) { /* paste still works */ }
-            savedSecrets = secrets;
-            const link = onshapeData?.link;
-            const select = document.getElementById('onshapeKeySource');
+        function fillSecretSelect(selectId, entryId, { keepLabel, enterLabel }) {
+            const select = document.getElementById(selectId);
             const options = [];
-            if (link) {
-                const via = link.saved_secret_name ? ` (${link.saved_secret_name})` : '';
-                options.push({ value: '__keep__', label: `Keep keys on this repository${via}` });
-            }
-            for (const s of secrets) options.push({ value: s.id, label: `${s.name} · ••••${s.hint}` });
-            options.push({ value: '', label: link ? 'Enter a different key' : 'Enter a key' });
+            if (keepLabel) options.push({ value: '__keep__', label: keepLabel });
+            for (const s of savedSecrets) options.push({ value: s.id, label: `${s.name} · ••••${s.hint}` });
+            options.push({ value: '', label: enterLabel });
             select.replaceChildren(...options.map(o => {
                 const opt = document.createElement('option');
                 opt.value = o.value;
                 opt.textContent = o.label;
                 return opt;
             }));
-            document.getElementById('onshapeKeySourceGroup').style.display = (link || secrets.length) ? '' : 'none';
-            select.value = link ? '__keep__' : (secrets[0]?.id || '');
-            onOnshapeKeySourceChange();
+            const showPicker = Boolean(keepLabel) || savedSecrets.length > 0;
+            select.style.display = showPicker ? '' : 'none';
+            select.value = keepLabel ? '__keep__' : '';
+            document.getElementById(entryId).style.display = select.value === '' ? '' : 'none';
+        }
+
+        function onSecretSourceChange(selectId, entryId) {
+            document.getElementById(entryId).style.display = document.getElementById(selectId).value === '' ? '' : 'none';
+        }
+
+        async function fillOnshapeKeySource() {
+            let secrets = [];
+            try {
+                const res = await apiFetch(`${API_BASE}/secrets`, { headers: authHeaders() });
+                if (res.ok) secrets = (await res.json()).secrets || [];
+            } catch (e) { /* paste still works */ }
+            savedSecrets = secrets;
+            const link = onshapeData?.link;
+            const accessKeep = link ? `Keep the key on this repository${link.access_secret_name ? ` (${link.access_secret_name})` : ''}` : '';
+            const secretKeep = link ? `Keep the key on this repository${link.secret_key_secret_name ? ` (${link.secret_key_secret_name})` : ''}` : '';
+            fillSecretSelect('onshapeAccessSource', 'onshapeAccessEntry', {
+                keepLabel: accessKeep,
+                enterLabel: link ? 'Enter a different key' : 'Enter a key',
+            });
+            fillSecretSelect('onshapeSecretSource', 'onshapeSecretEntry', {
+                keepLabel: secretKeep,
+                enterLabel: link ? 'Enter a different key' : 'Enter a key',
+            });
         }
 
         async function openOnshapeModal() {
@@ -2716,11 +2703,11 @@
             document.getElementById('onshapeSubmitBtn').textContent = link ? 'Save' : 'Connect';
             document.getElementById('onshapeAccessKey').value = '';
             document.getElementById('onshapeSecretKey').value = '';
-            document.getElementById('onshapeAccessKey').placeholder = '';
-            document.getElementById('onshapeSecretKey').placeholder = '';
-            document.getElementById('onshapeSaveSecret').checked = false;
-            document.getElementById('onshapeSaveName').value = '';
-            document.getElementById('onshapeSaveName').style.display = 'none';
+            for (const [check, name] of [['onshapeSaveAccess', 'onshapeSaveAccessName'], ['onshapeSaveSecretKey', 'onshapeSaveSecretName']]) {
+                document.getElementById(check).checked = false;
+                document.getElementById(name).value = '';
+                document.getElementById(name).style.display = 'none';
+            }
             document.getElementById('onshapeDocuments').value = link ? link.documents.map(d => `${link.base_url}/documents/${d.id}`).join('\n') : '';
             const formats = link ? link.formats : ['glb', 'step'];
             document.querySelectorAll('input[name="onshapeFormat"]').forEach(cb => { cb.checked = formats.includes(cb.value); });
@@ -2734,6 +2721,26 @@
             modal.showModal();
         }
 
+        /** 'keep' | 'saved' | 'typed' | 'empty' | 'need-name'. Writes the chosen key onto body. */
+        function readOnshapeKey(sourceId, inputId, checkId, nameId, secretKey, valueKey, saveKey, body) {
+            const source = document.getElementById(sourceId).value;
+            if (source === '__keep__') return 'keep';
+            if (source) {
+                body[secretKey] = source;
+                return 'saved';
+            }
+            const value = document.getElementById(inputId).value.trim();
+            if (document.getElementById(checkId).checked) {
+                const name = document.getElementById(nameId).value.trim();
+                if (!name) return 'need-name';
+                if (!value) return 'empty';
+                body[saveKey] = name;
+            }
+            if (!value) return 'empty';
+            body[valueKey] = value;
+            return 'typed';
+        }
+
         async function submitOnshapeLink() {
             const link = onshapeData?.link;
             const btn = document.getElementById('onshapeSubmitBtn');
@@ -2742,36 +2749,24 @@
                 formats: [...document.querySelectorAll('input[name="onshapeFormat"]:checked')].map(cb => cb.value),
                 interval_minutes: Number(document.getElementById('onshapeInterval').value),
             };
-            const source = document.getElementById('onshapeKeySource').value;
-            const keeping = source === '__keep__';
-            const access = document.getElementById('onshapeAccessKey').value.trim();
-            const secret = document.getElementById('onshapeSecretKey').value.trim();
-            if (source && !keeping) {
-                body.secret_id = source;
-            } else if (!keeping) {
-                if (access) body.access_key = access;
-                if (secret) body.secret_key = secret;
-                if (document.getElementById('onshapeSaveSecret').checked) {
-                    const name = document.getElementById('onshapeSaveName').value.trim();
-                    if (!name) return toast('Name the key to save it for other repositories', 'error');
-                    if (!access || !secret) return toast('Enter both keys to save them', 'error');
-                    body.save_as = name;
-                }
-            }
+            const accessChoice = readOnshapeKey('onshapeAccessSource', 'onshapeAccessKey', 'onshapeSaveAccess', 'onshapeSaveAccessName', 'access_secret_id', 'access_key', 'save_access_as', body);
+            const secretChoice = readOnshapeKey('onshapeSecretSource', 'onshapeSecretKey', 'onshapeSaveSecretKey', 'onshapeSaveSecretName', 'secret_key_secret_id', 'secret_key', 'save_secret_as', body);
+            if (accessChoice === 'need-name' || secretChoice === 'need-name') return toast('Name the secret to save it for other repositories', 'error');
             const branch = document.getElementById('onshapeBranch').value.trim();
             if (branch) body.branch = branch;
             if (!link) body.backfill = document.getElementById('onshapeBackfill').value;
 
-            if (!link && !body.secret_id && (!access || !secret)) return toast('Enter the Onshape access key and secret key, or pick a saved one', 'error');
-            if (!keeping && !body.secret_id && ((access && !secret) || (!access && secret))) return toast('Enter both the access key and the secret key', 'error');
-            if (link && !body.secret_id && (!access || !secret)) {
+            if (!link && accessChoice === 'empty') return toast('Enter the Onshape access key, or pick a saved secret', 'error');
+            if (!link && secretChoice === 'empty') return toast('Enter the Onshape secret key, or pick a saved secret', 'error');
+            if (link) {
                 const known = new Set(link.documents.map(d => d.id));
                 const adding = body.documents.some(ref => {
                     const fromUrl = (ref.match(/\/documents\/([a-f0-9]{24})/i) || [])[1];
                     const id = fromUrl || (/^[a-f0-9]{24}$/i.test(ref) ? ref : '');
                     return !id || !known.has(id);
                 });
-                if (adding) return toast('Enter the keys again, or pick a saved key, to add a document', 'error');
+                const reused = (choice) => choice === 'keep' || choice === 'empty';
+                if (adding && (reused(accessChoice) || reused(secretChoice))) return toast('Enter both keys again, or pick saved secrets, to add a document', 'error');
             }
             if (!body.documents.length) return toast('Add at least one Onshape document URL', 'error');
             if (!body.formats.length) return toast('Pick at least one export format', 'error');
@@ -2869,13 +2864,19 @@
 
         document.getElementById('onshapeInterval').addEventListener('change', updateOnshapeQuotaHint);
         document.getElementById('onshapeDocuments').addEventListener('input', updateOnshapeQuotaHint);
-        document.getElementById('onshapeKeySource').addEventListener('change', onOnshapeKeySourceChange);
-        document.getElementById('onshapeSaveSecret').addEventListener('change', () => {
-            const name = document.getElementById('onshapeSaveName');
-            const on = document.getElementById('onshapeSaveSecret').checked;
-            name.style.display = on ? '' : 'none';
-            if (on && !name.value) name.value = 'Onshape';
-        });
+        document.getElementById('onshapeAccessSource').addEventListener('change', () => onSecretSourceChange('onshapeAccessSource', 'onshapeAccessEntry'));
+        document.getElementById('onshapeSecretSource').addEventListener('change', () => onSecretSourceChange('onshapeSecretSource', 'onshapeSecretEntry'));
+        for (const [check, name, preset] of [
+            ['onshapeSaveAccess', 'onshapeSaveAccessName', 'Onshape access'],
+            ['onshapeSaveSecretKey', 'onshapeSaveSecretName', 'Onshape secret'],
+        ]) {
+            document.getElementById(check).addEventListener('change', () => {
+                const input = document.getElementById(name);
+                const on = document.getElementById(check).checked;
+                input.style.display = on ? '' : 'none';
+                if (on && !input.value) input.value = preset;
+            });
+        }
 
         // ─── Feature 2: Commit History & Diff View ───────────────────────
         async function fetchCommits() {
