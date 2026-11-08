@@ -22,6 +22,7 @@ import internalMerge from './api/internal-merge.ts';
 import ticketsApp from './api/tickets.ts';
 import authApp from './api/auth.ts';
 import keysApp from './api/keys.ts';
+import secretsApp from './api/secrets.ts';
 import { createMcpApp } from './api/mcp.ts';
 import { handleCIJob, handleDeployJob } from './queue/ci-consumer.ts';
 import { handleMirrorSyncBatch } from './lib/github-mirror.ts';
@@ -148,6 +149,9 @@ app.route('/mcp', createMcpApp((request, env, ctx) => app.fetch(request, env, ct
 
 // API key management: /api/keys
 app.route('/api/keys', keysApp);
+
+// Saved secrets (account-level, reused across repos): /api/secrets
+app.route('/api/secrets', secretsApp);
 
 // File browsing: /api/repos/:repo/tree, /blob, /raw
 app.route('/api/repos', filesApp);
