@@ -282,14 +282,21 @@ export class OnshapeClient {
 		return this.json('GET', `/documents/d/${documentId}/versions`, { query: { offset: String(offset), limit: String(limit) } });
 	}
 
-	elements(documentId: string, versionId: string): Promise<OnshapeElement[]> {
-		return this.json('GET', `/documents/d/${documentId}/v/${versionId}/elements`);
+	/** A document's tabs at a version (`v`) or, for the live state, a workspace (`w`). */
+	elements(documentId: string, versionId: string, wv: 'v' | 'w' = 'v'): Promise<OnshapeElement[]> {
+		return this.json('GET', `/documents/d/${documentId}/${wv}/${versionId}/elements`);
 	}
 
-	/** Start an export of a Part Studio or Assembly at a version. */
-	startExport(documentId: string, versionId: string, element: { id: string; elementType: string }, format: ExportFormat): Promise<OnshapeTranslation> {
+	/** Start an export of a Part Studio or Assembly at a version (`v`) or a workspace (`w`). */
+	startExport(
+		documentId: string,
+		versionId: string,
+		element: { id: string; elementType: string },
+		format: ExportFormat,
+		wv: 'v' | 'w' = 'v'
+	): Promise<OnshapeTranslation> {
 		const kind = element.elementType === 'ASSEMBLY' ? 'assemblies' : 'partstudios';
-		const base = `/${kind}/d/${documentId}/v/${versionId}/e/${element.id}`;
+		const base = `/${kind}/d/${documentId}/${wv}/${versionId}/e/${element.id}`;
 		switch (format) {
 			case 'glb':
 				return this.json('POST', `${base}/export/gltf`, { body: { storeInDocument: false } });

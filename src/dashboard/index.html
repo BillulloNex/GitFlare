@@ -908,6 +908,10 @@
             padding: 14px 20px; font-weight: 600; font-size: var(--text-sm);
         }
         .onshape-section-head span { color: var(--text-muted); font-weight: 400; font-size: var(--text-xs); }
+        .onshape-preview { margin-bottom: 16px; overflow: hidden; }
+        .onshape-preview .model-stage { height: min(56vh, 520px); }
+        .onshape-preview-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+        .onshape-preview-controls select { width: auto; max-width: 220px; height: 30px; padding: 0 28px 0 10px; font-size: var(--text-xs); }
         .version-row {
             display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center;
             padding: 12px 20px; border-top: 1px solid var(--border-muted);
@@ -1269,7 +1273,7 @@
                             <svg class="i" width="16" height="16" aria-hidden="true"><use href="#i-log-out"/></svg>
                             Sign out
                         </button>
-                        <div class="menu-foot">GitFlare v1.1.4</div>
+                        <div class="menu-foot">GitFlare v1.1.5</div>
                     </div>
                 </div>
             </div>
@@ -1591,6 +1595,20 @@
                     <div class="page-head">
                         <div class="page-title">Onshape</div>
                         <div class="page-actions" id="onshapeActions"></div>
+                    </div>
+                    <div id="onshapePreview" class="card onshape-preview" style="display:none;">
+                        <div class="onshape-section-head">
+                            <div>Live preview <span id="cadPreviewSub"></span></div>
+                            <div class="onshape-preview-controls" id="cadPreviewControls"></div>
+                        </div>
+                        <div id="cadModelStage" class="model-stage" style="display:none;">
+                            <canvas id="cadModelCanvas" aria-label="3D preview of the Onshape document"></canvas>
+                            <div class="model-status" id="cadModelStatus"></div>
+                            <div class="model-hud">
+                                <span class="hud-dims" id="cadModelDims" style="display:none;"></span>
+                                <button class="btn btn-sm" id="cadModelResetBtn" style="display:none;" onclick="resetModelView()">Reset view</button>
+                            </div>
+                        </div>
                     </div>
                     <div id="onshapeContainer"></div>
                 </div>
@@ -2136,6 +2154,7 @@
                 if (view) view.style.display = (t === tab) ? 'block' : 'none';
             });
             positionTabInk();
+            if (tab !== 'cad') closeCadPreview();
 
             if (!activeRepo) return;
             if (tab === 'code') loadTree();
@@ -2435,6 +2454,9 @@
         const MODEL_FILE_RE = /\.(glb|gltf|stl)$/i;
         let modelView = null;      // { renderer, controls, scene, camera, frame(), raf, observer }
         let modelLoadSeq = 0;
+        // Element-id prefix of the stage in use: 'model' (file viewer) or 'cadModel' (CAD tab live preview).
+        let modelPrefix = 'model';
+        const modelEl = part => document.getElementById(modelPrefix + part);
 
         function isViewableModel(file) {
             if (!MODEL_FILE_RE.test(file.name)) return false;
@@ -2451,7 +2473,7 @@
 
         function disposeModel() {
             modelLoadSeq++;
-            const stage = document.getElementById('modelStage');
+            const stage = modelEl('Stage');
             if (stage) stage.style.display = 'none';
             if (!modelView) return;
             cancelAnimationFrame(modelView.raf);
@@ -2481,14 +2503,16 @@
             return `${fmt(size.x)} × ${fmt(size.y)} × ${fmt(size.z)} mm`;
         }
 
-        async function renderModel(file) {
+        /** Render a GLB / glTF / STL. `opts.prefix` picks the stage, `opts.url` overrides where the bytes come from. */
+        async function renderModel(file, opts = {}) {
             disposeModel();
+            modelPrefix = opts.prefix || 'model';
             const seq = modelLoadSeq;
-            const stage = document.getElementById('modelStage');
-            const status = document.getElementById('modelStatus');
-            const canvas = document.getElementById('modelCanvas');
-            const dims = document.getElementById('modelDims');
-            const resetBtn = document.getElementById('modelResetBtn');
+            const stage = modelEl('Stage');
+            const status = modelEl('Status');
+            const canvas = modelEl('Canvas');
+            const dims = modelEl('Dims');
+            const resetBtn = modelEl('ResetBtn');
             stage.style.display = 'block';
             status.className = 'model-status';
             status.innerHTML = `${icon('loader', 16, 'i-spin')} Loading model…`;
@@ -2502,7 +2526,7 @@
                     import('three'),
                     import('three/addons/controls/OrbitControls.js'),
                     isStl ? import('three/addons/loaders/STLLoader.js') : import('three/addons/loaders/GLTFLoader.js'),
-                    apiFetch(modelSourceUrl(file)),
+                    apiFetch(opts.url || modelSourceUrl(file)),
                 ]);
                 if (!res.ok) throw new Error(`download failed (HTTP ${res.status})`);
                 const buffer = await res.arrayBuffer();
@@ -2626,6 +2650,7 @@
             const actions = document.getElementById('onshapeActions');
             const container = document.getElementById('onshapeContainer');
 
+            renderCadPreview(link);
             if (!link) {
                 actions.innerHTML = '';
                 container.innerHTML = `
@@ -2671,8 +2696,8 @@
             const committed = counts.committed || 0;
             const versionsCard = `
                 <div class="card">
-                    <div class="onshape-section-head">Versions <span>${committed} committed${counts.skipped ? ` · ${counts.skipped} older skipped` : ''}</span></div>
-                    ${rows || `<div style="border-top:1px solid var(--border-muted)">${emptyState(link.last_check_at ? '<strong>No versions to sync yet.</strong> Create a Version in Onshape and it shows up here.' : 'Checking Onshape for versions…', { iconName: 'box' })}</div>`}
+                    <div class="onshape-section-head">Versions <span title="Skipped: the empty Start version every document begins with, and versions older than the link when only the latest is pulled">${committed} committed${counts.skipped ? ` · ${counts.skipped} skipped` : ''}</span></div>
+                    ${rows || `<div style="border-top:1px solid var(--border-muted)">${emptyState(link.last_check_at ? '<strong>No Versions committed yet.</strong> The live preview shows your current work. Create a Version in Onshape (Version manager → Create version), then Pull latest to commit it here.' : 'Checking Onshape for versions…', { iconName: 'box' })}</div>`}
                 </div>`;
 
             const statusBadge = !link.is_enabled
@@ -2711,6 +2736,148 @@
                 </div>`;
 
             container.innerHTML = `<div class="onshape-grid">${versionsCard}${statusCard}</div>`;
+        }
+
+        // ─── CAD: live preview of the current workspace ─────────────────
+        // shown: { docId, elementId, microversion, elementName, at } of the model on stage.
+        let cadPreview = { repo: null, docId: null, elementId: null, elements: [], busy: false, shown: null };
+
+        const cadPreviewStoreKey = () => `gf_onshape_preview:${activeRepo}`;
+
+        function cadPreviewSaved() {
+            try { return JSON.parse(localStorage.getItem(cadPreviewStoreKey()) || 'null'); } catch (e) { return null; }
+        }
+
+        function cadPreviewMessage(html, isError = false) {
+            if (modelPrefix === 'cadModel') disposeModel();
+            const stage = document.getElementById('cadModelStage');
+            const status = document.getElementById('cadModelStatus');
+            stage.style.display = 'block';
+            document.getElementById('cadModelCanvas').style.visibility = 'hidden';
+            document.getElementById('cadModelDims').style.display = 'none';
+            document.getElementById('cadModelResetBtn').style.display = 'none';
+            status.className = `model-status${isError ? ' is-error' : ''}`;
+            status.innerHTML = html;
+        }
+
+        function closeCadPreview() {
+            if (modelPrefix === 'cadModel') disposeModel();
+            cadPreview.shown = null;
+        }
+
+        function renderCadPreview(link) {
+            const card = document.getElementById('onshapePreview');
+            if (!link || !link.documents.length) {
+                card.style.display = 'none';
+                closeCadPreview();
+                return;
+            }
+            if (cadPreview.repo !== activeRepo) {
+                closeCadPreview();
+                const saved = cadPreviewSaved();
+                cadPreview = { repo: activeRepo, docId: saved?.docId || null, elementId: saved?.elementId || null, elements: saved?.elements || [], busy: false, shown: null };
+            }
+            if (!link.documents.some(d => d.id === cadPreview.docId)) {
+                Object.assign(cadPreview, { docId: link.documents[0].id, elementId: null, elements: [] });
+            }
+            card.style.display = '';
+            renderCadPreviewControls();
+            if (cadPreview.shown || cadPreview.busy) return;
+
+            // Show the last render from the cache: no Onshape calls.
+            const saved = cadPreviewSaved();
+            if (saved && saved.docId === cadPreview.docId && saved.microversion) {
+                cadPreviewShow(saved);
+            } else {
+                cadPreviewMessage(`<span><strong>See the document as it is in Onshape right now</strong>, before any Version.<br>Rendering costs a few Onshape API calls; an unchanged tab comes from the cache.</span>`);
+            }
+        }
+
+        function renderCadPreviewControls() {
+            const link = onshapeData?.link;
+            if (!link) return;
+            const docs = link.documents;
+            const docSelect = docs.length > 1
+                ? `<select class="form-control" aria-label="Onshape document" onchange="cadPreviewPickDoc(this.value)" ${cadPreview.busy ? 'disabled' : ''}>
+                    ${docs.map(d => `<option value="${esc(d.id)}" ${d.id === cadPreview.docId ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}
+                   </select>`
+                : '';
+            const elementSelect = cadPreview.elements.length > 1
+                ? `<select class="form-control" aria-label="Part Studio or Assembly" onchange="cadPreviewPickElement(this.value)" ${cadPreview.busy ? 'disabled' : ''}>
+                    ${cadPreview.elements.map(e => `<option value="${esc(e.id)}" ${e.id === cadPreview.elementId ? 'selected' : ''}>${esc(e.name)}${e.type === 'ASSEMBLY' ? ' (assembly)' : ''}</option>`).join('')}
+                   </select>`
+                : '';
+            const label = cadPreview.busy ? 'Rendering…' : cadPreview.shown ? 'Refresh' : 'Render';
+            document.getElementById('cadPreviewControls').innerHTML = `${docSelect}${elementSelect}
+                <button class="btn btn-sm${cadPreview.shown ? '' : ' btn-primary'}" data-action="onshape-preview" ${cadPreview.busy ? 'disabled' : ''} title="Export the current Onshape workspace and show it in 3D">
+                    ${icon(cadPreview.busy ? 'loader' : 'refresh', 14, cadPreview.busy ? 'i-spin' : '')} ${label}
+                </button>`;
+            const shown = cadPreview.shown;
+            document.getElementById('cadPreviewSub').textContent = shown
+                ? `${shown.elementName || 'Model'} · current workspace as of ${timeAgo(shown.at)}`
+                : '· current workspace, not yet a Version';
+        }
+
+        function cadPreviewPickDoc(id) {
+            Object.assign(cadPreview, { docId: id, elementId: null, elements: [] });
+            onshapePreviewRender();
+        }
+
+        function cadPreviewPickElement(id) {
+            cadPreview.elementId = id;
+            onshapePreviewRender();
+        }
+
+        function cadPreviewShow(p) {
+            cadPreview.shown = p;
+            renderCadPreviewControls();
+            const q = new URLSearchParams({ document_id: p.docId, element_id: p.elementId, microversion: p.microversion });
+            renderModel({ name: 'preview.glb' }, { prefix: 'cadModel', url: `${repoApi()}/onshape/preview/file?${q}` });
+        }
+
+        async function cadPreviewPost(path, body) {
+            const res = await apiFetch(`${repoApi()}/onshape/${path}`, { method: 'POST', headers: authHeaders(), body: JSON.stringify(body) });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok && !data.state) throw new Error(data.error || `HTTP ${res.status}`);
+            return data;
+        }
+
+        async function onshapePreviewRender() {
+            if (cadPreview.busy || !cadPreview.docId) return;
+            const repo = activeRepo;
+            const docId = cadPreview.docId;
+            cadPreview.busy = true;
+            closeCadPreview();
+            renderCadPreviewControls();
+            cadPreviewMessage(`${icon('loader', 16, 'i-spin')} Asking Onshape for the current model…`);
+            try {
+                let data = await cadPreviewPost('preview', { document_id: docId, ...(cadPreview.elementId ? { element_id: cadPreview.elementId } : {}) });
+                if (data.elements) cadPreview.elements = data.elements;
+                for (let polls = 0; data.state === 'exporting'; polls++) {
+                    if (repo !== activeRepo) return;
+                    if (polls >= 30) throw new Error('Onshape is still exporting. Try Render again in a minute.');
+                    cadPreviewMessage(`${icon('loader', 16, 'i-spin')} Onshape is exporting the model…`);
+                    // Every status check is an Onshape API call, so wait longer as it goes.
+                    await new Promise(r => setTimeout(r, Math.min(2000 + polls * 1000, 8000)));
+                    data = await cadPreviewPost('preview/poll', { document_id: docId, element_id: data.element_id, microversion: data.microversion, translation_id: data.translation_id });
+                }
+                if (repo !== activeRepo) return;
+                if (data.state !== 'ready') throw new Error(data.error || 'Preview failed');
+                const element = cadPreview.elements.find(e => e.id === data.element_id);
+                const shown = { docId, elementId: data.element_id, microversion: data.microversion, elementName: element?.name, elements: cadPreview.elements, at: new Date().toISOString() };
+                cadPreview.elementId = data.element_id;
+                try { localStorage.setItem(cadPreviewStoreKey(), JSON.stringify(shown)); } catch (e) {}
+                cadPreview.busy = false;
+                if (currentTab === 'cad') cadPreviewShow(shown);
+                fetchOnshape(); // refresh the API call count
+            } catch (e) {
+                if (repo === activeRepo) cadPreviewMessage(`${icon('alert', 16)} <span>${esc(e.message || String(e))}</span>`, true);
+            } finally {
+                if (repo === activeRepo) {
+                    cadPreview.busy = false;
+                    renderCadPreviewControls();
+                }
+            }
         }
 
         function updateOnshapeQuotaHint() {
@@ -4350,6 +4517,9 @@
                     break;
                 case 'onshape-sync':
                     onshapeSyncNow();
+                    break;
+                case 'onshape-preview':
+                    onshapePreviewRender();
                     break;
                 case 'onshape-toggle':
                     onshapeToggle();

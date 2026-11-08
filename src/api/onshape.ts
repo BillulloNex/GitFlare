@@ -7,11 +7,14 @@
  *   DELETE /api/repos/:repo/onshape                         remove the link (admin); commits already made stay
  *   POST   /api/repos/:repo/onshape/sync                    "Pull latest": check for new versions now (write); otherwise checked daily
  *   POST   /api/repos/:repo/onshape/versions/:id/retry      re-export a failed version (write)
+ *   POST   /api/repos/:repo/onshape/preview                 live 3D preview of a document's workspace: cached or start an export (write)
+ *   POST   /api/repos/:repo/onshape/preview/poll            one status check on that export (write)
+ *   GET    /api/repos/:repo/onshape/preview/file            the cached GLB (read)
  *
  * All routes run behind repoAccess (src/index.ts): GET needs read, other
  * methods need write.
  */
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import type { Env } from '../env.ts';
 import { auditContext, requireRepoLevel, type RepoVariables } from '../middleware/repo-access.ts';
 import { audit } from '../lib/audit.ts';
@@ -38,6 +41,7 @@ import {
 	type ExportFormat,
 	type OnshapeDocumentSummary,
 } from '../lib/onshape.ts';
+import { deletePreviews, isPreviewId, pollPreview, previewKey, startPreview, type PreviewResult } from '../lib/onshape-preview.ts';
 import { CHECK_INTERVAL_MS, assignFolders, branchIsProtected, runOnshapeSync, type LinkedDocument } from '../lib/onshape-sync.ts';
 
 const app = new Hono<{ Bindings: Env; Variables: RepoVariables }>();
@@ -509,6 +513,7 @@ app.delete('/:repo/onshape', requireRepoLevel('admin'), async (c) => {
 		c.env.DB.prepare('DELETE FROM onshape_links WHERE id = ?').bind(row.id),
 	]);
 	await audit(c.env.DB, { repoId: repo.id, ...auditContext(c), action: 'onshape.delete' });
+	c.executionCtx.waitUntil(deletePreviews(c.env.STORAGE, repo.id).catch(() => {}));
 	return c.json({ deleted: true });
 });
 
@@ -558,6 +563,92 @@ app.post('/:repo/onshape/versions/:id/retry', async (c) => {
 		.run();
 	c.executionCtx.waitUntil(runOnshapeSync(c.env, { linkId: version.link_id }));
 	return c.json({ retrying: true });
+});
+
+// ─── Live preview ───────────────────────────────────────────────
+
+/**
+ * The link's client for a preview of `documentId`, or an error response.
+ * Paused links still preview; a link backing off after a quota or key error does not.
+ */
+async function previewClient(c: Context<{ Bindings: Env; Variables: RepoVariables }>, documentId: unknown) {
+	const repo = c.get('repoRecord');
+	const row = await c.env.DB.prepare('SELECT * FROM onshape_links WHERE repo_id = ?').bind(repo.id).first<LinkRow & { retry_after: string | null }>();
+	if (!row) return { error: c.json({ error: 'No Onshape link configured' }, 404) };
+	if (!isPreviewId(documentId) || !(JSON.parse(row.documents) as LinkedDocument[]).some((d) => d.id === documentId)) {
+		return { error: c.json({ error: 'That document is not linked to this repository' }, 404) };
+	}
+	if (row.retry_after && Date.parse(row.retry_after) > Date.now()) {
+		return { error: c.json({ error: row.last_error || 'Onshape is paused for this link. Save the Onshape settings to try again.' }, 409) };
+	}
+	try {
+		const client = new OnshapeClient({
+			baseUrl: row.base_url,
+			accessKey: await decryptSecret(row.access_key_encrypted, c.env.ENCRYPTION_KEY, c.env.SESSION_SECRET),
+			secretKey: await decryptSecret(row.secret_key_encrypted, c.env.ENCRYPTION_KEY, c.env.SESSION_SECRET),
+		});
+		return { client, row, repoId: repo.id, documentId };
+	} catch {
+		return { error: c.json({ error: 'Could not read the stored Onshape keys. Save them again in Settings.' }, 500) };
+	}
+}
+
+async function runPreview(
+	c: Context<{ Bindings: Env; Variables: RepoVariables }>,
+	client: OnshapeClient,
+	linkId: string,
+	run: () => Promise<PreviewResult>
+) {
+	try {
+		const result = await run();
+		return c.json({ ...result, calls_used: client.calls }, result.state === 'failed' ? 422 : 200);
+	} catch (err) {
+		const message = err instanceof OnshapeError ? err.message : `Could not reach Onshape: ${err instanceof Error ? err.message : String(err)}`;
+		return c.json({ state: 'failed', error: message, calls_used: client.calls }, 502);
+	} finally {
+		if (client.calls) await c.env.DB.prepare('UPDATE onshape_links SET api_calls = api_calls + ? WHERE id = ?').bind(client.calls, linkId).run();
+	}
+}
+
+app.post('/:repo/onshape/preview', async (c) => {
+	const body = await readJsonObject<{ document_id: string; element_id: string }>(c);
+	if (!body) return c.json({ error: 'Invalid JSON body' }, 400);
+	if (body.element_id !== undefined && !isPreviewId(body.element_id)) return c.json({ error: 'Invalid element_id' }, 400);
+	const ctx = await previewClient(c, body.document_id);
+	if ('error' in ctx) return ctx.error;
+	return runPreview(c, ctx.client, ctx.row.id, () => startPreview(c.env.STORAGE, ctx.client, ctx.repoId, ctx.documentId, body.element_id));
+});
+
+app.post('/:repo/onshape/preview/poll', async (c) => {
+	const body = await readJsonObject<{ document_id: string; element_id: string; microversion: string; translation_id: string }>(c);
+	if (!body) return c.json({ error: 'Invalid JSON body' }, 400);
+	const { element_id, microversion, translation_id } = body;
+	if (!isPreviewId(element_id) || !isPreviewId(microversion) || !isPreviewId(translation_id)) {
+		return c.json({ error: 'element_id, microversion and translation_id are required' }, 400);
+	}
+	const ctx = await previewClient(c, body.document_id);
+	if ('error' in ctx) return ctx.error;
+	return runPreview(c, ctx.client, ctx.row.id, () =>
+		pollPreview(c.env.STORAGE, ctx.client, ctx.repoId, ctx.documentId, element_id, microversion, translation_id)
+	);
+});
+
+app.get('/:repo/onshape/preview/file', async (c) => {
+	const repo = c.get('repoRecord');
+	const { document_id, element_id, microversion } = c.req.query();
+	if (!isPreviewId(document_id) || !isPreviewId(element_id) || !isPreviewId(microversion)) {
+		return c.json({ error: 'document_id, element_id and microversion are required' }, 400);
+	}
+	const object = await c.env.STORAGE.get(previewKey(repo.id, document_id, element_id, microversion));
+	if (!object) return c.json({ error: 'No preview rendered for that revision' }, 404);
+	return new Response(object.body, {
+		headers: {
+			'Content-Type': object.httpMetadata?.contentType || 'application/octet-stream',
+			'Content-Length': String(object.size),
+			// A microversion never changes, so neither does its file.
+			'Cache-Control': 'private, max-age=31536000, immutable',
+		},
+	});
 });
 
 /**

@@ -256,8 +256,14 @@ Version's; trailers carry `Onshape-Document`, `Onshape-Version` and
   download per element and format, so a large document can use hundreds of
   calls. Calls are counted in `onshape_links.api_calls` and shown in the
   dashboard.
+- Live preview: the CAD tab can render one Part Studio or Assembly of a
+  document's main workspace in 3D before any Version exists
+  (`src/lib/onshape-preview.ts`). It exports a GLB on demand and caches it in
+  R2 under `onshape-preview/<repo_id>/…/<microversion>`, so an unchanged tab
+  costs 2 calls and a fresh render about 5–10. Previews are not committed.
 - API: `GET|PUT|DELETE /api/repos/:repo/onshape`, `POST …/onshape/sync`,
-  `POST …/onshape/versions/:id/retry`.
+  `POST …/onshape/versions/:id/retry`, `POST …/onshape/preview`,
+  `POST …/onshape/preview/poll`, `GET …/onshape/preview/file`.
 
 ### Deploy targets
 
