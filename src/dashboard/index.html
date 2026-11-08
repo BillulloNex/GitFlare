@@ -13,7 +13,8 @@
     { "imports": {
         "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
         "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
-        "fflate": "https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js"
+        "fflate": "https://cdn.jsdelivr.net/npm/fflate@0.8.2/esm/browser.js",
+        "heic-to": "https://cdn.jsdelivr.net/npm/heic-to@1.6.6/dist/heic-to.js"
     } }
     </script>
     <style>
@@ -725,6 +726,7 @@
         .diary-tile img, .diary-tile video { width: 100%; height: 100%; object-fit: cover; display: block; }
         .diary-media.n1 .diary-tile img, .diary-media.n1 .diary-tile video { width: auto; max-width: 100%; height: auto; max-height: 620px; object-fit: contain; }
         .diary-tile img { cursor: zoom-in; }
+        .diary-tile.is-converting::after { content: 'Converting HEIC…'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-size: var(--text-xs); }
         .diary-tile .fallback { width: 100%; height: 100%; min-height: 140px; display: flex; flex-direction: column; gap: 6px; align-items: center; justify-content: center; color: var(--text-muted); font-size: var(--text-xs); padding: 12px; text-align: center; overflow-wrap: anywhere; }
         .diary-tile .fallback a { color: var(--accent-hover); }
 
@@ -1375,7 +1377,7 @@
                             <svg class="i" width="16" height="16" aria-hidden="true"><use href="#i-log-out"/></svg>
                             Sign out
                         </button>
-                        <div class="menu-foot">GitFlare v1.1.9</div>
+                        <div class="menu-foot">GitFlare v1.1.10</div>
                     </div>
                 </div>
             </div>
@@ -1666,7 +1668,7 @@
                                 <span class="hint" id="diaryHint">⌘/Ctrl+Enter to post</span>
                                 <button type="button" class="btn btn-sm btn-primary" id="diaryPostBtn" data-action="diary-post">Post</button>
                             </div>
-                            <input type="file" id="diaryFileInput" multiple accept="image/*,video/*,.heic,.heif,.mov" style="display:none;">
+                            <input type="file" id="diaryFileInput" multiple accept="image/*,video/*,.mov" style="display:none;">
                         </div>
                         <div id="diaryFeed"></div>
                     </div>
@@ -4435,6 +4437,50 @@
         let diaryEditing = null;     // { id, tray }
         let diaryLightbox = null;    // { list, index }
         let currentUserId = null;
+        const diaryHeicUrls = new Map(); // media id → object URL of a JPEG rendition, for browsers that can't show HEIC
+
+        // ── HEIC → JPEG ──
+        // Only Safari renders HEIC. New HEIC uploads are converted to JPEG before
+        // they leave the browser, and HEIC already stored (API/agent uploads) is
+        // converted on display. Safari decodes natively; elsewhere libheif (WASM,
+        // ~3 MB) loads on first use.
+        const HEIC_RE = /\.(heic|heif)$/i;
+        function isHeicFile(file) { return HEIC_RE.test(file.name || '') || /^image\/hei[cf]/i.test(file.type || ''); }
+        let heicLib = null;
+        function loadHeicLib() {
+            heicLib ??= import('heic-to').catch((e) => { heicLib = null; throw e; });
+            return heicLib;
+        }
+        async function bitmapToJpeg(bitmap) {
+            // iOS Safari refuses canvases over ~16.7 MP; shrink 48 MP shots to fit.
+            const scale = Math.min(1, Math.sqrt(16_000_000 / (bitmap.width * bitmap.height)));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+            canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+            canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+            bitmap.close?.();
+            try {
+                return await new Promise((resolve, reject) => canvas.toBlob(b => b ? resolve(b) : reject(new Error('JPEG encoding failed')), 'image/jpeg', 0.92));
+            } finally {
+                canvas.width = canvas.height = 1;
+            }
+        }
+        async function heicToJpeg(blob) {
+            let bitmap = null;
+            try { bitmap = await createImageBitmap(blob); } catch { /* this browser can't decode HEIC */ }
+            if (bitmap) return bitmapToJpeg(bitmap);
+            const { heicTo } = await loadHeicLib();
+            return heicTo({ blob, type: 'image/jpeg', quality: 0.92 });
+        }
+        /** JPEG object URL for a stored HEIC media item (cached per page). */
+        async function heicDisplayUrl(m) {
+            if (diaryHeicUrls.has(m.id)) return diaryHeicUrls.get(m.id);
+            const res = await apiFetch(m.url);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const url = URL.createObjectURL(await heicToJpeg(await res.blob()));
+            diaryHeicUrls.set(m.id, url);
+            return url;
+        }
         const diaryComposerTray = { el: document.getElementById('diaryTray'), items: [], repo: null };
 
         function diaryUrl(path = '') { return `${repoApi()}/diary${path}`; }
@@ -4518,15 +4564,32 @@
                 if (!name) { toast(`${file.name || 'That file'} isn't a photo or video`, 'error'); continue; }
                 if (file.size > DIARY_MAX_BYTES) { toast(`${name} is over 2 GB`, 'error'); continue; }
                 if (!file.size) continue;
+                const heic = isHeicFile(file);
                 const item = {
                     key: crypto.randomUUID(), file, name,
                     kind: DIARY_VIDEO_RE.test(name) ? 'video' : 'image',
-                    preview: URL.createObjectURL(file),
-                    progress: 0, status: 'uploading', mediaId: null,
+                    preview: heic ? null : URL.createObjectURL(file),
+                    progress: 0, status: heic ? 'converting' : 'uploading', mediaId: null,
                     controller: new AbortController(),
                 };
                 tray.items.push(item);
-                item.promise = uploadDiaryFile(item, () => updateDiaryThumb(item))
+                item.promise = (async () => {
+                    if (heic) {
+                        try {
+                            item.file = new File([await heicToJpeg(file)], name.replace(/\.[^.]*$/, '') + '.jpg', { type: 'image/jpeg' });
+                        } catch (e) {
+                            throw new Error(`couldn't convert HEIC to JPEG (${e.message || e})`);
+                        }
+                        if (item.controller.signal.aborted) throw new Error('removed');
+                        item.name = item.file.name;
+                        item.preview = URL.createObjectURL(item.file);
+                        item.status = 'uploading';
+                        item.el = null; // rebuild the thumbnail with the real preview
+                        if (tray.items.includes(item)) renderDiaryTray(tray);
+                        updateDiaryPostButton();
+                    }
+                    await uploadDiaryFile(item, () => updateDiaryThumb(item));
+                })()
                     .then(() => { item.status = 'ready'; updateDiaryThumb(item); updateDiaryPostButton(); })
                     .catch((e) => {
                         if (item.controller.signal.aborted) return;
@@ -4589,7 +4652,9 @@
                     const el = document.createElement('div');
                     el.className = 'diary-thumb';
                     const src = item.kind === 'video' && item.file ? `${item.preview}#t=0.1` : item.preview;
-                    el.innerHTML = (item.kind === 'video'
+                    el.innerHTML = (!item.preview
+                        ? `<div class="file-ph">${icon('loader', 18, 'i-spin')}</div>`
+                        : item.kind === 'video'
                         ? `<video src="${esc(src)}" muted playsinline preload="metadata"></video><span class="kind">${icon('play', 14)}</span>`
                         : `<img src="${esc(src)}" alt="">`)
                         + `<span class="name">${esc(item.name)}</span><span class="bar"></span>`
@@ -4603,9 +4668,9 @@
 
         function updateDiaryThumb(item) {
             if (!item.el) return;
-            item.el.classList.toggle('is-uploading', item.status === 'uploading');
+            item.el.classList.toggle('is-uploading', item.status === 'uploading' || item.status === 'converting');
             item.el.classList.toggle('is-error', item.status === 'error');
-            item.el.title = item.status === 'error' ? `${item.name}: ${item.error}` : item.name;
+            item.el.title = item.status === 'error' ? `${item.name}: ${item.error}` : item.status === 'converting' ? `${item.name}: converting to JPEG…` : item.name;
             const bar = item.el.querySelector('.bar');
             bar.style.width = item.status === 'uploading' ? `${Math.max(4, item.progress * 100)}%` : '0';
         }
@@ -4616,7 +4681,7 @@
             const [item] = tray.items.splice(i, 1);
             if (item.file) {
                 item.controller.abort();
-                URL.revokeObjectURL(item.preview);
+                if (item.preview) URL.revokeObjectURL(item.preview);
                 // Discard the upload; anything still in flight is swept by the daily cleanup.
                 if (item.mediaId && item.status === 'ready') {
                     apiFetch(diaryUrl(`/media/${encodeURIComponent(item.mediaId)}`), { method: 'DELETE', headers: authHeaders() }).catch(() => {});
@@ -4629,7 +4694,7 @@
         function clearDiaryTray(tray, { discard = true } = {}) {
             for (const item of [...tray.items]) {
                 if (discard) removeDiaryItem(tray, item.key);
-                else if (item.file) URL.revokeObjectURL(item.preview);
+                else if (item.file && item.preview) URL.revokeObjectURL(item.preview);
             }
             tray.items = [];
             renderDiaryTray(tray);
@@ -4646,10 +4711,11 @@
         function updateDiaryPostButton() {
             const btn = document.getElementById('diaryPostBtn');
             const hint = document.getElementById('diaryHint');
-            const pending = diaryComposerTray.items.filter(i => i.status === 'uploading');
+            const pending = diaryComposerTray.items.filter(i => i.status === 'uploading' || i.status === 'converting');
+            const converting = pending.filter(i => i.status === 'converting').length;
             if (pending.length) {
                 const pct = Math.round(pending.reduce((s, i) => s + i.progress, 0) / pending.length * 100);
-                hint.textContent = `Uploading ${pending.length} file${pending.length === 1 ? '' : 's'}… ${pct}%. You can post now; it'll wait.`;
+                hint.textContent = `${converting ? `Converting ${converting} HEIC to JPEG · ` : ''}Uploading ${pending.length} file${pending.length === 1 ? '' : 's'}… ${pct}%. You can post now; it'll wait.`;
             } else {
                 hint.textContent = '⌘/Ctrl+Enter to post';
             }
@@ -4690,7 +4756,7 @@
             const repoAtStart = activeRepo;
             btn.dataset.busy = '1';
             btn.disabled = true;
-            btn.textContent = tray.items.some(i => i.status === 'uploading') ? 'Waiting for uploads…' : 'Posting…';
+            btn.textContent = tray.items.some(i => i.status === 'uploading' || i.status === 'converting') ? 'Waiting for uploads…' : 'Posting…';
             try {
                 const mediaIds = await diaryTrayMediaIds(tray);
                 if (activeRepo !== repoAtStart) throw new Error('Switched repositories before the post finished');
@@ -4798,7 +4864,7 @@
                 const url = esc(m.url);
                 const body = m.kind === 'video'
                     ? `<video controls playsinline preload="metadata" src="${url}#t=0.1" data-download="${url}?download=1" data-name="${esc(m.filename)}"></video>`
-                    : `<img class="diary-img" loading="lazy" src="${url}" alt="${esc(m.filename)}" data-action="lightbox-open" data-id="${esc(m.id)}" data-download="${url}?download=1" data-name="${esc(m.filename)}">`;
+                    : `<img class="diary-img" loading="lazy" src="${esc(diaryHeicUrls.get(m.id) || m.url)}" alt="${esc(m.filename)}" data-action="lightbox-open" data-id="${esc(m.id)}" data-download="${url}?download=1" data-name="${esc(m.filename)}">`;
                 return `<div class="diary-tile">${body}</div>`;
             }).join('')}</div>`;
         }
@@ -4921,7 +4987,10 @@
             const { list, index } = diaryLightbox;
             const m = list[index];
             const img = document.getElementById('diaryLightboxImg');
-            img.src = m.url;
+            img.src = diaryHeicUrls.get(m.id) || m.url;
+            if (HEIC_RE.test(m.filename) && !diaryHeicUrls.has(m.id)) {
+                heicDisplayUrl(m).then(url => { if (diaryLightbox && diaryLightbox.list[diaryLightbox.index] === m) img.src = url; }).catch(() => {});
+            }
             img.alt = m.filename;
             document.getElementById('diaryLightboxCount').textContent = `${index + 1} / ${list.length} · ${m.filename}`;
             document.getElementById('diaryLightboxOpen').href = m.url;
@@ -4986,6 +5055,18 @@
                 const el = e.target;
                 if (!(el instanceof HTMLImageElement || el instanceof HTMLVideoElement)) return;
                 const tile = el.closest('.diary-tile');
+                if (tile && el.tagName === 'IMG' && HEIC_RE.test(el.dataset.name || '') && !el.dataset.heicTried) {
+                    el.dataset.heicTried = '1';
+                    const m = diaryEntries.flatMap(x => x.media || []).find(x => x.id === el.dataset.id);
+                    if (m) {
+                        tile.classList.add('is-converting');
+                        heicDisplayUrl(m)
+                            .then(url => { el.src = url; })
+                            .catch(() => el.dispatchEvent(new Event('error')))
+                            .finally(() => tile.classList.remove('is-converting'));
+                        return;
+                    }
+                }
                 if (tile && el.dataset.download) {
                     tile.innerHTML = `<div class="fallback">${icon(el.tagName === 'VIDEO' ? 'play' : 'camera', 22)}<span>${esc(el.dataset.name || 'file')}</span><span>This browser can't preview it.</span><a href="${esc(el.dataset.download)}">Download</a></div>`;
                     return;
@@ -5008,7 +5089,7 @@
                 else if (e.key === 'ArrowRight') stepDiaryLightbox(1);
             });
             window.addEventListener('beforeunload', (e) => {
-                if (diaryComposerTray.items.some(i => i.status === 'uploading')) { e.preventDefault(); e.returnValue = ''; }
+                if (diaryComposerTray.items.some(i => i.status === 'uploading' || i.status === 'converting')) { e.preventDefault(); e.returnValue = ''; }
             });
         })();
 

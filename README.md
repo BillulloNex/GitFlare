@@ -281,6 +281,9 @@ any past time for backfilling). Posts are grouped by day; newest or oldest first
   webm; up to 2 GB each). They upload as soon as they are added, as R2 multipart
   uploads streamed through the Worker in 10 MB parts, so phone videos get past the
   per-request body limit without presigned URLs or bucket CORS.
+- HEIC/HEIF photos are converted to JPEG in the browser before upload (Safari
+  decodes natively; other browsers lazy-load libheif via `heic-to`, ~3 MB). HEIC
+  stored through the API is converted on display in browsers that can't show it.
 - Bytes live in R2 under `diary/<repo_id>/<media_id>/…` and are served with Range
   support. Uploads never attached to a post are deleted by the cron after a day.
 - Access follows the repo: readers see the diary, writers post, and only an
