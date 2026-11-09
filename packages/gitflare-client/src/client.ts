@@ -31,6 +31,11 @@ import {
   type DiaryMedia,
   type DiaryPage,
   type CreateDiaryEntryInput,
+  type TableList,
+  type Table,
+  type SaveTableInput,
+  type SavedTable,
+  type TableHistory,
   GitFlareError,
 } from './types.js';
 
@@ -299,6 +304,33 @@ class LfsClient {
   }
 }
 
+/** Data tables: CSV files under `tables/`, one commit per save. */
+class TablesClient {
+  constructor(private http: Http) {}
+
+  list(repo: string, opts: { ref?: string } = {}): Promise<TableList> {
+    return this.http.data('GET', `/api/repos/${seg(repo)}/tables${query({ ref: opts.ref })}`);
+  }
+
+  /** `ref` may be a branch, tag or commit id (to read an old version). */
+  get(repo: string, name: string, opts: { ref?: string } = {}): Promise<Table> {
+    return this.http.data('GET', `/api/repos/${seg(repo)}/tables/${seg(name)}${query({ ref: opts.ref })}`);
+  }
+
+  history(repo: string, name: string, opts: { ref?: string } = {}): Promise<TableHistory> {
+    return this.http.data('GET', `/api/repos/${seg(repo)}/tables/${seg(name)}/history${query({ ref: opts.ref })}`);
+  }
+
+  /** Create, replace or rename a table in one commit. */
+  save(repo: string, name: string, input: SaveTableInput): Promise<SavedTable> {
+    return this.http.data('PUT', `/api/repos/${seg(repo)}/tables/${seg(name)}`, input);
+  }
+
+  delete(repo: string, name: string, opts: { branch?: string; base_blob?: string; message?: string } = {}): Promise<{ name: string; branch: string; commit: string; deleted: boolean }> {
+    return this.http.data('DELETE', `/api/repos/${seg(repo)}/tables/${seg(name)}${query(opts)}`);
+  }
+}
+
 class DiaryClient {
   constructor(private http: Http) {}
 
@@ -358,6 +390,7 @@ export class GitFlareClient {
   public readonly mirrors: MirrorsClient;
   public readonly lfs: LfsClient;
   public readonly diary: DiaryClient;
+  public readonly tables: TablesClient;
   private readonly http: Http;
 
   constructor(config: GitFlareConfig) {
@@ -371,6 +404,7 @@ export class GitFlareClient {
     this.mirrors = new MirrorsClient(this.http);
     this.lfs = new LfsClient(this.http);
     this.diary = new DiaryClient(this.http);
+    this.tables = new TablesClient(this.http);
   }
 
   /** Public health check — does NOT verify credentials (see `verifyAuth`). */

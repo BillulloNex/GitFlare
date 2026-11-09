@@ -336,6 +336,45 @@ export function createServer(client: GitFlareClient): McpServer {
     }),
   );
 
+  // ── Tables ──
+  server.tool(
+    'gitflare_table_list',
+    "List a repo's data tables. Each table is a CSV file tables/<name>.csv on a branch; every save is a git commit.",
+    { repo: z.string(), ref: z.string().optional().describe(refDescription) },
+    run(({ repo, ref }) => client.tables.list(repo, { ref })),
+  );
+
+  server.tool(
+    'gitflare_table_read',
+    'Read a data table: columns, rows (all text) and its blob id. Pass a commit id as ref to read an old version.',
+    { repo: z.string(), name: z.string().describe('Table name, e.g. "BOM"'), ref: z.string().optional().describe(refDescription) },
+    run(({ repo, name, ref }) => client.tables.get(repo, name, { ref })),
+  );
+
+  server.tool(
+    'gitflare_table_write',
+    'Create or replace a data table in one commit. Send columns + rows (all text) or csv. To edit safely, read the table first and pass its blob as base_blob: the write fails with 409 if someone changed it since. base_blob null = create only.',
+    {
+      repo: z.string(),
+      name: z.string().describe('Table name: letters, numbers, spaces and . _ ( ) & + - (max 80)'),
+      branch: z.string().optional().describe("Default: the repo's default branch"),
+      columns: z.array(z.string()).optional(),
+      rows: z.array(z.array(z.string())).optional(),
+      csv: z.string().optional().describe('CSV text with a header row, instead of columns + rows'),
+      message: z.string().optional().describe('Commit message'),
+      base_blob: z.string().nullable().optional(),
+      rename_to: z.string().optional().describe('Also rename the table in the same commit'),
+    },
+    run(({ repo, name, ...input }) => client.tables.save(repo, name, input)),
+  );
+
+  server.tool(
+    'gitflare_table_history',
+    'Commits that changed a data table, newest first (follows renames). Read the table at a commit sha to see that version.',
+    { repo: z.string(), name: z.string(), ref: z.string().optional().describe(refDescription) },
+    run(({ repo, name, ref }) => client.tables.history(repo, name, { ref })),
+  );
+
   // ── Git Remote URL ──
   server.tool(
     'gitflare_git_remote_url',

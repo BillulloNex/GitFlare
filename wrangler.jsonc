@@ -167,7 +167,7 @@
 	// any missing secret. The deploy workflow checks the critical ones instead.
 	// ─── Environment Variables ──────────────────────────────────
 	"vars": {
-		"GITFLARE_VERSION": "1.1.14",
+		"GITFLARE_VERSION": "1.1.15",
 		// Git LFS (src/api/lfs.ts). Objects live in the STORAGE bucket under lfs/<repoId>/<oid>.
 		// Transfer mode is "presigned" when the R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY secrets
 		// are set (bytes go straight to R2, objects up to 5 GiB) and "proxy" otherwise (bytes

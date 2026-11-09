@@ -13,6 +13,8 @@ export interface ArtifactRepo {
 	info(): Promise<{ defaultBranch: string }>;
 	log(options?: { ref?: string; limit?: number; offset?: number }): Promise<ArtifactCommit[]>;
 	readTree(hash: string): Promise<ArtifactTreeEntry[] | null>;
+	/** Raw bytes of a blob by object id; null if missing or not a blob. */
+	readBlob(hash: string): Promise<Blob | null>;
 	readCommit(hash: string): Promise<ArtifactCommit | null>;
 	readFile(options: { ref: string; path: string }): Promise<Blob | null>;
 	/** Create a scoped, short-lived token for Git CLI access */

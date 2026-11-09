@@ -468,6 +468,72 @@ export interface CreateDiaryEntryInput {
   media_ids?: string[];
 }
 
+// ─── Tables ─────────────────────────────────────────────────────
+
+/** A data table: `tables/<name>.csv` on a branch. Every cell is text. */
+export interface TableSummary {
+  name: string;
+  path: string;
+  /** Git blob id of the CSV; pass as `base_blob` when saving. */
+  blob: string;
+  last_change: { sha: string; message: string; author: string; date: string } | null;
+}
+
+export interface TableList {
+  ref: string;
+  commit: string | null;
+  tables: TableSummary[];
+}
+
+export interface Table {
+  name: string;
+  path: string;
+  ref: string;
+  /** Commit the table was read at. */
+  commit: string;
+  blob: string;
+  columns: string[];
+  rows: string[][];
+}
+
+export interface SaveTableInput {
+  /** Default: the repo's default branch. */
+  branch?: string;
+  columns?: string[];
+  rows?: (string | number | boolean | null)[][];
+  /** CSV text instead of columns + rows (header row first). */
+  csv?: string;
+  message?: string;
+  /** Blob you loaded (409 if the table changed since); null = create only; omit = overwrite. */
+  base_blob?: string | null;
+  rename_to?: string;
+}
+
+export interface SavedTable {
+  name: string;
+  path: string;
+  branch: string;
+  commit: string;
+  blob: string | null;
+  unchanged: boolean;
+}
+
+export interface TableHistoryEntry {
+  sha: string;
+  parent: string | null;
+  message: string;
+  author: { name: string; email: string };
+  date: string;
+  changes: { table: string; kind: 'added' | 'modified' | 'deleted' | 'renamed'; from?: string; blob: string | null }[];
+}
+
+export interface TableHistory {
+  ref: string;
+  head: string | null;
+  truncated: boolean;
+  commits: TableHistoryEntry[];
+}
+
 // ─── Health ─────────────────────────────────────────────────────
 
 export interface HealthResponse {

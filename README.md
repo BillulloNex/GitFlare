@@ -302,6 +302,32 @@ any past time for backfilling). Posts are grouped by day; newest or oldest first
   `POST …/diary/media/:id/complete`, `DELETE …/diary/media/:id`,
   `GET …/diary/media/:id/file`.
 
+### Tables
+
+Every repo has a **Tables** tab: as many data tables as you like (collaborators,
+a BOM, experiment runs…), each a grid of text columns, versioned with git.
+
+- A table is the CSV file `tables/<name>.csv` on the selected branch. Any CSV
+  there is a table, so tables can also be cloned, edited and pushed with git, and
+  diffed in reviews. Output uses LF line endings and quotes only when needed, so a
+  one-cell edit is a one-line diff.
+- Edits stay local until **Commit**: one commit per save, authored by you, with
+  your message. The save sends the blob it loaded (`base_blob`); if the table
+  changed on the branch since, the save is refused (409) instead of overwriting.
+- **History** lists the commits that changed a table (following renames, last 200
+  commits on the branch). Open one to see added, removed and edited rows and
+  cells, then **Restore this version** to commit it back.
+- Grid: Enter moves down (and adds a row at the end), Shift+Enter is a line
+  break, paste a block from a spreadsheet to fill many cells, column menu to
+  insert/move/delete columns, filter rows, import or download CSV. ⌘/Ctrl+S commits.
+- Commits are written by the Worker under the repo's push lock, like the Onshape
+  sync. They do not start CI; they do trigger the GitHub mirror. Branches with a
+  merge-queue protection rule refuse table edits — edit on another branch.
+- Agents: MCP tools `gitflare_table_list`, `gitflare_table_read`,
+  `gitflare_table_write`, `gitflare_table_history`, or `client.tables.*`.
+- API: `GET /api/repos/:repo/tables?ref=`, `GET|PUT|DELETE …/tables/:name`
+  (`?ref=` may be a commit id; `?format=csv` downloads), `GET …/tables/:name/history`.
+
 ### Deploy targets
 
 ```bash

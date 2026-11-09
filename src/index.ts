@@ -23,6 +23,7 @@ import internalGithub from './api/internal-github.ts';
 import ticketsApp from './api/tickets.ts';
 import ideasApp from './api/ideas.ts';
 import diaryApp from './api/diary.ts';
+import tablesApp from './api/tables.ts';
 import authApp from './api/auth.ts';
 import keysApp from './api/keys.ts';
 import secretsApp from './api/secrets.ts';
@@ -94,7 +95,7 @@ app.get('/health', (c) => {
 	return c.json({
 		service: 'gitflare',
 		status: 'ok',
-		version: c.env.GITFLARE_VERSION ?? '1.1.14',
+		version: c.env.GITFLARE_VERSION ?? '1.1.15',
 	});
 });
 
@@ -111,7 +112,7 @@ app.get('/', async (c) => {
 	return c.json({
 		service: 'gitflare',
 		status: 'ok',
-		version: c.env.GITFLARE_VERSION ?? '1.1.14',
+		version: c.env.GITFLARE_VERSION ?? '1.1.15',
 	});
 });
 
@@ -189,6 +190,9 @@ app.route('/api/repos', ideasApp);
 
 // Diary (build log of text + photos/videos): /api/repos/:repo/diary/*
 app.route('/api/repos', diaryApp);
+
+// Data tables (CSV files under tables/, one commit per save): /api/repos/:repo/tables/*
+app.route('/api/repos', tablesApp);
 
 // Repo CRUD: /api/repos
 app.route('/api/repos', reposApp);
