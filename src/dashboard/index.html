@@ -464,6 +464,24 @@
             border-radius: var(--radius-md);
             overflow: hidden;
         }
+        .integration-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 16px; }
+        .integration-card { padding: 20px; align-self: start; }
+        .integration-card .btn:disabled, .integration-card .btn:disabled:hover { opacity: 0.5; cursor: not-allowed; background-color: var(--bg-muted); border-color: var(--border-default); color: var(--text-secondary); }
+        .integration-card-head { display: flex; align-items: flex-start; gap: 12px; }
+        .integration-mark { width: 36px; height: 36px; display: grid; place-items: center; flex: 0 0 auto; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--bg-muted); }
+        .integration-card-title { font-size: var(--text-md); font-weight: 600; line-height: 1.25; }
+        .integration-card-description { color: var(--text-secondary); font-size: var(--text-sm); line-height: 1.5; margin-top: 5px; }
+        .integration-card-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 20px; flex-wrap: wrap; }
+        .integration-card-status { color: var(--text-muted); font-size: var(--text-xs); }
+        .integration-card-status[data-state="connected"] { color: var(--success-fg); }
+        .integration-card-status[data-state="setup"] { color: var(--warning-fg); }
+        .integration-connections { border-top: 1px solid var(--border-muted); margin-top: 20px; padding-top: 16px; }
+        .integration-connection { padding: 12px 0; border-top: 1px solid var(--border-muted); }
+        .integration-connection:first-child { border-top: 0; padding-top: 0; }
+        .integration-connection:last-child { padding-bottom: 0; }
+        .integration-connection-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .integration-connection-options { margin-top: 10px; }
+        .integration-connection-options label { display: block; margin: 8px 0; }
 
         /* ─── Code view ──────────────────────────────────────────── */
         .codebase-toolbar {
@@ -1414,7 +1432,7 @@
                             <svg class="i" width="16" height="16" aria-hidden="true"><use href="#i-log-out"/></svg>
                             Sign out
                         </button>
-                        <div class="menu-foot">GitFlare v1.1.12</div>
+                        <div class="menu-foot">GitFlare v1.1.13</div>
                     </div>
                 </div>
             </div>
@@ -1819,12 +1837,26 @@
                         <div class="page-head">
                             <div>
                                 <div class="page-title">Integrations</div>
-                                <p class="page-lead">Connect a GitHub organization to run GitFlare CI through GitHub Actions. Install Blacksmith on that organization to use its runners.</p>
+                                <p class="page-lead">Connect the services your repositories use. Manage each service and its accounts here.</p>
                             </div>
-                            <button class="btn btn-primary" onclick="connectGithub()">Connect GitHub</button>
                         </div>
-                        <div id="connectionsList"></div>
-                        <p class="form-hint" style="margin-top:16px;">Choose the CI provider in your repository's <code>.gitflare/ci.yml</code> with <code>runs-on: github</code>, <code>runs-on: blacksmith</code>, or <code>runs-on: [blacksmith, runner]</code>. Blacksmith requires its GitHub App on the same organization with access to the CI mirror repositories.</p>
+                        <div id="integrationCards" class="integration-grid">
+                            <section class="card integration-card" aria-labelledby="githubIntegrationTitle">
+                                <div class="integration-card-head">
+                                    <span class="integration-mark"><svg class="i" width="20" height="20" aria-hidden="true"><use href="#i-branch"/></svg></span>
+                                    <div>
+                                        <h2 id="githubIntegrationTitle" class="integration-card-title">GitHub</h2>
+                                        <p class="integration-card-description">Run CI with GitHub Actions or Blacksmith through a connected organization.</p>
+                                    </div>
+                                </div>
+                                <div class="integration-card-actions">
+                                    <span id="githubIntegrationStatus" class="integration-card-status" role="status">Loading…</span>
+                                    <button id="githubConnectButton" class="btn btn-primary" onclick="connectGithub()" disabled>Connect organization</button>
+                                </div>
+                                <div id="connectionsList" class="integration-connections"></div>
+                            </section>
+                        </div>
+                        <p class="form-hint" style="margin-top:16px;">Select CI compute in <code>.gitflare/ci.yml</code> with <code>runs-on: github</code> or <code>runs-on: blacksmith</code>.</p>
                     </div>
                 </div>
             </div>
@@ -3201,21 +3233,38 @@
 
         async function fetchConnections() {
             const list = document.getElementById('connectionsList');
-            list.innerHTML = `<div class="card">${skeletonList(2)}</div>`;
+            const status = document.getElementById('githubIntegrationStatus');
+            const button = document.getElementById('githubConnectButton');
+            status.textContent = 'Loading…';
+            status.removeAttribute('data-state');
+            button.disabled = true;
+            list.innerHTML = skeletonList(2);
             try {
                 const res = await apiFetch(`${API_BASE}/connections`, { headers: authHeaders() });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
                 const rows = data.connections || [];
-                list.innerHTML = rows.length ? rows.map(c => `<div class="card" style="padding:20px; margin-bottom:12px;">
-                    <div class="page-head" style="margin-bottom:12px;"><div><strong>${esc(c.account_login)}</strong> <span class="secret-meta">${esc(c.account_type)}</span></div>
-                    <button class="btn btn-sm btn-ghost" onclick="removeConnection('${esc(c.id)}')">Disconnect</button></div>
-                    <label class="form-hint" style="display:block; margin:8px 0;"><input type="checkbox" ${c.allow_private ? 'checked' : ''} onchange="updateConnection('${esc(c.id)}', 'allow_private', this.checked)"> Allow private GitFlare repositories to use this organization</label>
-                    <label class="form-hint" style="display:block; margin:8px 0;"><input type="checkbox" ${c.blacksmith_enabled ? 'checked' : ''} onchange="updateConnection('${esc(c.id)}', 'blacksmith_enabled', this.checked)"> Blacksmith GitHub App is installed on this organization</label>
-                    <a href="https://app.blacksmith.sh/" target="_blank" rel="noopener noreferrer">Set up Blacksmith ↗</a>
-                </div>`).join('') : `<div class="card">${emptyState('<strong>No GitHub connections yet.</strong> Connect an organization to use GitHub Actions or Blacksmith.', { iconName: 'branch' })}</div>`;
-                if (!data.configured) list.insertAdjacentHTML('afterbegin', `<div class="card" style="padding:16px; margin-bottom:12px;">The GitFlare instance administrator must configure the GitHub App before connections can be added.</div>`);
-            } catch (e) { list.innerHTML = `<div class="card">${emptyState(esc(e.message), { error: true })}</div>`; }
+                status.textContent = !data.configured ? 'Setup required' : rows.length ? `${rows.length} organization${rows.length === 1 ? '' : 's'} connected` : 'Not connected';
+                status.dataset.state = !data.configured ? 'setup' : rows.length ? 'connected' : 'idle';
+                button.disabled = !data.configured;
+                button.textContent = rows.length ? 'Add organization' : 'Connect organization';
+                list.innerHTML = !data.configured
+                    ? '<p class="integration-card-description">An administrator must configure the GitFlare GitHub App before you can connect an organization.</p>'
+                    : rows.length ? rows.map(c => `<div class="integration-connection">
+                        <div class="integration-connection-head"><div><strong>${esc(c.account_login)}</strong> <span class="secret-meta">${esc(c.account_type)}</span></div>
+                        <button class="btn btn-sm btn-ghost" onclick="removeConnection('${esc(c.id)}')">Disconnect</button></div>
+                        <div class="integration-connection-options">
+                            <label class="form-hint"><input type="checkbox" ${c.allow_private ? 'checked' : ''} onchange="updateConnection('${esc(c.id)}', 'allow_private', this.checked)"> Allow private GitFlare repositories</label>
+                            <label class="form-hint"><input type="checkbox" ${c.blacksmith_enabled ? 'checked' : ''} onchange="updateConnection('${esc(c.id)}', 'blacksmith_enabled', this.checked)"> Blacksmith is installed on this organization</label>
+                            <a href="https://app.blacksmith.sh/" target="_blank" rel="noopener noreferrer">Set up Blacksmith ↗</a>
+                        </div>
+                    </div>`).join('') : '<p class="integration-card-description">Connect an organization to make GitHub Actions available to its GitFlare repositories.</p>';
+            } catch (e) {
+                status.textContent = 'Unavailable';
+                status.dataset.state = 'setup';
+                button.disabled = true;
+                list.innerHTML = `<p class="integration-card-description">${esc(e.message)}</p>`;
+            }
         }
 
         async function connectGithub() {
