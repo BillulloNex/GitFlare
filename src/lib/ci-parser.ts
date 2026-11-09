@@ -7,12 +7,16 @@ import { matchesBranchFilter } from './branch-pattern.ts';
  */
 export function parseCIConfig(yamlContent: string): CIPipelineConfig {
 	const config = parse(yamlContent) as Partial<CIPipelineConfig>;
+	if (!config || typeof config !== 'object' || Array.isArray(config)) throw new Error('CI config must be a mapping');
 
 	if (!config.name) throw new Error("Missing 'name' in CI config");
 	// `on` is optional: no `on` block means "run on every push" (see shouldTrigger).
 	if (!config.jobs || typeof config.jobs !== 'object') throw new Error("Missing or invalid 'jobs' in CI config");
+	validateRunsOn(config['runs-on'], 'Pipeline');
 
 	for (const [jobName, job] of Object.entries(config.jobs)) {
+		if (!job || typeof job !== 'object') throw new Error(`Job '${jobName}' must be a mapping`);
+		validateRunsOn(job['runs-on'], `Job '${jobName}'`);
 		if (!job.steps || !Array.isArray(job.steps)) {
 			throw new Error(`Job '${jobName}' must have a 'steps' array`);
 		}
@@ -28,6 +32,17 @@ export function parseCIConfig(yamlContent: string): CIPipelineConfig {
 	}
 
 	return config as CIPipelineConfig;
+}
+
+/** A job is dispatched as a unit, so all jobs in one run must resolve to the
+ * same backend until multi-backend job orchestration is implemented. */
+export function validateRunsOn(value: unknown, label: string): void {
+	if (value === undefined) return;
+	const values = typeof value === 'string' ? [value] : value;
+	if (!Array.isArray(values) || values.length === 0 || !values.every((v) =>
+		typeof v === 'string' && /^(runner|github(?::[A-Za-z0-9-]{1,39})?|blacksmith(?::[A-Za-z0-9-]{1,39})?)$/.test(v))) {
+		throw new Error(`${label} runs-on must be runner, github, blacksmith, or an account-qualified value (or a nonempty list)`);
+	}
 }
 
 /**

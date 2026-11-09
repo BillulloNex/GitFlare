@@ -7,12 +7,14 @@ import type { ApiKey } from '../env.ts';
 import { checkRepoAccess, type AccessLevel } from '../lib/access.ts';
 import { principalFrom } from '../middleware/auth.ts';
 import type { LfsTokenClaims } from '../lib/lfs-token.ts';
+import type { MergeTokenClaims } from '../lib/merge-token.ts';
 
 /** Context variables set by the /git auth middleware. Exactly one of the two is present. */
 export type GitAuthVariables = {
 	apiKey?: ApiKey;
 	/** A minted LFS bearer token (lib/lfs-token.ts); only honoured on LFS routes. */
 	lfsToken?: LfsTokenClaims;
+	mergeToken?: MergeTokenClaims;
 };
 
 export type GitRepoRow = {

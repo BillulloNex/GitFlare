@@ -19,12 +19,14 @@ import onshapeApp from './api/onshape.ts';
 import bootstrapApp from './api/bootstrap.ts';
 import internalCi, { deployCallbackApp } from './api/internal-ci.ts';
 import internalMerge from './api/internal-merge.ts';
+import internalGithub from './api/internal-github.ts';
 import ticketsApp from './api/tickets.ts';
 import ideasApp from './api/ideas.ts';
 import diaryApp from './api/diary.ts';
 import authApp from './api/auth.ts';
 import keysApp from './api/keys.ts';
 import secretsApp from './api/secrets.ts';
+import connectionsApp, { githubConnectionCallback } from './api/connections.ts';
 import { createMcpApp } from './api/mcp.ts';
 import { handleCIJob, handleDeployJob } from './queue/ci-consumer.ts';
 import { handleMirrorSyncBatch } from './lib/github-mirror.ts';
@@ -92,7 +94,7 @@ app.get('/health', (c) => {
 	return c.json({
 		service: 'gitflare',
 		status: 'ok',
-		version: c.env.GITFLARE_VERSION ?? '1.1.11',
+		version: c.env.GITFLARE_VERSION ?? '1.1.12',
 	});
 });
 
@@ -109,7 +111,7 @@ app.get('/', async (c) => {
 	return c.json({
 		service: 'gitflare',
 		status: 'ok',
-		version: c.env.GITFLARE_VERSION ?? '1.1.11',
+		version: c.env.GITFLARE_VERSION ?? '1.1.12',
 	});
 });
 
@@ -118,6 +120,7 @@ app.get('/docs/lfs', (c) => c.html(lfsDocsHtml));
 
 // Auth routes (login, callback, logout, me) — must be public
 app.route('/api/auth', authApp);
+app.route('/api/github', githubConnectionCallback);
 
 // Bootstrap uses its own ADMIN_API_KEY check
 app.route('/api/bootstrap', bootstrapApp);
@@ -128,6 +131,7 @@ app.route('/api/bootstrap', bootstrapApp);
 app.route('/api/internal/ci', internalCi);
 app.route('/api/internal/deploy', deployCallbackApp);
 app.route('/api/internal/merge', internalMerge);
+app.route('/api/internal/github', internalGithub);
 
 // ─── Auth Gate ──────────────────────────────────────────────────
 // Everything below this line requires authentication
@@ -154,6 +158,7 @@ app.route('/api/keys', keysApp);
 
 // Saved secrets (account-level, reused across repos): /api/secrets
 app.route('/api/secrets', secretsApp);
+app.route('/api/connections', connectionsApp);
 
 // File browsing: /api/repos/:repo/tree, /blob, /raw
 app.route('/api/repos', filesApp);

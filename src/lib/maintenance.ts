@@ -19,6 +19,7 @@ import { cancelRunnerRun } from './runner-client.ts';
 import { cleanExpiredSessions } from './session.ts';
 import { reconcileStalePendingLfs } from './lfs-storage.ts';
 import { purgeOrphanDiaryMedia } from '../api/diary.ts';
+import { githubApi, installationToken } from './github-app.ts';
 
 /** Grace on top of the runner's own deadline so its final callback can land first. */
 const RUNNING_GRACE_MS = 5 * 60 * 1000;
@@ -48,12 +49,12 @@ async function failStuckRuns(env: Env): Promise<{ running: number; queued: numbe
 	const now = new Date().toISOString();
 
 	const { results: running } = await DB.prepare(
-		`SELECT id FROM ci_runs
+		`SELECT id, backend, connection_id, repo_id, github_run_id FROM ci_runs
 		 WHERE status = 'running' AND julianday(COALESCE(started_at, created_at)) < julianday(?)
 		 LIMIT 100`
 	)
 		.bind(cutoff(maxCIDurationMs(env) + RUNNING_GRACE_MS))
-		.all<{ id: string }>();
+		.all<{ id: string; backend: string | null; connection_id: string | null; repo_id: string; github_run_id: string | null }>();
 
 	const { results: queued } = await DB.prepare(
 		`SELECT id FROM ci_runs
@@ -64,8 +65,9 @@ async function failStuckRuns(env: Env): Promise<{ running: number; queued: numbe
 		.all<{ id: string }>();
 
 	let failedRunning = 0;
-	for (const { id } of running) {
-		const res = await DB.prepare("UPDATE ci_runs SET status = 'failed', finished_at = ? WHERE id = ? AND status = 'running'")
+	for (const run of running) {
+		const { id } = run;
+		const res = await DB.prepare("UPDATE ci_runs SET status = 'failed', finished_at = ?, error_message = 'Timed out waiting for CI completion' WHERE id = ? AND status = 'running'")
 			.bind(now, id)
 			.run();
 		if (!res.meta.changes) continue;
@@ -76,13 +78,24 @@ async function failStuckRuns(env: Env): Promise<{ running: number; queued: numbe
 		]);
 		// The runner enforces its own deadline, but if it lost track of the
 		// run (restart) make sure no container keeps going.
-		const cancel = await cancelRunnerRun(env, id);
-		if (!cancel.ok) console.warn(`maintenance: runner cancel for ${id} failed: ${cancel.error}`);
+		if ((run.backend === 'github' || run.backend === 'blacksmith') && run.github_run_id && run.connection_id) {
+			try {
+				const connection = await DB.prepare('SELECT installation_id FROM github_compute_connections WHERE id = ?')
+					.bind(run.connection_id).first<{ installation_id: number }>();
+				const mirror = await DB.prepare('SELECT full_name FROM github_ci_mirrors WHERE repo_id = ? AND connection_id = ?')
+					.bind(run.repo_id, run.connection_id).first<{ full_name: string }>();
+				if (connection && mirror) await githubApi(`/repos/${mirror.full_name}/actions/runs/${run.github_run_id}/cancel`,
+					await installationToken(env, connection.installation_id), { method: 'POST' });
+			} catch (err) { console.warn(`maintenance: GitHub cancel for ${id} failed:`, err); }
+		} else if (!run.backend || run.backend === 'runner') {
+			const cancel = await cancelRunnerRun(env, id);
+			if (!cancel.ok) console.warn(`maintenance: runner cancel for ${id} failed: ${cancel.error}`);
+		}
 	}
 
 	let failedQueued = 0;
 	for (const { id } of queued) {
-		const res = await DB.prepare("UPDATE ci_runs SET status = 'failed', finished_at = ? WHERE id = ? AND status = 'queued'")
+		const res = await DB.prepare("UPDATE ci_runs SET status = 'failed', finished_at = ?, error_message = 'Timed out waiting in the CI queue' WHERE id = ? AND status = 'queued'")
 			.bind(now, id)
 			.run();
 		if (!res.meta.changes) continue;
@@ -132,6 +145,7 @@ export async function runScheduledMaintenance(env: Env): Promise<MaintenanceRepo
 		purgeOrphanDiaryMedia(env, LFS_PENDING_TIMEOUT_MS).then((n) => {
 			report.diaryOrphansPurged = n;
 		}),
+		env.DB.prepare("DELETE FROM github_merge_run_bindings WHERE julianday(created_at) < julianday('now', '-1 day')").run().then(() => {}),
 	];
 	const outcomes = await Promise.allSettled(tasks);
 	for (const o of outcomes) {

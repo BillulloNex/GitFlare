@@ -86,7 +86,7 @@ interface RunnerResultBody {
 const MAX_DISPATCH_TRIES = 5;
 const MAX_RESTARTS = 3;
 /** Runner op budget is the token TTL; allow time for callback retries. */
-const RUNNER_OP_TIMEOUT_MS = MERGE_TOKEN_TTL_S * 1000 + 2 * 60_000;
+const RUNNER_OP_TIMEOUT_MS = Math.max(MERGE_TOKEN_TTL_S * 1000 + 2 * 60_000, 15 * 60_000);
 const CI_TIMEOUT_BUFFER_MS = 5 * 60_000;
 const SHA_RE = /^[0-9a-f]{40}$/;
 

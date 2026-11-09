@@ -1406,11 +1406,15 @@
                             <svg class="i" width="16" height="16" aria-hidden="true"><use href="#i-lock"/></svg>
                             Saved secrets
                         </button>
+                        <button class="menu-item" role="menuitem" onclick="openConnections()">
+                            <svg class="i" width="16" height="16" aria-hidden="true"><use href="#i-branch"/></svg>
+                            Integrations
+                        </button>
                         <button class="menu-item" role="menuitem" onclick="logout()">
                             <svg class="i" width="16" height="16" aria-hidden="true"><use href="#i-log-out"/></svg>
                             Sign out
                         </button>
-                        <div class="menu-foot">GitFlare v1.1.11</div>
+                        <div class="menu-foot">GitFlare v1.1.12</div>
                     </div>
                 </div>
             </div>
@@ -1801,6 +1805,7 @@
                     <button class="back-link" onclick="closeSecrets()">
                         <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-arrow-left"/></svg> Repository
                     </button>
+                    <div id="secretsSection">
                     <div class="page-head">
                         <div>
                             <div class="page-title">Saved secrets</div>
@@ -1809,6 +1814,18 @@
                         <button class="btn btn-primary" onclick="openSecretModal()">Add secret</button>
                     </div>
                     <div id="secretsList"></div>
+                    </div>
+                    <div id="connectionsSection" hidden>
+                        <div class="page-head">
+                            <div>
+                                <div class="page-title">Integrations</div>
+                                <p class="page-lead">Connect a GitHub organization to run GitFlare CI through GitHub Actions. Install Blacksmith on that organization to use its runners.</p>
+                            </div>
+                            <button class="btn btn-primary" onclick="connectGithub()">Connect GitHub</button>
+                        </div>
+                        <div id="connectionsList"></div>
+                        <p class="form-hint" style="margin-top:16px;">Choose the CI provider in your repository's <code>.gitflare/ci.yml</code> with <code>runs-on: github</code>, <code>runs-on: blacksmith</code>, or <code>runs-on: [blacksmith, runner]</code>. Blacksmith requires its GitHub App on the same organization with access to the CI mirror repositories.</p>
+                    </div>
                 </div>
             </div>
         </main>
@@ -2118,6 +2135,10 @@
             document.getElementById('fileTableBody').innerHTML = skeletonRows();
             loadMe();
             await loadRepos();
+            if (new URLSearchParams(location.search).has('connections')) {
+                history.replaceState({}, '', location.pathname);
+                openConnections();
+            }
         }
 
         /** Fill the account menu. Failure is non-fatal; the menu still offers Sign out. */
@@ -3164,7 +3185,64 @@
             document.getElementById('userMenu')?.classList.remove('show');
             document.getElementById('userMenuBtn')?.setAttribute('aria-expanded', 'false');
             document.body.classList.add('account-open');
+            document.getElementById('secretsSection').hidden = false;
+            document.getElementById('connectionsSection').hidden = true;
             await fetchSecrets();
+        }
+
+        async function openConnections() {
+            document.getElementById('userMenu')?.classList.remove('show');
+            document.getElementById('userMenuBtn')?.setAttribute('aria-expanded', 'false');
+            document.body.classList.add('account-open');
+            document.getElementById('secretsSection').hidden = true;
+            document.getElementById('connectionsSection').hidden = false;
+            await fetchConnections();
+        }
+
+        async function fetchConnections() {
+            const list = document.getElementById('connectionsList');
+            list.innerHTML = `<div class="card">${skeletonList(2)}</div>`;
+            try {
+                const res = await apiFetch(`${API_BASE}/connections`, { headers: authHeaders() });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+                const rows = data.connections || [];
+                list.innerHTML = rows.length ? rows.map(c => `<div class="card" style="padding:20px; margin-bottom:12px;">
+                    <div class="page-head" style="margin-bottom:12px;"><div><strong>${esc(c.account_login)}</strong> <span class="secret-meta">${esc(c.account_type)}</span></div>
+                    <button class="btn btn-sm btn-ghost" onclick="removeConnection('${esc(c.id)}')">Disconnect</button></div>
+                    <label class="form-hint" style="display:block; margin:8px 0;"><input type="checkbox" ${c.allow_private ? 'checked' : ''} onchange="updateConnection('${esc(c.id)}', 'allow_private', this.checked)"> Allow private GitFlare repositories to use this organization</label>
+                    <label class="form-hint" style="display:block; margin:8px 0;"><input type="checkbox" ${c.blacksmith_enabled ? 'checked' : ''} onchange="updateConnection('${esc(c.id)}', 'blacksmith_enabled', this.checked)"> Blacksmith GitHub App is installed on this organization</label>
+                    <a href="https://app.blacksmith.sh/" target="_blank" rel="noopener noreferrer">Set up Blacksmith ↗</a>
+                </div>`).join('') : `<div class="card">${emptyState('<strong>No GitHub connections yet.</strong> Connect an organization to use GitHub Actions or Blacksmith.', { iconName: 'branch' })}</div>`;
+                if (!data.configured) list.insertAdjacentHTML('afterbegin', `<div class="card" style="padding:16px; margin-bottom:12px;">The GitFlare instance administrator must configure the GitHub App before connections can be added.</div>`);
+            } catch (e) { list.innerHTML = `<div class="card">${emptyState(esc(e.message), { error: true })}</div>`; }
+        }
+
+        async function connectGithub() {
+            try {
+                const res = await apiFetch(`${API_BASE}/connections/github/start`, { headers: authHeaders() });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+                location.assign(data.url);
+            } catch (e) { toast(e.message, 'error'); }
+        }
+
+        async function updateConnection(id, field, value) {
+            try {
+                const res = await apiFetch(`${API_BASE}/connections/${encodeURIComponent(id)}`, { method: 'PATCH', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ [field]: value }) });
+                if (!res.ok) throw new Error((await res.json()).error || `HTTP ${res.status}`);
+                toast('Integration updated', 'success');
+            } catch (e) { toast(e.message, 'error'); fetchConnections(); }
+        }
+
+        async function removeConnection(id) {
+            if (!confirm('Disconnect this GitHub organization from GitFlare CI? Existing CI mirrors remain on GitHub.')) return;
+            try {
+                const res = await apiFetch(`${API_BASE}/connections/${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders() });
+                if (!res.ok) throw new Error((await res.json()).error || `HTTP ${res.status}`);
+                await fetchConnections();
+                toast('Integration disconnected', 'success');
+            } catch (e) { toast(e.message, 'error'); }
         }
 
         async function fetchSecrets() {
@@ -3957,6 +4035,7 @@
                                     <div class="ci-run-title">${esc(run.commit_message)}</div>
                                     <div class="ci-run-subtext">
                                         <span class="badge">${esc(run.trigger)}</span>
+                                        <span class="badge">${esc(run.backend === 'blacksmith' ? 'Blacksmith' : run.backend === 'github' ? 'GitHub Actions' : 'Runner')}</span>
                                         <span class="mono" style="display:inline-flex; align-items:center; gap:4px;">${icon('branch', 12)}${esc(run.branch)}</span>
                                         <span class="dot hide-xs">·</span>
                                         <span class="mono hide-xs">${esc(run.short_sha)}</span>
@@ -3999,9 +4078,12 @@
                             <div class="ci-detail-title">${esc(data.commit_message)}</div>
                             <div class="ci-detail-meta">
                                 <span class="badge ${statusBadgeClass(data.status)}">${esc(data.status)}</span>
+                                <span class="badge">${esc(data.backend === 'blacksmith' ? 'Blacksmith' : data.backend === 'github' ? 'GitHub Actions' : 'Runner')}</span>
+                                ${data.github_url ? `<a href="${esc(data.github_url)}" target="_blank" rel="noopener noreferrer">GitHub run ↗</a>` : ''}
                                 <span class="mono" style="display:inline-flex; align-items:center; gap:4px;">${icon('branch', 12)}${esc(data.branch)}</span>
                                 <span class="sha-pill" title="Copy full SHA" data-action="copy" data-text="${esc(data.commit_sha)}">${icon('copy', 12)}${esc(data.short_sha)}</span>
                                 <span>· ${esc(data.trigger)} · <strong class="mono">${esc(data.duration_text || '–')}</strong></span>
+                                ${data.error_message ? `<span title="${esc(data.error_message)}">· ${esc(data.error_message)}</span>` : ''}
                             </div>
                         </div>
                     </div>

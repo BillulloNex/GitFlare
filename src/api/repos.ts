@@ -9,6 +9,7 @@ import { isOptionalBoolean, isOptionalString, readJsonObject } from '../lib/requ
 import { deleteRepoLfsObjects } from '../lib/lfs-storage.ts';
 import { lfsSummary } from './lfs-api.ts';
 import { publicOrigin } from './lfs.ts';
+import { githubApi, installationToken } from '../lib/github-app.ts';
 
 // Routes under /:repo run behind repoAccess (src/index.ts), which sets
 // `repoRecord` + `principal` and enforces read (GET) / write (other methods).
@@ -93,10 +94,10 @@ app.post('/', requirePermission('write'), async (c) => {
   const statements = [
     c.env.DB
       .prepare(
-        `INSERT INTO repositories (id, name, description, is_private, default_branch, artifact_name, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO repositories (id, name, description, is_private, default_branch, artifact_name, owner_id, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .bind(id, body.name, body.description || null, body.is_private ? 1 : 0, defaultBranch, body.name, now, now),
+      .bind(id, body.name, body.description || null, body.is_private ? 1 : 0, defaultBranch, body.name, principal.userId, now, now),
     c.env.DB
       .prepare('INSERT OR IGNORE INTO protected_branches (id, repo_id, branch_pattern, created_at, updated_at) VALUES (?, ?, ?, ?, ?)')
       .bind(crypto.randomUUID(), id, defaultBranch, now, now),
@@ -120,6 +121,18 @@ app.post('/', requirePermission('write'), async (c) => {
   });
 
   return c.json({ id, name: body.name }, 201);
+});
+
+/** Legacy/system-created repositories may have no owner after migration.
+ * An authenticated repo admin can claim one so their compute connections pay. */
+app.post('/:repo/owner/claim', requireRepoLevel('admin'), async (c) => {
+	const user = c.get('user');
+	if (!user) return c.json({ error: 'Sign in to claim repository ownership' }, 403);
+	const repo = c.get('repoRecord');
+	const result = await c.env.DB.prepare('UPDATE repositories SET owner_id = ? WHERE id = ? AND owner_id IS NULL')
+		.bind(user.id, repo.id).run();
+	if (!result.meta.changes) return c.json({ error: 'Repository already has an owner' }, 409);
+	return c.json({ owner_id: user.id });
 });
 
 /**
@@ -171,6 +184,23 @@ app.patch('/:repo', async (c) => {
 
   if (sets.length === 0) {
     return c.json({ error: 'Nothing to update' }, 400);
+  }
+
+  // Never make a repo private in GitFlare while a managed CI mirror remains
+  // public on GitHub. A failed mirror update leaves GitFlare visibility alone.
+  if (body.is_private === true && !repo.is_private) {
+    const { results: mirrors } = await c.env.DB.prepare(
+      'SELECT m.full_name, m.connection_id, cc.installation_id FROM github_ci_mirrors m JOIN github_compute_connections cc ON cc.id = m.connection_id WHERE m.repo_id = ? AND m.is_private = 0'
+    ).bind(repo.id).all<{ full_name: string; connection_id: string; installation_id: number }>();
+    for (const mirror of mirrors) {
+      try {
+        const token = await installationToken(c.env, mirror.installation_id);
+        const response = await githubApi(`/repos/${mirror.full_name}`, token, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ private: true }) });
+        if (!response.ok) return c.json({ error: `Could not make CI mirror ${mirror.full_name} private on GitHub (${response.status})` }, 502);
+        await c.env.DB.prepare('UPDATE github_ci_mirrors SET is_private = 1 WHERE repo_id = ? AND connection_id = ?')
+          .bind(repo.id, mirror.connection_id).run();
+      } catch (err) { return c.json({ error: `Could not update CI mirror privacy: ${String(err)}` }, 502); }
+    }
   }
 
   sets.push('updated_at = ?');

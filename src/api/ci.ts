@@ -5,6 +5,7 @@ import { getArtifactCommits, getArtifactFileContent, CI_CONFIG_PATH } from '../l
 import { parseStepLogs, readStepLogs, stepLogKey } from '../lib/ci-logs.ts';
 import { hasRepoLevel, type RepoVariables } from '../middleware/repo-access.ts';
 import { cancelRunnerRun } from '../lib/runner-client.ts';
+import { githubApi, installationToken } from '../lib/github-app.ts';
 import { timeAgo } from '../lib/time.ts';
 import { isOptionalString, readJsonObject } from '../lib/request.ts';
 import { isValidRefName } from '../lib/repo-validation.ts';
@@ -175,10 +176,13 @@ app.get('/:repo/ci/runs/:id', async (c) => {
 
 	// Build jobs/steps hierarchy from recorded ci_steps rows (empty if none recorded yet)
 	const jobs = buildJobs(rawSteps);
+	const githubMirror = run.connection_id ? await DB.prepare('SELECT full_name FROM github_ci_mirrors WHERE repo_id = ? AND connection_id = ?')
+		.bind(repoRecord.id, run.connection_id).first<{ full_name: string }>() : null;
 
 	return c.json({
 		data: {
 			...run,
+			github_url: githubMirror && run.github_run_id ? `https://github.com/${githubMirror.full_name}/actions/runs/${run.github_run_id}` : null,
 			short_sha: run.commit_sha === 'HEAD' ? (matchedCommit?.short_sha || 'unknown') : run.commit_sha.slice(0, 7),
 			commit_message: matchedCommit?.message || `Run on ${run.branch}`,
 			author: matchedCommit?.author || { name: 'Unknown', email: '', avatar: '?' },
@@ -387,9 +391,9 @@ app.post('/:repo/ci/runs/:id/cancel', async (c) => {
 	const { DB } = c.env;
 	const repoRecord = c.get('repoRecord');
 
-	const run = await DB.prepare('SELECT id, status FROM ci_runs WHERE id = ? AND repo_id = ?')
+	const run = await DB.prepare('SELECT id, status, backend, connection_id, github_run_id FROM ci_runs WHERE id = ? AND repo_id = ?')
 		.bind(runId, repoRecord.id)
-		.first<{ id: string; status: string }>();
+		.first<{ id: string; status: string; backend: string | null; connection_id: string | null; github_run_id: string | null }>();
 	if (!run) return c.json({ error: 'Run not found' }, 404);
 
 	const now = new Date().toISOString();
@@ -410,10 +414,23 @@ app.post('/:repo/ci/runs/:id/cancel', async (c) => {
 	// A queued run was never dispatched; the consumer's claim (status = 'queued') will now fail.
 	let runner: { notified: boolean; error?: string } = { notified: false };
 	if (run.status === 'running') {
-		const res = await cancelRunnerRun(c.env, runId);
-		// Detail (runner URL, response body) stays in the log below, not the response.
-		runner = res.ok ? { notified: true } : { notified: false, error: 'Runner could not be reached; it will stop the run on its next heartbeat' };
-		if (!res.ok) console.warn(`Cancel: runner not reachable for run ${runId}: ${res.error}`);
+		if ((run.backend === 'github' || run.backend === 'blacksmith') && run.connection_id && run.github_run_id) {
+			try {
+				const connection = await DB.prepare('SELECT installation_id FROM github_compute_connections WHERE id = ?')
+					.bind(run.connection_id).first<{ installation_id: number }>();
+				const mirror = await DB.prepare('SELECT full_name FROM github_ci_mirrors WHERE repo_id = ? AND connection_id = ?')
+					.bind(repoRecord.id, run.connection_id).first<{ full_name: string }>();
+				if (connection && mirror) {
+					const token = await installationToken(c.env, connection.installation_id);
+					const res = await githubApi(`/repos/${mirror.full_name}/actions/runs/${run.github_run_id}/cancel`, token, { method: 'POST' });
+					runner = { notified: res.ok || res.status === 409 };
+				}
+			} catch (err) { console.warn(`Cancel: GitHub run ${runId}:`, err); }
+		} else if (!run.backend || run.backend === 'runner') {
+			const res = await cancelRunnerRun(c.env, runId);
+			runner = res.ok ? { notified: true } : { notified: false, error: 'Runner could not be reached; it will stop the run on its next heartbeat' };
+			if (!res.ok) console.warn(`Cancel: runner not reachable for run ${runId}: ${res.error}`);
+		}
 	}
 
 	return c.json({ success: true, data: { id: runId, status: 'cancelled', runner } });

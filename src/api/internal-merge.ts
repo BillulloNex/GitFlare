@@ -36,6 +36,12 @@ import {
 	type RunnerMergeRequest,
 } from '../lib/runner-protocol.ts';
 import { requireRunnerSecret } from '../middleware/runner-auth.ts';
+import { acquirePushLock, releasePushLock } from '../lib/push-lock.ts';
+import { buildReceivePackRequest } from '../lib/git-objects.ts';
+import { parseReceivePackResponse } from '../lib/git-protocol.ts';
+import { selectCompute } from '../lib/compute-router.ts';
+import { dispatchGitHubMerge, ensureCIMirror, type ComputeConnection } from '../lib/github-ci.ts';
+import type { GithubMergeAttempt } from './internal-github.ts';
 
 // ─── Constants ──────────────────────────────────────────────────
 
@@ -82,6 +88,8 @@ type TicketRow = {
 	base_branch: string;
 	status: string;
 	repo_name: string;
+	owner_id: string | null;
+	is_private: number;
 };
 
 // ─── Helpers ────────────────────────────────────────────────────
@@ -137,7 +145,7 @@ export async function executeMerge(
 ): Promise<({ ok: true } & { target: MergeTarget }) | StepFailure> {
 	const { DB } = env;
 	const ticket = await DB.prepare(
-		`SELECT t.id, t.repo_id, t.branch, t.base_branch, t.status, r.name AS repo_name
+		`SELECT t.id, t.repo_id, t.branch, t.base_branch, t.status, r.name AS repo_name, r.owner_id, r.is_private
 		 FROM tickets t JOIN repositories r ON r.id = t.repo_id WHERE t.id = ?`
 	)
 		.bind(params.ticketId)
@@ -190,6 +198,38 @@ export async function executeMerge(
 		.run();
 	if (!claim.meta.changes) {
 		return { ok: false, transient: false, abandoned: true, error: 'Ticket was cancelled before the merge started' };
+	}
+	let config: CIPipelineConfig | null = null;
+	try {
+		const yaml = await readCIConfig(env, target.repoName, target.branch);
+		if (yaml) config = parseCIConfig(yaml);
+	} catch (err) { return { ok: false, transient: false, error: `Could not select merge compute: ${errorMessage(err)}` }; }
+	if (config) {
+		const { results: connections } = ticket.owner_id ? await DB.prepare('SELECT * FROM github_compute_connections WHERE user_id = ? ORDER BY created_at ASC')
+			.bind(ticket.owner_id).all<ComputeConnection>() : { results: [] as ComputeConnection[] };
+		let choice;
+		try { choice = selectCompute(config, connections, Boolean(ticket.is_private)); }
+		catch (err) { return { ok: false, transient: false, error: errorMessage(err) }; }
+		if (choice.backend !== 'runner' && choice.connection) {
+			const connection = choice.connection;
+			let prepared;
+			try { prepared = await ensureCIMirror(env, { id: target.repoId, name: target.repoName, is_private: ticket.is_private }, connection); }
+			catch (err) { return { ok: false, transient: true, error: `GitHub CI mirror unavailable: ${errorMessage(err)}` }; }
+			const attempt: GithubMergeAttempt = { ticketId: target.ticketId, repoId: target.repoId, repoName: target.repoName,
+				connectionId: connection.id, fullName: prepared.fullName, workflowSha: prepared.workflowSha,
+				branch: target.branch, headSha: target.commitSha, baseSha: refs.get(`refs/heads/${target.baseBranch}`)!, baseBranch: target.baseBranch };
+			await DB.prepare('INSERT OR IGNORE INTO github_merge_run_bindings (attempt_id) VALUES (?)').bind(params.attemptId).run();
+			await env.CACHE.put(`github-merge:${params.attemptId}`, JSON.stringify(attempt), { expirationTtl: 3600 });
+			try {
+				await dispatchGitHubMerge(env, { id: target.repoId, name: target.repoName, is_private: ticket.is_private }, connection,
+					params.attemptId, target.branch, target.commitSha, target.baseBranch, attempt.baseSha, choice.backend === 'blacksmith', prepared);
+				await logQueue(env, target.repoId, target.ticketId, 'merge_start', { attemptId: params.attemptId, backend: choice.backend });
+				return { ok: true, target };
+			} catch (err) {
+				await env.CACHE.delete(`github-merge:${params.attemptId}`);
+				return { ok: false, transient: true, error: `GitHub merge dispatch failed: ${errorMessage(err)}` };
+			}
+		}
 	}
 
 	let token: string;
@@ -359,6 +399,30 @@ export async function executeFastForward(
 			baseMoved: true,
 			error: `Base branch '${target.baseBranch}' moved during CI (${params.baseSha.slice(0, 12)} → ${(baseTip ?? 'deleted').slice(0, 12)})`,
 		};
+	}
+	if (await env.CACHE.get(`github-merge:${params.attemptId}`)) {
+		const refName = `refs/heads/${target.baseBranch}`;
+		const lock = await acquirePushLock(env, target.repoId, MERGE_QUEUE_ACTOR, [refName]);
+		if ('error' in lock) return { ok: false, transient: true, error: lock.error };
+		try {
+			const current = await getArtifactRefs(env, target.repoName);
+			if (current.get(refName) !== params.baseSha) return { ok: false, transient: false, baseMoved: true, error: 'Base branch moved during CI' };
+			const token = await mintToken(env, target.repoName, 'write', MERGE_TOKEN_TTL_S);
+			const body = await buildReceivePackRequest({ refName, oldSha: params.baseSha, newSha: params.resultSha, objects: [] });
+			const response = await fetch(`${getArtifactsRemoteUrl(env, target.repoName)}/git-receive-pack`, {
+				method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/x-git-receive-pack-request' }, body,
+			});
+			if (!response.ok) return { ok: false, transient: response.status >= 500, error: `Artifacts fast-forward failed (${response.status})` };
+			const report = parseReceivePackResponse(new Uint8Array(await response.arrayBuffer()));
+			if (!report?.unpackOk || !report.refResults.some((r) => r.refName === refName && r.success)) {
+				return { ok: false, transient: true, error: 'Artifacts did not confirm the fast-forward' };
+			}
+			return { ok: true, alreadyDone: true };
+		} catch (err) {
+			return { ok: false, transient: true, error: `Worker fast-forward failed: ${errorMessage(err)}` };
+		} finally {
+			await releasePushLock(env, target.repoId, lock.lockId);
+		}
 	}
 
 	let token: string;

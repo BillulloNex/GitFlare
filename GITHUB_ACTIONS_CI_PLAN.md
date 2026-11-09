@@ -1,6 +1,6 @@
 # GitHub Actions as CI compute: Plan
 
-> Status: design agreed, not started. Companion to `IMPLEMENTATION_PLAN.md` and `LFS_IMPLEMENTATION_PLAN.md`.
+> Status: initial implementation in GitFlare v1.1.12. Account-owned organization connections, top-level `runs-on`, GitHub/Blacksmith CI dispatch, OIDC callbacks, and merge-queue dispatch are implemented. The limitations in the README remain follow-up work; an instance GitHub App must be registered and configured before live use. Companion to `IMPLEMENTATION_PLAN.md` and `LFS_IMPLEMENTATION_PLAN.md`.
 > Goal: let every GitFlare user bring their own GitHub account(s) as free CI compute. GitFlare stays the home of the code and decides where work runs. GitHub runs tests and the merge queue. The self-hosted runner stays as a second option.
 
 ## Glossary

@@ -22,6 +22,7 @@ import { getArtifactFileContent, CI_CONFIG_PATH } from '../lib/artifact-reader.t
 import { hashKey } from '../lib/crypto.ts';
 import { isValidPermission } from '../lib/access.ts';
 import { looksLikeLfsToken, verifyLfsToken } from '../lib/lfs-token.ts';
+import { verifyMergeToken } from '../lib/merge-token.ts';
 import { ARTIFACTS_MAX_BLOB_BYTES, lfsFixRecipe, looksLikeSizeLimitError } from '../lib/lfs.ts';
 import { scanPackForLargeBlobs } from '../lib/pack-scan.ts';
 import lfsApp, { lfsDocsUrl, publicOrigin } from './lfs.ts';
@@ -84,6 +85,15 @@ app.use('*', async (c, next) => {
 	if (!password) {
 		return unauthorized();
 	}
+	if (password.startsWith('mg1.')) {
+		if (!(c.req.path.endsWith('/git-receive-pack') ||
+			(c.req.path.endsWith('/info/refs') && c.req.query('service') === 'git-receive-pack'))) return unauthorized();
+		const claims = await verifyMergeToken(c.env.ENCRYPTION_KEY, password);
+		if (!claims || !(await c.env.CACHE.get(`github-merge:${claims.attemptId}`))) return unauthorized();
+		c.set('mergeToken', claims);
+		await next();
+		return;
+	}
 
 	// Hash the key and look up by hash
 	const keyHash = await hashKey(password);
@@ -144,16 +154,18 @@ app.get('/:repo/info/refs', async (c) => {
 
 	const repoName = repoNameParam(c.req.param('repo'));
 	const apiKey = c.get('apiKey');
-	if (!apiKey) return unauthorized();
+	const mergeToken = c.get('mergeToken');
+	if (!apiKey && !mergeToken) return unauthorized();
 
 	const { DB } = c.env;
 	const repoRecord = await findGitRepo(DB, repoName);
 	if (!repoRecord) {
 		return c.text('Repository not found', 404);
 	}
+	if (mergeToken && (mergeToken.repoId !== repoRecord.id || service !== 'git-receive-pack')) return unauthorized();
 
 	const permission = service === 'git-receive-pack' ? 'write' : 'read';
-	const denied = await denyGitAccess(DB, apiKey, repoRecord, permission);
+	const denied = apiKey ? await denyGitAccess(DB, apiKey, repoRecord, permission) : null;
 	if (denied) return denied;
 
 	try {
@@ -511,17 +523,19 @@ app.post('/:repo/git-receive-pack', async (c) => {
 	const debug = isGitDebug(c.env);
 
 	const apiKey = c.get('apiKey');
-	if (!apiKey) return unauthorized();
+	const mergeToken = c.get('mergeToken');
+	if (!apiKey && !mergeToken) return unauthorized();
 
 	const { DB } = c.env;
 	const repoRecord = await findGitRepo(DB, repoName);
 	if (!repoRecord) {
 		return c.text('Repository not found', 404);
 	}
+	if (mergeToken && mergeToken.repoId !== repoRecord.id) return unauthorized();
 
-	const denied = await denyGitAccess(DB, apiKey, repoRecord, 'write');
+	const denied = apiKey ? await denyGitAccess(DB, apiKey, repoRecord, 'write') : null;
 	if (denied) return denied;
-	const pusher = apiKey.id;
+	const pusher = apiKey?.id ?? `github-merge:${mergeToken!.ticketId}`;
 
 	const auditRejection = (details: Record<string, unknown>) => c.executionCtx.waitUntil(
 		DB.prepare('INSERT INTO audit_log (id, action, repo_id, actor, details, created_at) VALUES (?, ?, ?, ?, ?, ?)')
@@ -590,10 +604,16 @@ app.post('/:repo/git-receive-pack', async (c) => {
 		auditRejection({ reason: 'invalid_ref_name', refs: [...invalidRefs.keys()] });
 		return rejectPush(parsed, invalidRefs, 'push rejected — another ref in this push has an invalid name');
 	}
+	if (mergeToken) {
+		const allowed = `refs/heads/gitflare/merge-queue/${mergeToken.ticketId}`;
+		if (parsed.refs.length !== 1 || parsed.refs[0].refName !== allowed || parsed.refs[0].isDelete) {
+			return rejectPush(parsed, new Map(), 'merge token is restricted to one result branch');
+		}
+	}
 
 	let violations: Map<string, string>;
 	try {
-		violations = await findProtectionViolations(DB, repoRecord, parsed.refs, pusher);
+		violations = mergeToken ? new Map() : await findProtectionViolations(DB, repoRecord, parsed.refs, pusher);
 	} catch (err: any) {
 		console.error(`[git-push] branch protection check failed for ${repoName} — rejecting push:`, err.message);
 		auditRejection({ reason: 'branch_protection_error', error: err.message });
@@ -687,7 +707,7 @@ app.post('/:repo/git-receive-pack', async (c) => {
 		}
 
 		// ── Step 6: Post-push hooks ─────────────────────────────
-		if (updated.length > 0) {
+		if (updated.length > 0 && !mergeToken) {
 			runPostPushHooks(c.env, c.executionCtx, repoRecord, pusher, updated);
 		}
 

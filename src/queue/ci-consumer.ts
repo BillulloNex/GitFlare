@@ -35,6 +35,8 @@ import {
 import { RUNNER_PROTOCOL_VERSION, type RunnerCheckout, type RunnerCIStep, type RunnerDeployRequest } from '../lib/runner-protocol.ts';
 import { mintLfsToken } from '../lib/lfs-token.ts';
 import { notifyMergeQueueCI } from '../api/internal-merge.ts';
+import { selectCompute } from '../lib/compute-router.ts';
+import { dispatchGitHubCI, ensureCIMirror, type ComputeConnection } from '../lib/github-ci.ts';
 
 /** Must match max_retries in wrangler.jsonc (+1 for the first delivery). */
 const MAX_DELIVERY_ATTEMPTS = 4;
@@ -133,8 +135,9 @@ async function failRun(env: Env, runId: string, reason: string, fromStatuses: st
 	console.error(`CI run ${runId} failed: ${reason}`);
 	const placeholders = fromStatuses.map(() => '?').join(', ');
 	const [runUpdate] = await env.DB.batch([
-		env.DB.prepare(`UPDATE ci_runs SET status = 'failed', finished_at = ? WHERE id = ? AND status IN (${placeholders})`).bind(
+		env.DB.prepare(`UPDATE ci_runs SET status = 'failed', finished_at = ?, error_message = ? WHERE id = ? AND status IN (${placeholders})`).bind(
 			now,
+			reason.slice(0, 2000),
 			runId,
 			...fromStatuses
 		),
@@ -201,9 +204,9 @@ export async function handleCIJob(message: CIJobMessage, env: Env, delivery: Que
 
 	// ── Claim (prevents double dispatch on redelivery / concurrent consumers) ──
 	const claim = await DB.prepare(
-		"UPDATE ci_runs SET status = 'running', started_at = ?, commit_sha = ? WHERE id = ? AND status = 'queued'"
+		"UPDATE ci_runs SET status = 'running', started_at = ?, commit_sha = ?, config_snapshot = ? WHERE id = ? AND status = 'queued'"
 	)
-		.bind(now, commitSha, run.id)
+		.bind(now, commitSha, JSON.stringify(message.config), run.id)
 		.run();
 	if (!claim.meta.changes) {
 		console.log(`CI run ${run.id} was claimed or cancelled concurrently`);
@@ -261,6 +264,34 @@ export async function handleCIJob(message: CIJobMessage, env: Env, delivery: Que
 			),
 		]);
 	}
+
+	// Compute is selected from the committed CI config and the repository
+	// owner's connections. Existing configs default to the current runner.
+	const repoCompute = await DB.prepare('SELECT id, name, is_private, owner_id FROM repositories WHERE id = ?')
+		.bind(run.repo_id).first<{ id: string; name: string; is_private: number; owner_id: string | null }>();
+	if (!repoCompute) { await failRun(env, run.id, 'Repository no longer exists'); return; }
+	const { results: connections } = repoCompute.owner_id
+		? await DB.prepare('SELECT * FROM github_compute_connections WHERE user_id = ? ORDER BY created_at ASC')
+			.bind(repoCompute.owner_id).all<ComputeConnection>()
+		: { results: [] as ComputeConnection[] };
+	let choice;
+	try { choice = selectCompute(message.config, connections, Boolean(repoCompute.is_private)); }
+	catch (err) { await failRun(env, run.id, String(err)); return; }
+	if (choice.backend !== 'runner' && choice.connection) {
+		try {
+			const prior = await DB.prepare('SELECT github_run_id FROM ci_runs WHERE id = ?').bind(run.id).first<{ github_run_id: string | null }>();
+			if (prior?.github_run_id) return; // previous dispatch reached a GitHub worker before queue retry
+			const mirror = await ensureCIMirror(env, repoCompute, choice.connection);
+			await DB.prepare('UPDATE ci_runs SET backend = ?, connection_id = ?, github_workflow_sha = ?, fallback_reason = ? WHERE id = ?')
+				.bind(choice.backend, choice.connection.id, mirror.workflowSha, choice.fallbackReason || null, run.id).run();
+			await dispatchGitHubCI(env, repoCompute, choice.connection, run.id, run.branch, commitSha, choice.backend === 'blacksmith', mirror);
+			return;
+		} catch (err) {
+			return releaseOrFailRun(env, run.id, delivery, `GitHub CI dispatch failed: ${String(err)}`);
+		}
+	}
+	await DB.prepare("UPDATE ci_runs SET backend = 'runner', connection_id = NULL, fallback_reason = ? WHERE id = ?")
+		.bind(choice.fallbackReason || null, run.id).run();
 
 	// ── Dispatch ──
 	let checkout: RunnerCheckout;

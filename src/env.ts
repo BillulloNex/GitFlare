@@ -91,6 +91,12 @@ export interface Env {
 	SESSION_SECRET: string;
 	/** Key material for encryptSecret/decryptSecret (HKDF → AES-256-GCM, `v1:` format). */
 	ENCRYPTION_KEY: string;
+	/** GitFlare GitHub App credentials. Configure after registering the app. */
+	GITHUB_APP_ID?: string;
+	GITHUB_APP_SLUG?: string;
+	GITHUB_APP_PRIVATE_KEY?: string;
+	GITHUB_APP_CLIENT_ID?: string;
+	GITHUB_APP_CLIENT_SECRET?: string;
 
 	// ── Vars (from wrangler.jsonc) ──
 	GITFLARE_VERSION: string;
@@ -179,6 +185,8 @@ export interface CIPipelineConfig {
 	name: string;
 	/** Optional — omitted means "run on every push" (lib/ci-parser.ts shouldTrigger). */
 	on?: CITriggerConfig;
+	/** CI compute preference, optionally overridden by each job. */
+	'runs-on'?: string | string[];
 	env?: Record<string, string>;
 	/**
 	 * Checkout options. `lfs`: `auto` (default) pulls LFS objects when
@@ -198,6 +206,7 @@ export interface CITriggerConfig {
 
 export interface CIJobConfig {
 	name?: string;
+	'runs-on'?: string | string[];
 	needs?: string[];
 	env?: Record<string, string>;
 	steps: CIStepConfig[];
@@ -231,6 +240,7 @@ export interface DeployTarget {
 
 export interface RepoRecord {
 	id: string;
+	owner_id?: string | null;
 	name: string;
 	description: string | null;
 	default_branch: string;

@@ -3,8 +3,8 @@
 **Git hosting, CI/CD and a merge queue for agents — on Cloudflare.**
 
 Git repositories live in Cloudflare Artifacts and are served over Git Smart
-HTTP by a Worker. CI runs in Docker containers on a self-hosted runner
-(`packages/runner`), deployments go to Coolify, Cloudflare or Google Cloud Run, and a per-repo
+HTTP by a Worker. CI runs on the self-hosted runner (`packages/runner`) or on
+GitHub Actions, including Blacksmith runners. Deployments go to Coolify, Cloudflare or Google Cloud Run, and a per-repo
 merge queue lets many agents land branches safely. Repositories can be
 mirrored to GitHub.
 
@@ -80,6 +80,7 @@ Also update the custom-domain `routes` entry in `wrangler.jsonc` to match `APP_U
 | `ALLOWED_DOMAINS` | no | Comma-separated email domains allowed to sign in (in-domain users get `user`). Unset → anyone verified, as `viewer`. |
 | `ADMIN_EMAILS` | no | Comma-separated emails granted `admin` on login |
 | `GIT_PROTOCOL_DEBUG` | no | `1` → hex-dump receive-pack traffic to the log. Leave unset normally. |
+| `GITHUB_APP_ID`, `GITHUB_APP_SLUG`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_CLIENT_ID`, `GITHUB_APP_CLIENT_SECRET` | no | Required together to enable account-owned GitHub Actions and Blacksmith CI. Keep the private key and client secret out of git. |
 
 See `.dev.vars.example` for a template.
 
@@ -354,6 +355,46 @@ budget (Coolify and Cloudflare: 10).
 push access. Pushes and merge-queue merges are mirrored via the
 `gitflare-mirror-sync` queue; `POST …/mirror/sync` forces a full sync.
 
+### GitHub Actions and Blacksmith
+
+The GitHub CI mirror is separate from the optional backup mirror above. An
+instance administrator registers a **GitFlare GitHub App** with these settings:
+
+- Homepage: the Worker's `APP_URL`.
+- Setup URL: `${APP_URL}/api/github/setup` (do not enable "Request user authorization during installation").
+- Callback URL: `${APP_URL}/api/github/callback`.
+- Repository permissions: **Contents: read/write**, **Actions: read/write**, **Workflows: read/write**, and **Administration: read/write** (or Repository creation: read/write when available). Organization permission: **Members: read** to confirm that a connecting user owns the organization.
+- Installable on any account; subscribe to `workflow_run` only if you later enable the webhook backstop.
+
+Set the five `GITHUB_APP_*` Worker secrets, then sign in to GitFlare and open
+**Account → Integrations → Connect GitHub**. Install the GitFlare App on the
+GitHub organization. GitFlare verifies the installation against your GitHub
+user authorization and confirms that you own the organization. If you use
+Blacksmith, also install the [Blacksmith GitHub App](https://app.blacksmith.sh/)
+on that organization with access to all CI mirror repositories, then enable
+the Blacksmith checkbox in GitFlare. Blacksmith has its own billing/free tier.
+
+The repository owner supplies the compute connection. Existing repositories
+are assigned to their recorded creator/admin during migration; a repo admin
+can claim an unowned legacy repo with `POST /api/repos/:repo/owner/claim`.
+Configuration stays in `.gitflare/ci.yml`:
+
+```yaml
+runs-on: blacksmith          # runner (default), github, or blacksmith
+# runs-on: [blacksmith, runner]  # choose first eligible connection
+# runs-on: blacksmith:Acme       # choose this connected GitHub organization
+```
+
+All jobs in one run currently need the same `runs-on` preference. GitFlare
+creates a private or public GitHub CI mirror matching the source repository,
+dispatches the Actions workflow, verifies GitHub OIDC callbacks, and stores
+step logs in R2. The merge queue can rebase on the selected GitHub/Blacksmith
+runner using a short-lived single-branch push token; GitFlare fast-forwards
+the target branch after CI passes. Deploy targets continue to execute on the
+self-hosted runner. A missing eligible connection can fall back to `runner`
+when listed. Automatic fallback after a GitHub dispatch or runner pickup
+failure is not yet supported.
+
 ### CI configuration
 
 Add `.gitflare/ci.yml` to the repo:
@@ -383,8 +424,9 @@ jobs:
       - run: npm run build
 ```
 
-Each run executes in a fresh container (`CI_IMAGE`) on the runner. Logs
-stream back to the Worker and are stored in R2. See
+Runs without `runs-on` execute in a fresh container (`CI_IMAGE`) on the
+self-hosted runner. GitHub and Blacksmith runs execute in GitHub Actions.
+Logs are stored in R2. See
 `examples/starship.ci.yml` for a larger example.
 
 ## License
