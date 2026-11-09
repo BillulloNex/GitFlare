@@ -3,7 +3,7 @@ import type { Env } from '../env.ts';
 import { principalFrom, requirePermission } from '../middleware/auth.ts';
 import { auditContext, hasRepoLevel, requireRepoLevel, type RepoVariables } from '../middleware/repo-access.ts';
 import { audit } from '../lib/audit.ts';
-import { isValidPermission, readableReposFilter, VALID_PERMISSIONS } from '../lib/access.ts';
+import { checkRepoAccess, isValidPermission, readableReposFilter, VALID_PERMISSIONS } from '../lib/access.ts';
 import { isValidRefName, isValidRepoName } from '../lib/repo-validation.ts';
 import { isOptionalBoolean, isOptionalString, readJsonObject } from '../lib/request.ts';
 import { deleteRepoLfsObjects } from '../lib/lfs-storage.ts';
@@ -229,6 +229,7 @@ app.patch('/:repo', async (c) => {
  */
 app.get('/:repo', async (c) => {
   const repo = c.get('repoRecord');
+  const principal = c.get('principal');
 
   let remoteUrl = null;
   try {
@@ -241,7 +242,12 @@ app.get('/:repo', async (c) => {
   }
 
   const lfs = await lfsSummary(c.env, publicOrigin(c.env, c.req.url), repo);
-  return c.json({ ...repo, remote: remoteUrl, lfs });
+  const access = {
+    can_read: await checkRepoAccess(principal, repo.id, repo.is_private, 'read', c.env.DB),
+    can_write: await checkRepoAccess(principal, repo.id, repo.is_private, 'write', c.env.DB),
+    can_admin: await checkRepoAccess(principal, repo.id, repo.is_private, 'admin', c.env.DB),
+  };
+  return c.json({ ...repo, remote: remoteUrl, lfs, access });
 });
 
 /**

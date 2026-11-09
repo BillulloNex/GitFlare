@@ -1389,6 +1389,7 @@
         <symbol id="i-video" viewBox="0 0 24 24"><path d="m16 13 5.22 3.48a.5.5 0 0 0 .78-.42V7.87a.5.5 0 0 0-.75-.43L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></symbol>
         <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 19v3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><rect x="9" y="2" width="6" height="13" rx="3"/></symbol>
         <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/></symbol>
+        <symbol id="i-settings" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
     </svg>
 
     <!-- ─── Top bar ────────────────────────────────────────────── -->
@@ -1432,7 +1433,7 @@
                             <svg class="i" width="16" height="16" aria-hidden="true"><use href="#i-log-out"/></svg>
                             Sign out
                         </button>
-                        <div class="menu-foot">GitFlare v1.1.13</div>
+                        <div class="menu-foot">GitFlare v1.1.14</div>
                     </div>
                 </div>
             </div>
@@ -1455,6 +1456,9 @@
                             </button>
                         </div>
                         <div class="repo-actions-top">
+                            <button class="btn btn-icon" onclick="openRepoSettings()" aria-label="Repository settings" title="Repository settings">
+                                <svg class="i" width="16" height="16" aria-hidden="true"><use href="#i-settings"/></svg>
+                            </button>
                             <button class="btn" onclick="triggerManualWorkflow()">
                                 <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-play"/></svg>
                                 <span class="hide-sm">Run workflow</span>
@@ -1878,6 +1882,23 @@
         <div class="dialog-actions">
             <button class="btn" onclick="document.getElementById('newRepoModal').close()">Cancel</button>
             <button class="btn btn-primary" onclick="submitCreateRepo()">Create repository</button>
+        </div>
+    </dialog>
+
+    <dialog id="repoSettingsModal">
+        <h3>Repository settings</h3>
+        <p class="dialog-lead" id="repoSettingsLead">Loading…</p>
+        <div class="form-group">
+            <label for="repoVisibilitySelect">Visibility</label>
+            <select id="repoVisibilitySelect" class="form-control" disabled>
+                <option value="public">Public — anyone signed in can view</option>
+                <option value="private">Private — only members can view</option>
+            </select>
+        </div>
+        <div class="form-hint" id="repoVisibilityNote">Public is the default. Make a repository private to limit it to its members.</div>
+        <div class="dialog-actions" style="margin-top:20px;">
+            <button class="btn" onclick="document.getElementById('repoSettingsModal').close()">Cancel</button>
+            <button class="btn btn-primary" id="repoSettingsSaveBtn" onclick="submitRepoSettings()">Save</button>
         </div>
     </dialog>
 
@@ -5759,6 +5780,70 @@
                     const err = await res.json();
                     toast(`Error: ${err.error || 'Failed to create repo'}`, 'error');
                 }
+            } catch (e) {
+                toast("Error: " + e.message, 'error');
+            }
+        }
+
+        /** Open the repo settings modal and load the caller's access level. */
+        async function openRepoSettings() {
+            const repo = repos.find(r => r.name === activeRepo);
+            if (!repo) return;
+            const select = document.getElementById('repoVisibilitySelect');
+            const note = document.getElementById('repoVisibilityNote');
+            const saveBtn = document.getElementById('repoSettingsSaveBtn');
+            document.getElementById('repoSettingsLead').textContent = `Settings for ${activeRepo}`;
+            select.value = repo.is_private ? 'private' : 'public';
+            select.disabled = true;
+            saveBtn.disabled = true;
+            note.textContent = 'Loading access…';
+            document.getElementById('repoSettingsModal').showModal();
+            try {
+                const res = await apiFetch(`${repoApi()}`, { headers: authHeaders() });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+                const canAdmin = !!(data.access && data.access.can_admin);
+                select.value = data.is_private ? 'private' : 'public';
+                select.disabled = !canAdmin;
+                saveBtn.disabled = !canAdmin;
+                note.textContent = canAdmin
+                    ? 'Public is the default. Anyone signed in can view a public repository; a private repository is limited to its members.'
+                    : 'Only repository admins can change visibility.';
+            } catch (e) {
+                select.disabled = true;
+                saveBtn.disabled = true;
+                note.textContent = 'Could not load repository settings.';
+            }
+        }
+
+        /** Persist the chosen visibility and update the header badge. */
+        async function submitRepoSettings() {
+            const repo = repos.find(r => r.name === activeRepo);
+            if (!repo) return;
+            const select = document.getElementById('repoVisibilitySelect');
+            const isPrivate = select.value === 'private';
+            if (isPrivate === Boolean(repo.is_private)) {
+                document.getElementById('repoSettingsModal').close();
+                return;
+            }
+            try {
+                const res = await apiFetch(`${repoApi()}`, {
+                    method: 'PATCH',
+                    headers: authHeaders(),
+                    body: JSON.stringify({ is_private: isPrivate })
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    toast(`Error: ${err.error || 'Failed to update visibility'}`, 'error');
+                    return;
+                }
+                repo.is_private = isPrivate ? 1 : 0;
+                const badge = document.getElementById('repoVisibilityBadge');
+                badge.innerHTML = `${icon(isPrivate ? 'lock' : 'globe', 12)} ${isPrivate ? 'Private' : 'Public'}`;
+                badge.classList.toggle('badge-private', isPrivate);
+                badge.classList.toggle('badge-public', !isPrivate);
+                document.getElementById('repoSettingsModal').close();
+                toast(`Repository is now ${isPrivate ? 'private' : 'public'}`, 'success');
             } catch (e) {
                 toast("Error: " + e.message, 'error');
             }
