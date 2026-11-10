@@ -10,14 +10,14 @@
 h1{font:700 clamp(28px,4vw,42px)/1.1 var(--display);letter-spacing:-.045em;margin:28px 0 7px}.lead{color:var(--secondary);margin:0 0 24px;max-width:680px}
 .btn{border:1px solid var(--border);border-radius:7px;padding:9px 14px;background:var(--surface2);color:var(--text);min-height:38px}.btn:hover:not(:disabled){border-color:#55554d}.btn.primary{background:var(--orange);color:#1b0e04;border-color:var(--orange);font-weight:700}.btn.record{background:var(--red);border-color:var(--red);color:#200a08;font-weight:700}.btn.stop{border-color:var(--red);color:var(--red)}
 input,select{color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px 10px;min-height:36px}select option{background:var(--surface2)}
-.panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:18px}.panel h2{font:700 21px var(--display);margin:0 0 8px}.panel p{color:var(--secondary);margin:0 0 15px}.pair-form{display:flex;gap:9px;flex-wrap:wrap}.pair-form input{width:210px;text-transform:uppercase;font:600 18px var(--mono);letter-spacing:.06em}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:18px}.panel h2{font:700 21px var(--display);margin:0 0 8px}.panel p{color:var(--secondary);margin:0 0 15px}.setup-form{display:flex;gap:10px;align-items:end;flex-wrap:wrap}.setup-form label{display:grid;gap:5px;color:var(--secondary);font-size:12px}.setup-form select,.setup-form input{min-width:200px}.setup-note{color:var(--muted);font-size:12px;margin-top:12px}
 .toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 16px}.toolbar h2{font:700 22px var(--display);margin:0}.toolbar .spacer{flex:1}.state{color:var(--muted);font:500 12px var(--mono)}.state.online{color:var(--green)}.state.recording{color:var(--red)}.status{display:flex;flex-wrap:wrap;gap:8px 22px;padding:11px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);color:var(--secondary);font-size:12px;margin-bottom:16px}.status strong{color:var(--text)}
 .feeds{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));gap:12px}.feed{border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface)}.feed-head{padding:9px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}.feed-head strong{margin-right:auto}.feed-head select{max-width:145px;font-size:12px}.feed-stage{aspect-ratio:16/9;background:#000;position:relative}.feed-stage video{width:100%;height:100%;object-fit:contain}.feed-stage .message{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);padding:20px;text-align:center;pointer-events:none}.feed-stage .message:empty{display:none}.feed-foot{padding:8px 10px;display:flex;gap:9px;align-items:center;color:var(--muted);font-size:12px}.meter{flex:1;height:5px;border-radius:3px;background:#30302c;overflow:hidden}.meter span{display:block;height:100%;width:0;background:var(--green)}.muted{color:var(--muted)}.error{color:var(--red)}.guide{font-size:12px;color:var(--muted);margin-top:18px;max-width:690px}.guide p{margin:6px 0}.guide strong{color:var(--secondary)}
 @media(max-width:650px){.shell{padding:16px}.toolbar .spacer{flex-basis:100%}.feed-head select{max-width:120px}}
 </style></head>
 <body><div class="shell"><header class="top"><a class="brand" href="/">GitFlare</a><small>Capture Station</small><a href="/stations">Control portal</a></header>
 <h1>Capture Station</h1><p class="lead">Run this page on the Mac mini connected to your workshop cameras. Keep it open while recording.</p>
-<section class="panel" id="pairPanel"><h2>Pair this Mac mini</h2><p>Create a pairing code from the Camera stations portal on your MacBook. If you want a Dock app, add this page to the Dock before pairing. Then sign in and enter the code here.</p><div class="pair-form"><input id="pairCode" aria-label="Pairing code" maxlength="12" placeholder="XXXXX-XXXXX" autocomplete="off"><button class="btn primary" id="pairBtn">Pair station</button><a class="btn" href="/api/auth/login">Sign in</a></div><div class="error" id="pairError" role="alert"></div></section>
+<section class="panel" id="pairPanel"><h2>Connect this Mac mini</h2><p>Sign in with your GitFlare account, then choose where recordings should go. If you want a Dock app, add this page to the Dock before signing in.</p><div id="signInArea" hidden><a class="btn primary" href="/api/auth/login?next=/station">Sign in with Google</a></div><div id="connectArea" hidden><div class="setup-form"><label>Repository<select id="setupRepo" aria-label="Repository for recordings"></select></label><label>Station name<input id="setupName" maxlength="80" value="Workshop Mac mini" autocomplete="off"></label><button class="btn primary" id="connectBtn">Connect station</button></div><div class="setup-note" id="setupNote"></div></div><div class="error" id="pairError" role="alert"></div></section>
 <section id="stationPanel" hidden><div class="toolbar"><h2 id="stationName"></h2><span class="state" id="stationState">Connecting</span><div class="spacer"></div><button class="btn" id="enableBtn">Enable cameras</button><button class="btn" id="addBtn">Add camera</button><button class="btn record" id="recordBtn" disabled>Start recording</button><button class="btn stop" id="stopBtn" hidden>Stop recording</button></div>
 <div class="status" id="stationStatus"></div><div class="feeds" id="feeds"></div><div class="guide"><p><strong>Keep this page open and the Mac mini awake.</strong> Completed clips are stored locally before upload. Recording continues if the MacBook disconnects.</p><p>For an app-like window, add this page to the Dock from Safari. You can also add it as a login item in macOS.</p></div></section>
 </div><script>
@@ -207,9 +207,9 @@ async function connectSocket(){
   ws.onclose=()=>{if(state.ws!==ws)return;state.online=false;state.ws=null;for(const pc of state.viewers.values())pc.close();state.viewers.clear();renderStatus();setTimeout(connectSocket,3000)}
 }
 async function boot(){
-  state.store=await openDatabase();
+  if(!state.store)state.store=await openDatabase();
   state.station=readSaved();
-  if(!state.station){$('pairPanel').hidden=false;$('stationPanel').hidden=true;return}
+  if(!state.station){$('pairPanel').hidden=false;$('stationPanel').hidden=true;await showSetup();return}
   $('pairPanel').hidden=true;$('stationPanel').hidden=false;
   try{state.opfs=await navigator.storage.getDirectory()}catch(e){setError('Browser storage unavailable: '+e.message)}
   const sessions=await getAll('sessions');
@@ -218,7 +218,20 @@ async function boot(){
   // Permissions already granted on an installed station normally allow this.
   if(navigator.mediaDevices?.getUserMedia)enableCameras().catch(e=>setError(e.message));
 }
-$('pairBtn').onclick=async()=>{const code=$('pairCode').value.trim();$('pairBtn').disabled=true;$('pairError').textContent='';try{const user=await fetch('/api/auth/me');if(!user.ok)throw Error('Sign in to GitFlare on this Mac, then enter the pairing code.');const result=await api('/api/stations/claim',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code})});state.station=result;saveStation();await boot()}catch(e){$('pairError').textContent=e.message}finally{$('pairBtn').disabled=false}};
+async function showSetup(){
+  $('pairError').textContent='';
+  const session=await fetch('/api/auth/me');
+  $('signInArea').hidden=session.ok;
+  $('connectArea').hidden=!session.ok;
+  if(!session.ok)return;
+  const repos=await api('/api/stations/repositories');
+  $('setupRepo').replaceChildren(...repos.map(name=>new Option(name,name)));
+  const requested=new URLSearchParams(location.search).get('repo');
+  if(repos.includes(requested))$('setupRepo').value=requested;
+  $('connectBtn').disabled=!repos.length;
+  $('setupNote').textContent=repos.length?'Only repositories where you can record appear here.':'This account has no repositories with recording access.';
+}
+$('connectBtn').onclick=async()=>{$('connectBtn').disabled=true;$('pairError').textContent='';try{const result=await api('/api/stations/connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({repo:$('setupRepo').value,name:$('setupName').value})});state.station=result;saveStation();await boot()}catch(e){$('pairError').textContent=e.message;$('connectBtn').disabled=false}};
 $('enableBtn').onclick=()=>enableCameras();
 $('addBtn').onclick=()=>{if(state.recording)return;addRow();saveRows()};
 $('recordBtn').onclick=()=>startRecording().catch(e=>setError(e.message));

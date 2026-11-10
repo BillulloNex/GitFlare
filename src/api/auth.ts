@@ -69,6 +69,7 @@ function effectiveRole(existing: string | null | undefined, granted: UserRole): 
 app.get('/login', (c) => {
     const state = crypto.randomUUID();
     const redirectUri = `${c.env.APP_URL}/api/auth/callback`;
+    const returnToStation = c.req.query('next') === '/station';
 
     const params = new URLSearchParams({
         client_id: c.env.GOOGLE_CLIENT_ID,
@@ -85,10 +86,13 @@ app.get('/login', (c) => {
 
     return new Response(null, {
         status: 302,
-        headers: {
-            Location: `https://accounts.google.com/o/oauth2/v2/auth?${params}`,
-            'Set-Cookie': stateCookie,
-        },
+        headers: [
+            ['Location', `https://accounts.google.com/o/oauth2/v2/auth?${params}`],
+            ['Set-Cookie', stateCookie],
+            ['Set-Cookie', returnToStation
+                ? 'gf_oauth_next=station; Path=/; HttpOnly; SameSite=Lax; Max-Age=600'
+                : 'gf_oauth_next=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0'],
+        ],
     });
 });
 
@@ -195,13 +199,16 @@ app.get('/callback', async (c) => {
     const sessionCookie = await createSession(c.env.DB, user.id, c.env.APP_URL);
     // Clear the OAuth state cookie
     const clearStateCookie = 'gf_oauth_state=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0';
+    const clearNextCookie = 'gf_oauth_next=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0';
+    const nextPath = parseCookieValue(cookieHeader, 'gf_oauth_next') === 'station' ? '/station' : '/';
 
     return new Response(null, {
         status: 302,
         headers: [
-            ['Location', c.env.APP_URL + '/'],
+            ['Location', c.env.APP_URL + nextPath],
             ['Set-Cookie', sessionCookie],
             ['Set-Cookie', clearStateCookie],
+            ['Set-Cookie', clearNextCookie],
         ],
     });
 });

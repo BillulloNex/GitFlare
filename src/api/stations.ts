@@ -12,6 +12,39 @@ type Station = { id: string; repo_id: string; name: string; owner_user_id: strin
 const app = new Hono<StationEnv>();
 export const claimApp = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
 
+claimApp.get('/repositories', async c => {
+	const user = c.get('user');
+	if (!user) return c.json({ error: 'Sign in on the Mac mini' }, 403);
+	const principal = principalFrom(user, null);
+	if (!principal) return c.json({ error: 'Account cannot access repositories' }, 403);
+	const { results } = await c.env.DB.prepare('SELECT id, name, is_private FROM repositories ORDER BY created_at DESC')
+		.all<{ id: string; name: string; is_private: number }>();
+	const allowed = await Promise.all((results ?? []).map(async repo =>
+		await checkRepoAccess(principal, repo.id, repo.is_private, 'write', c.env.DB) ? repo.name : null));
+	return c.json({ data: allowed.filter((name): name is string => Boolean(name)) });
+});
+
+claimApp.post('/connect', async c => {
+	const user = c.get('user');
+	if (!user) return c.json({ error: 'Sign in on the Mac mini' }, 403);
+	const body = await readJsonObject<{ repo: unknown; name: unknown }>(c);
+	const repoName = typeof body?.repo === 'string' ? body.repo : '';
+	const name = typeof body?.name === 'string' ? body.name.trim() : '';
+	if (!repoName || !name || name.length > 80) return c.json({ error: 'Choose a repository and enter a station name (1–80 characters)' }, 400);
+	const repo = await c.env.DB.prepare('SELECT id, name, is_private FROM repositories WHERE name = ?')
+		.bind(repoName).first<{ id: string; name: string; is_private: number }>();
+	const principal = principalFrom(user, null);
+	if (!repo || !principal || !(await checkRepoAccess(principal, repo.id, repo.is_private, 'write', c.env.DB))) {
+		return c.json({ error: 'You need write access to this repository' }, 403);
+	}
+	const id = crypto.randomUUID();
+	const token = stationToken();
+	await c.env.DB.prepare('INSERT INTO capture_stations (id, repo_id, name, token_hash, owner_user_id, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+		.bind(id, repo.id, name, await hashKey(token), user.id, new Date().toISOString()).run();
+	c.executionCtx.waitUntil(audit(c.env.DB, { repoId: repo.id, actor: user.id, action: 'station.connect', details: { station_id: id, name }, ipAddress: c.req.header('cf-connecting-ip') || undefined }));
+	return c.json({ data: { id, name, repo: repo.name, token } }, 201);
+});
+
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 function pairingCode(): string {
 	const bytes = crypto.getRandomValues(new Uint8Array(10));
