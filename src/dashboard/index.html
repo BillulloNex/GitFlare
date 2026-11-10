@@ -1572,7 +1572,7 @@
                             <svg class="i" width="16" height="16" aria-hidden="true"><use href="#i-log-out"/></svg>
                             Sign out
                         </button>
-                        <div class="menu-foot">GitFlare v1.1.16</div>
+                        <div class="menu-foot">GitFlare v1.1.17</div>
                     </div>
                 </div>
             </div>
@@ -1851,6 +1851,7 @@
                                     <button data-order="asc" data-action="diary-order">Oldest first</button>
                                 </div>
                             </div>
+                            <button class="btn btn-sm" data-action="diary-stations">Camera stations</button>
                             <button class="btn btn-sm btn-icon" data-action="diary-refresh" aria-label="Refresh diary">
                                 <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-refresh"/></svg>
                             </button>
@@ -7188,6 +7189,7 @@
                 case 'table-open-commit': switchMainTab('commits'); openCommitDetail(d.sha); break;
                 case 'diary-order': setDiaryOrder(d.order); break;
                 case 'diary-refresh': fetchDiary(); break;
+                case 'diary-stations': window.location.href = `/stations?repo=${encodeURIComponent(activeRepo || '')}`; break;
                 case 'diary-more': fetchDiary({ more: true }); break;
                 case 'diary-when-toggle': setDiaryWhen(document.getElementById('diaryWhenInput').style.display === 'none'); break;
                 case 'diary-pick': pickDiaryFiles(diaryComposerTray); break;

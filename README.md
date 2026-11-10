@@ -302,6 +302,37 @@ any past time for backfilling). Posts are grouped by day; newest or oldest first
   `POST …/diary/media/:id/complete`, `DELETE …/diary/media/:id`,
   `GET …/diary/media/:id/file`.
 
+#### Capture Station
+
+The **Camera stations** button in Diary opens `/stations`, the private control
+portal. To use the cameras attached to a Mac mini:
+
+1. On the MacBook, choose a repository in `/stations`, click **Add station**,
+   name it, and copy the 10-minute pairing code.
+2. On the Mac mini, open `https://git.beenex.company/station` in Safari. If you
+   want a separate Dock window, add the page to the Dock *before* pairing;
+   Safari's web app has separate site storage. Sign in, enter the code, and
+   allow camera and microphone access.
+3. Add up to six camera feeds and assign a microphone (or no sound) to each.
+   Leave the station window open and the Mac mini awake. Start and stop from
+   either the station or `/stations`; repository readers can view the private
+   live feeds, and writers can control recording.
+
+The mini records every configured feed locally. Each feed rolls to a new clip
+after five minutes or 128 MiB, with a one-second overlap at the handoff. It
+keeps completed clips in browser storage until multipart upload succeeds, then
+posts the recordings to Diary. A long session creates multiple Diary entries
+when needed to respect the 40-video limit. Closing the MacBook does not stop
+the mini. Keep the mini's window open, awake, and sufficiently supplied with
+disk space; a browser or system crash can lose the active, unfinished segment.
+
+The live preview uses WebRTC. Direct connections work on compatible local and
+remote networks. For reliable access across restrictive networks, set the
+optional `REALTIME_TURN_KEY_ID` and `REALTIME_TURN_API_TOKEN` Worker secrets for
+Cloudflare Realtime TURN. TURN traffic can incur usage charges; recording and
+upload do not depend on it. Pairing creates a station-scoped credential that
+can be revoked with **Remove** in the control portal.
+
 ### Tables
 
 Every repo has a **Tables** tab: as many data tables as you like (collaborators,

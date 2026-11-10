@@ -10,7 +10,7 @@ import { isValidPermission, meetsLevel, roleToPermission, type AccessLevel, type
 type AuthVariables = {
     user: UserRecord | null;
     apiKey: ApiKey | null;
-    authType: 'session' | 'apikey' | 'none';
+    authType: 'session' | 'apikey' | 'station' | 'none';
 };
 
 export type { AuthVariables };
@@ -102,6 +102,36 @@ function isSameOriginWrite(req: { method: string; url: string; header(name: stri
  * Sets `user`, `apiKey`, and `authType` on the context.
  */
 export const auth = createMiddleware<{ Bindings: Env; Variables: AuthVariables }>(async (c, next) => {
+    // A paired Capture Station uses its own repo-scoped credential. It is
+    // intentionally valid for only the diary upload and station heartbeat /
+    // signaling routes, even if the same browser also has a user session.
+    const protocols = c.req.header('Sec-WebSocket-Protocol')?.split(',').map(s => s.trim()) ?? [];
+    const stationToken = extractApiKeyFromHeader(c.req.header('Authorization') ?? '') || protocols.find(p => p.startsWith('gfs_'));
+    if (stationToken?.startsWith('gfs_')) {
+        const path = new URL(c.req.url).pathname;
+        const match = /^\/api\/repos\/([^/]+)\/(.+)$/.exec(path);
+        if (!match) return c.json({ error: 'Station credential is not valid for this route' }, 403);
+        const suffix = match[2];
+        const mediaRoute = (c.req.method === 'POST' && (suffix === 'diary' || suffix === 'diary/media' || /^diary\/media\/[A-Za-z0-9_-]+\/complete$/.test(suffix)))
+            || (c.req.method === 'PUT' && /^diary\/media\/[A-Za-z0-9_-]+\/parts\/\d+$/.test(suffix));
+        const stationRoute = /^(stations\/([A-Za-z0-9_-]+)\/(heartbeat|socket|rtc))$/.exec(suffix);
+        if (!mediaRoute && !stationRoute) return c.json({ error: 'Station credential is not valid for this route' }, 403);
+        const tokenHash = await hashKey(stationToken);
+        const station = await c.env.DB.prepare(
+            `SELECT s.id, s.repo_id, s.name, s.owner_user_id, s.created_at, r.name AS repo_name, u.role AS owner_role
+             FROM capture_stations s JOIN repositories r ON r.id = s.repo_id
+             JOIN users u ON u.id = s.owner_user_id WHERE s.token_hash = ? AND s.revoked_at IS NULL`
+        ).bind(tokenHash).first<{ id: string; repo_id: string; name: string; owner_user_id: string; created_at: string; repo_name: string; owner_role: string }>();
+        let requestedRepo: string;
+        try { requestedRepo = decodeURIComponent(match[1]); } catch { return c.json({ error: 'Invalid repository path' }, 400); }
+        if (!station || !meetsLevel(roleToPermission(station.owner_role), 'write') || station.repo_name !== requestedRepo
+            || (stationRoute && stationRoute[2] !== station.id)) return c.json({ error: 'Station credential is invalid or revoked' }, 401);
+        c.set('user', null);
+        c.set('apiKey', { id: station.id, name: station.name, repo_id: station.repo_id, user_id: station.owner_user_id, permissions: 'write', created_at: station.created_at, expires_at: null });
+        c.set('authType', 'station');
+        return await next();
+    }
+
     // 1. Try session cookie first (UI users)
     const user = await validateSession(c.env.DB, c.req.header('Cookie'));
     if (user) {

@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Capture Station · GitFlare</title><link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0c0c0b;--surface:#131312;--surface2:#1b1b19;--border:#2a2a27;--text:#f2f1ee;--secondary:#b0afa8;--muted:#8f8e87;--orange:#f6821f;--green:#5fd38d;--red:#ff7a6b;--font:"Geist",sans-serif;--display:"Bricolage Grotesque",sans-serif;--mono:"Geist Mono",monospace}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 var(--font)}button,input,select{font:inherit}button{cursor:pointer}button:disabled{opacity:.45;cursor:default}a{color:var(--orange)}:focus-visible{outline:2px solid var(--orange);outline-offset:2px}
+.shell{max-width:1200px;margin:auto;padding:24px 28px 48px}.top{display:flex;gap:14px;align-items:center;border-bottom:1px solid var(--border);padding-bottom:18px}.brand{font:700 23px/1 var(--display);color:var(--text);text-decoration:none}.top small{color:var(--muted);font:500 12px var(--mono)}.top a:last-child{margin-left:auto}
+h1{font:700 clamp(28px,4vw,42px)/1.1 var(--display);letter-spacing:-.045em;margin:28px 0 7px}.lead{color:var(--secondary);margin:0 0 24px;max-width:680px}
+.btn{border:1px solid var(--border);border-radius:7px;padding:9px 14px;background:var(--surface2);color:var(--text);min-height:38px}.btn:hover:not(:disabled){border-color:#55554d}.btn.primary{background:var(--orange);color:#1b0e04;border-color:var(--orange);font-weight:700}.btn.record{background:var(--red);border-color:var(--red);color:#200a08;font-weight:700}.btn.stop{border-color:var(--red);color:var(--red)}
+input,select{color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:8px 10px;min-height:36px}select option{background:var(--surface2)}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:20px;margin-bottom:18px}.panel h2{font:700 21px var(--display);margin:0 0 8px}.panel p{color:var(--secondary);margin:0 0 15px}.pair-form{display:flex;gap:9px;flex-wrap:wrap}.pair-form input{width:210px;text-transform:uppercase;font:600 18px var(--mono);letter-spacing:.06em}
+.toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 16px}.toolbar h2{font:700 22px var(--display);margin:0}.toolbar .spacer{flex:1}.state{color:var(--muted);font:500 12px var(--mono)}.state.online{color:var(--green)}.state.recording{color:var(--red)}.status{display:flex;flex-wrap:wrap;gap:8px 22px;padding:11px 0;border-top:1px solid var(--border);border-bottom:1px solid var(--border);color:var(--secondary);font-size:12px;margin-bottom:16px}.status strong{color:var(--text)}
+.feeds{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,330px),1fr));gap:12px}.feed{border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface)}.feed-head{padding:9px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}.feed-head strong{margin-right:auto}.feed-head select{max-width:145px;font-size:12px}.feed-stage{aspect-ratio:16/9;background:#000;position:relative}.feed-stage video{width:100%;height:100%;object-fit:contain}.feed-stage .message{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);padding:20px;text-align:center;pointer-events:none}.feed-stage .message:empty{display:none}.feed-foot{padding:8px 10px;display:flex;gap:9px;align-items:center;color:var(--muted);font-size:12px}.meter{flex:1;height:5px;border-radius:3px;background:#30302c;overflow:hidden}.meter span{display:block;height:100%;width:0;background:var(--green)}.muted{color:var(--muted)}.error{color:var(--red)}.guide{font-size:12px;color:var(--muted);margin-top:18px;max-width:690px}.guide p{margin:6px 0}.guide strong{color:var(--secondary)}
+@media(max-width:650px){.shell{padding:16px}.toolbar .spacer{flex-basis:100%}.feed-head select{max-width:120px}}
+</style></head>
+<body><div class="shell"><header class="top"><a class="brand" href="/">GitFlare</a><small>Capture Station</small><a href="/stations">Control portal</a></header>
+<h1>Capture Station</h1><p class="lead">Run this page on the Mac mini connected to your workshop cameras. Keep it open while recording.</p>
+<section class="panel" id="pairPanel"><h2>Pair this Mac mini</h2><p>Create a pairing code from the Camera stations portal on your MacBook. If you want a Dock app, add this page to the Dock before pairing. Then sign in and enter the code here.</p><div class="pair-form"><input id="pairCode" aria-label="Pairing code" maxlength="12" placeholder="XXXXX-XXXXX" autocomplete="off"><button class="btn primary" id="pairBtn">Pair station</button><a class="btn" href="/api/auth/login">Sign in</a></div><div class="error" id="pairError" role="alert"></div></section>
+<section id="stationPanel" hidden><div class="toolbar"><h2 id="stationName"></h2><span class="state" id="stationState">Connecting</span><div class="spacer"></div><button class="btn" id="enableBtn">Enable cameras</button><button class="btn" id="addBtn">Add camera</button><button class="btn record" id="recordBtn" disabled>Start recording</button><button class="btn stop" id="stopBtn" hidden>Stop recording</button></div>
+<div class="status" id="stationStatus"></div><div class="feeds" id="feeds"></div><div class="guide"><p><strong>Keep this page open and the Mac mini awake.</strong> Completed clips are stored locally before upload. Recording continues if the MacBook disconnects.</p><p>For an app-like window, add this page to the Dock from Safari. You can also add it as a login item in macOS.</p></div></section>
+</div><script>
+const $=id=>document.getElementById(id);
+const PREFIX='/api/repos/';
+const MAX_BYTES=128*1024*1024;
+const MAX_MS=5*60*1000;
+const state={station:null,devices:[],rows:[],recording:false,stopping:false,session:null,ws:null,rtc:null,viewers:new Map(),pendingCandidates:new Map(),queueBusy:false,error:'',timer:null,heartbeat:null,online:false,store:null,opfs:null};
+function path(suffix){return PREFIX+encodeURIComponent(state.station.repo)+'/stations/'+encodeURIComponent(state.station.id)+suffix}
+function diary(suffix){return PREFIX+encodeURIComponent(state.station.repo)+'/diary'+suffix}
+function esc(v){return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+async function api(url,options={}){
+  const headers={...(options.headers||{})};
+  if(state.station)headers.Authorization='Bearer '+state.station.token;
+  const res=await fetch(url,{...options,headers});
+  const body=await res.json().catch(()=>({}));
+  if(!res.ok){const e=Error(body.error||'Request failed');e.status=res.status;throw e}
+  return body.data??body;
+}
+function setError(message){state.error=message||'';renderStatus()}
+function renderStatus(){
+  $('stationName').textContent=state.station?.name||'Capture Station';
+  $('stationState').textContent=state.recording?'● Recording':state.online?'● Connected':'● Reconnecting';
+  $('stationState').className='state '+(state.recording?'recording':state.online?'online':'');
+  $('recordBtn').hidden=state.recording;$('stopBtn').hidden=!state.recording;
+  $('recordBtn').disabled=state.recording||state.stopping||!state.rows.length||state.rows.some(r=>!r.stream)||!state.opfs;
+  $('stopBtn').disabled=state.stopping;
+  $('addBtn').disabled=state.recording||state.stopping||state.rows.length>=6;
+  const pending=state.pending||0;
+  $('stationStatus').innerHTML='<span>Feeds <strong>'+state.rows.length+'</strong></span><span>Clips waiting <strong>'+pending+'</strong></span><span>Network <strong>'+(navigator.onLine?'Connected':'Offline')+'</strong></span>'+(state.error?'<span class="error">'+esc(state.error)+'</span>':'');
+}
+function readSaved(){try{return JSON.parse(localStorage.getItem('gitflare.capture.station')||'null')}catch{return null}}
+function saveStation(){localStorage.setItem('gitflare.capture.station',JSON.stringify(state.station))}
+function saveRows(){if(!state.station)return;const rows=state.rows.map(r=>({cameraId:r.cameraId,cameraLabel:deviceLabel(r.cameraId),micId:r.micId,micLabel:deviceLabel(r.micId)}));localStorage.setItem('gitflare.capture.rows.'+state.station.id,JSON.stringify(rows))}
+function deviceLabel(id){return state.devices.find(d=>d.deviceId===id)?.label||''}
+function rememberedRows(){try{return JSON.parse(localStorage.getItem('gitflare.capture.rows.'+state.station.id)||'[]')}catch{return []}}
+function matchDevice(kind,id,label){const list=state.devices.filter(d=>d.kind===kind&&d.deviceId);return list.find(d=>d.deviceId===id)?.deviceId||list.find(d=>label&&d.label===label)?.deviceId||''}
+async function refreshDevices(){state.devices=await navigator.mediaDevices.enumerateDevices();renderFeeds()}
+function selectOptions(kind,selected,used=[]){return state.devices.filter(d=>d.kind===kind&&d.deviceId&&d.deviceId!=='communications').map((d,i)=>'<option value="'+esc(d.deviceId)+'"'+(d.deviceId===selected?' selected':'')+(used.includes(d.deviceId)&&d.deviceId!==selected?' disabled':'')+'>'+esc(d.label||(kind==='videoinput'?'Camera ':'Microphone ')+(i+1))+'</option>').join('')}
+function renderFeeds(){
+  $('feeds').innerHTML=state.rows.map((r,i)=>{
+    const used=state.rows.filter(x=>x!==r).map(x=>x.cameraId);
+    return '<div class="feed" data-key="'+esc(r.key)+'"><div class="feed-head"><strong>Camera '+(i+1)+'</strong><select data-kind="camera" aria-label="Camera '+(i+1)+'">'+selectOptions('videoinput',r.cameraId,used)+'</select><select data-kind="mic" aria-label="Microphone for camera '+(i+1)+'">'+selectOptions('audioinput',r.micId)+'<option value="none"'+(r.micId==='none'?' selected':'')+'>No sound</option></select>'+(state.rows.length>1?'<button class="btn" data-remove="'+esc(r.key)+'" aria-label="Remove camera '+(i+1)+'">×</button>':'')+'</div><div class="feed-stage"><video autoplay muted playsinline></video><div class="message">'+esc(r.error||'')+'</div></div><div class="feed-foot"><span>'+esc(r.stream?'Ready':'Waiting')+'</span><div class="meter"><span></span></div></div></div>';
+  }).join('');
+  for(const r of state.rows){r.el=$('feeds').querySelector('[data-key="'+r.key+'"]');const video=r.el.querySelector('video');video.srcObject=r.stream;video.classList.toggle('mirror',r.stream?.getVideoTracks()[0]?.getSettings?.().facingMode!=='environment');r.el.querySelectorAll('select,button').forEach(el=>el.disabled=state.recording||state.stopping)}
+  renderStatus()
+}
+function stopRow(r){cancelAnimationFrame(r.meterRaf);r.audioCtx?.close().catch(()=>{});r.audioCtx=null;r.stream?.getTracks().forEach(t=>t.stop());r.stream=null}
+function startMeter(r){const track=r.stream?.getAudioTracks()[0];if(!track||!window.AudioContext)return;const ctx=new AudioContext(),analyser=ctx.createAnalyser();analyser.fftSize=1024;ctx.createMediaStreamSource(new MediaStream([track])).connect(analyser);r.audioCtx=ctx;const data=new Float32Array(1024);const tick=()=>{analyser.getFloatTimeDomainData(data);let sum=0;for(const n of data)sum+=n*n;const db=20*Math.log10(Math.sqrt(sum/data.length)||1e-8);if(r.el)r.el.querySelector('.meter span').style.width=Math.max(0,Math.min(100,(db+60)/60*100))+'%';r.meterRaf=requestAnimationFrame(tick)};tick()}
+async function openRow(r){
+  stopRow(r);r.error='Starting camera…';renderFeeds();
+  try{const stream=await navigator.mediaDevices.getUserMedia({video:{width:{ideal:1920},height:{ideal:1080},frameRate:{ideal:30},...(r.cameraId?{deviceId:{exact:r.cameraId}}:{})},audio:r.micId==='none'?false:r.micId?{deviceId:{exact:r.micId}}:true});
+    r.stream=stream;r.cameraId=stream.getVideoTracks()[0]?.getSettings?.().deviceId||r.cameraId;r.micId=stream.getAudioTracks()[0]?.getSettings?.().deviceId||'none';r.error='';
+    for(const track of stream.getTracks())track.onended=()=>{if(r.stream!==stream)return;r.error=track.kind==='video'?'Camera disconnected':'Microphone disconnected';setError(r.error+' during recording.');renderFeeds();if(state.recording)stopRecording();sendStatus()};
+    state.devices=await navigator.mediaDevices.enumerateDevices();renderFeeds();startMeter(r);saveRows();sendStatus();
+  }catch(e){r.error=e.name==='NotAllowedError'?'Allow camera and microphone access for this site.':e.message||'Camera unavailable';renderFeeds()}
+}
+function addRow(saved={}){
+  const used=state.rows.map(r=>r.cameraId),cameras=state.devices.filter(d=>d.kind==='videoinput'&&d.deviceId&&!used.includes(d.deviceId));
+  if(state.rows.length&& !cameras.length){setError('No unused camera is connected.');return}
+  const preferred=matchDevice('videoinput',saved.cameraId,saved.cameraLabel);
+  const cameraId=preferred&&!used.includes(preferred)?preferred:cameras[0]?.deviceId||'';
+  const mics=state.devices.filter(d=>d.kind==='audioinput'&&d.deviceId);
+  const usedMics=state.rows.map(r=>r.micId);
+  const micId=saved.micId==='none'?'none':matchDevice('audioinput',saved.micId,saved.micLabel)||mics.find(d=>!usedMics.includes(d.deviceId))?.deviceId||(state.rows.length?'none':'');
+  const row={key:crypto.randomUUID(),cameraId,micId,stream:null,error:'',active:null,rollover:null,part:0,meterRaf:0,audioCtx:null,el:null};
+  state.rows.push(row);renderFeeds();row.ready=openRow(row);return row;
+}
+async function enableCameras(){
+  if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder){setError('This browser cannot record cameras. Open the station in an up-to-date browser over HTTPS.');return}
+  try{state.opfs=await navigator.storage.getDirectory();if(navigator.storage.persist)navigator.storage.persist().catch(()=>{})}catch(e){setError('Persistent browser storage is unavailable: '+e.message);return}
+  try{const probe=await navigator.mediaDevices.getUserMedia({video:true,audio:true});probe.getTracks().forEach(t=>t.stop())}catch(e){setError('Allow camera and microphone access: '+e.message);return}
+  await refreshDevices();const saved=rememberedRows().slice(0,6);if(!state.rows.length){const first=addRow(saved[0]||{});if(first)await first.ready;for(const item of saved.slice(1))addRow(item)}
+  $('enableBtn').hidden=true;setError('');connectSocket();sendStatus()
+}
+function stationMime(){return ['video/mp4;codecs=avc1.42E01E,mp4a.40.2','video/mp4','video/webm;codecs=vp8,opus','video/webm'].find(t=>MediaRecorder.isTypeSupported(t))||''}
+function beginSegment(r){
+  const mime=stationMime(),media=new MediaRecorder(r.stream,{...(mime?{mimeType:mime}:{}),videoBitsPerSecond:8000000});
+  const seg={media,chunks:[],bytes:0,startedAt:0,part:++r.part,finished:null,started:null};
+  seg.started=new Promise((resolve,reject)=>{media.onstart=()=>{seg.startedAt=Date.now();resolve()};media.onerror=e=>{reject(e.error||e);setError('Recorder error on camera '+(state.rows.indexOf(r)+1));if(state.recording)stopRecording()}});
+  seg.finished=new Promise(resolve=>{media.onstop=async()=>{try{if(seg.bytes){const type=(media.mimeType||mime||'video/webm').split(';')[0],ext=type.includes('mp4')?'mp4':'webm',camera=state.rows.indexOf(r)+1;
+    const name='recording-'+state.session.id+'-camera-'+camera+'-part-'+String(seg.part).padStart(3,'0')+'-at-'+String(Math.max(0,seg.startedAt-state.session.startedAt)).padStart(8,'0')+'ms.'+ext;
+    await persistClip(new File(seg.chunks,name,{type}),{sessionId:state.session.id,camera,part:seg.part,startedAt:seg.startedAt});
+  }}catch(e){setError('Could not save a clip: '+e.message);downloadBackup(seg,mime,r)}finally{seg.chunks=[];resolve();drainQueue()}}});
+  media.ondataavailable=e=>{if(!e.data?.size)return;seg.chunks.push(e.data);seg.bytes+=e.data.size;if(state.recording&&r.active===seg&&!r.rollover&&seg.bytes>=MAX_BYTES)r.rollover=rollover(r,seg).finally(()=>r.rollover=null)};
+  media.start(1000);return seg;
+}
+function downloadBackup(seg,mime,r){if(!seg.chunks.length)return;const blob=new Blob(seg.chunks,{type:mime.split(';')[0]||'video/webm'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='capture-backup-'+Date.now()+(blob.type.includes('mp4')?'.mp4':'.webm');a.click();setTimeout(()=>URL.revokeObjectURL(url),60000)}
+async function rollover(r,old){try{const next=beginSegment(r);await next.started;r.active=next;await new Promise(resolve=>setTimeout(resolve,1000));if(old.media.state==='recording')old.media.stop();await old.finished}catch(e){setError('Could not continue camera '+(state.rows.indexOf(r)+1)+': '+e.message);stopRecording()}}
+async function startRecording(){
+  if(state.recording||state.stopping||!state.rows.length||state.rows.some(r=>!r.stream)||!state.opfs)return;
+  state.recording=true;state.session={id:crypto.randomUUID(),stationId:state.station.id,startedAt:Date.now(),status:'recording',batchPosted:0};
+  await put('sessions',state.session);state.rows.forEach(r=>r.part=0);
+  try{for(const r of state.rows)r.active=beginSegment(r);await Promise.all(state.rows.map(r=>r.active.started))}catch(e){setError('Could not start recording: '+e.message);stopRecording();return}
+  state.timer=setInterval(()=>{for(const r of state.rows)if(r.active&&!r.rollover&&Date.now()-r.active.startedAt>=MAX_MS)r.rollover=rollover(r,r.active).finally(()=>r.rollover=null)},1000);
+  renderFeeds();sendStatus()
+}
+async function stopRecording(){
+  if(!state.recording||state.stopping)return;state.recording=false;state.stopping=true;clearInterval(state.timer);renderStatus();
+  await Promise.all(state.rows.map(async r=>{if(r.rollover)await r.rollover;if(r.active?.media.state==='recording')r.active.media.stop();if(r.active)await r.active.finished;r.active=null}));
+  state.session.status='stopped';state.session.endedAt=Date.now();await put('sessions',state.session);state.stopping=false;renderFeeds();sendStatus();drainQueue()
+}
+function openDatabase(){
+  return new Promise((resolve,reject)=>{const req=indexedDB.open('gitflare-capture-v1',1);req.onupgradeneeded=()=>{const db=req.result;db.createObjectStore('clips',{keyPath:'id'});db.createObjectStore('sessions',{keyPath:'id'})};req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})
+}
+function tx(store,mode,fn){return new Promise((resolve,reject)=>{const t=state.store.transaction(store,mode),req=fn(t.objectStore(store));let result;t.oncomplete=()=>resolve(result);t.onabort=()=>reject(t.error||Error('Local database transaction failed'));t.onerror=()=>reject(t.error||Error('Local database transaction failed'));req.onsuccess=()=>{result=req.result}})}
+function put(store,value){return tx(store,'readwrite',s=>s.put(value))}
+function getAll(store){return tx(store,'readonly',s=>s.getAll())}
+function remove(store,id){return tx(store,'readwrite',s=>s.delete(id))}
+async function persistClip(file,info){
+  if(file.size>2*1024*1024*1024)throw Error('Clip exceeded the 2 GB upload limit');
+  const id=crypto.randomUUID(),handle=await state.opfs.getFileHandle(id,{create:true}),writer=await handle.createWritable();
+  try{await writer.write(file);await writer.close()}catch(e){await writer.abort().catch(()=>{});throw e}
+  await put('clips',{id,stationId:state.station.id,...info,name:file.name,size:file.size,mediaId:null,parts:[],status:'queued'});
+  updatePending()
+}
+async function updatePending(){if(!state.store)return;const clips=await getAll('clips');state.pending=clips.filter(c=>c.stationId===state.station.id).length;renderStatus();sendStatus()}
+async function uploadClip(clip){
+  const handle=await state.opfs.getFileHandle(clip.id),file=await handle.getFile();
+  if(!clip.mediaId){const started=await api(diary('/media'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:clip.name,size:file.size})});clip.mediaId=started.id;clip.partSize=started.part_size;clip.partCount=started.part_count;clip.parts=[];await put('clips',clip)}
+  for(let n=1;n<=clip.partCount;n++){
+    if(clip.parts[n-1])continue;
+    const blob=file.slice((n-1)*clip.partSize,Math.min(n*clip.partSize,file.size));
+    const result=await api(diary('/media/'+encodeURIComponent(clip.mediaId)+'/parts/'+n),{method:'PUT',headers:{'Content-Type':'application/octet-stream'},body:blob});
+    clip.parts[n-1]={part_number:n,etag:result.etag};await put('clips',clip)
+  }
+  await api(diary('/media/'+encodeURIComponent(clip.mediaId)+'/complete'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({parts:clip.parts})});
+  clip.status='uploaded';await put('clips',clip)
+}
+async function postSessions(){
+  const sessions=(await getAll('sessions')).filter(s=>s.stationId===state.station.id&&s.status==='stopped');
+  for(const session of sessions){
+    const clips=(await getAll('clips')).filter(c=>c.sessionId===session.id).sort((a,b)=>a.startedAt-b.startedAt||a.camera-b.camera);
+    if(!clips.length){session.status='posted';await put('sessions',session);continue}
+    if(clips.some(c=>c.status!=='uploaded'))continue;
+    const batches=[];for(let i=0;i<clips.length;i+=40)batches.push(clips.slice(i,i+40));
+    for(let i=session.batchPosted||0;i<batches.length;i++){
+      const batch=batches[i],names=new Set(batch.map(c=>c.camera));
+      await api(diary(''),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:'Workshop recording · '+state.station.name+(batches.length>1?' · part '+(i+1):'')+' · '+names.size+' camera feed'+(names.size===1?'':'s'),happened_at:new Date(session.startedAt).toISOString(),media_ids:batch.map(c=>c.mediaId),capture_session_id:session.id,capture_batch:i})});
+      session.batchPosted=i+1;await put('sessions',session)
+    }
+    session.status='posted';await put('sessions',session);
+    for(const clip of clips){await state.opfs.removeEntry(clip.id).catch(()=>{});await remove('clips',clip.id)}
+    updatePending()
+  }
+}
+async function drainQueue(){
+  if(state.queueBusy||!state.store||!state.opfs||!navigator.onLine)return;
+  state.queueBusy=true;
+  let failed=false;
+  try{for(const clip of (await getAll('clips')).filter(c=>c.stationId===state.station.id&&c.status!=='uploaded')){
+    try{await uploadClip(clip)}catch(e){if(e.status===404||e.status===409){clip.mediaId=null;clip.parts=[];await put('clips',clip)}setError('Upload will retry: '+e.message);failed=true;break}
+  }await postSessions();if(!failed&&!state.recording)setError('')}
+  catch(e){setError('Saved clips will retry: '+e.message)}
+  finally{state.queueBusy=false;updatePending()}
+}
+function sendStatus(){
+  if(!state.station)return;
+  const data={recording:state.recording,feeds:state.rows.filter(r=>r.stream).map(r=>deviceLabel(r.cameraId)||'Camera'),pending:state.pending||0,error:state.error};
+  if(state.ws?.readyState===1)state.ws.send(JSON.stringify({type:'status',data}));
+  api(path('/heartbeat'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)}).catch(e=>{if(e.status===401)setError('Station pairing expired. Pair this Mac again.')})
+}
+function wsSend(value){if(state.ws?.readyState===1)state.ws.send(JSON.stringify(value))}
+async function offerViewer(id){
+  if(!state.rows.some(r=>r.stream))return;
+  state.viewers.get(id)?.close();
+  const pc=new RTCPeerConnection({iceServers:state.rtc?.iceServers||[{urls:'stun:stun.cloudflare.com:3478'}]});state.viewers.set(id,pc);
+  pc.onicecandidate=e=>{if(e.candidate)wsSend({type:'signal',viewerId:id,data:{candidate:e.candidate}})};
+  const streams=[];
+  for(const r of state.rows){if(!r.stream)continue;streams.push({id:r.stream.id,name:deviceLabel(r.cameraId)||'Camera '+(state.rows.indexOf(r)+1)});for(const track of r.stream.getTracks())pc.addTrack(track,r.stream)}
+  const offer=await pc.createOffer();await pc.setLocalDescription(offer);
+  wsSend({type:'signal',viewerId:id,data:{description:pc.localDescription,streams}})
+}
+async function onSignal(id,data){const pc=state.viewers.get(id);if(!pc||!data)return;try{if(data.description){await pc.setRemoteDescription(data.description);for(const candidate of state.pendingCandidates.get(id)||[])await pc.addIceCandidate(candidate);state.pendingCandidates.delete(id)}if(data.candidate){if(pc.remoteDescription)await pc.addIceCandidate(data.candidate);else state.pendingCandidates.set(id,[...(state.pendingCandidates.get(id)||[]),data.candidate])}}catch(e){console.warn('WebRTC signaling failed',e)}}
+async function connectSocket(){
+  if(!state.station||state.ws?.readyState===0||state.ws?.readyState===1||!state.rows.some(r=>r.stream))return;
+  try{state.rtc=await api(path('/rtc'))}catch(e){setError('Preview setup: '+e.message)}
+  const protocol=location.protocol==='https:'?'wss:':'ws:';
+  const ws=new WebSocket(protocol+'//'+location.host+path('/socket'),['station',state.station.token]);state.ws=ws;
+  ws.onopen=()=>{state.online=true;renderStatus();sendStatus()};
+  ws.onmessage=async event=>{let m;try{m=JSON.parse(event.data)}catch{return}
+    if(m.type==='watch')await offerViewer(m.viewerId);
+    if(m.type==='signal')await onSignal(m.viewerId,m.data);
+    if(m.type==='leave'){state.viewers.get(m.viewerId)?.close();state.viewers.delete(m.viewerId);state.pendingCandidates.delete(m.viewerId)}
+    if(m.type==='control'){let error='';try{if(m.action==='start')await startRecording();else if(m.action==='stop')await stopRecording()}catch(e){error=e.message;setError(error)}wsSend({type:'ack',viewerId:m.viewerId,action:m.action,commandId:m.commandId,error})}
+  };
+  ws.onclose=()=>{if(state.ws!==ws)return;state.online=false;state.ws=null;for(const pc of state.viewers.values())pc.close();state.viewers.clear();renderStatus();setTimeout(connectSocket,3000)}
+}
+async function boot(){
+  state.store=await openDatabase();
+  state.station=readSaved();
+  if(!state.station){$('pairPanel').hidden=false;$('stationPanel').hidden=true;return}
+  $('pairPanel').hidden=true;$('stationPanel').hidden=false;
+  try{state.opfs=await navigator.storage.getDirectory()}catch(e){setError('Browser storage unavailable: '+e.message)}
+  const sessions=await getAll('sessions');
+  for(const session of sessions.filter(s=>s.stationId===state.station.id&&s.status==='recording')){session.status='stopped';session.endedAt=Date.now();session.interrupted=true;await put('sessions',session);setError('A previous recording was interrupted. Finished clips are being recovered.')}
+  await updatePending();drainQueue();renderStatus();
+  // Permissions already granted on an installed station normally allow this.
+  if(navigator.mediaDevices?.getUserMedia)enableCameras().catch(e=>setError(e.message));
+}
+$('pairBtn').onclick=async()=>{const code=$('pairCode').value.trim();$('pairBtn').disabled=true;$('pairError').textContent='';try{const user=await fetch('/api/auth/me');if(!user.ok)throw Error('Sign in to GitFlare on this Mac, then enter the pairing code.');const result=await api('/api/stations/claim',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code})});state.station=result;saveStation();await boot()}catch(e){$('pairError').textContent=e.message}finally{$('pairBtn').disabled=false}};
+$('enableBtn').onclick=()=>enableCameras();
+$('addBtn').onclick=()=>{if(state.recording)return;addRow();saveRows()};
+$('recordBtn').onclick=()=>startRecording().catch(e=>setError(e.message));
+$('stopBtn').onclick=()=>stopRecording().catch(e=>setError(e.message));
+$('feeds').onchange=e=>{const el=e.target.closest('.feed'),r=state.rows.find(r=>r.key===el?.dataset.key);if(!r||state.recording)return;const kind=e.target.dataset.kind;if(kind==='camera'&&state.rows.some(x=>x!==r&&x.cameraId===e.target.value)){setError('Each camera can only be used once.');renderFeeds();return}if(kind==='camera')r.cameraId=e.target.value;else r.micId=e.target.value;saveRows();openRow(r)};
+$('feeds').onclick=e=>{const key=e.target.dataset.remove;if(!key||state.recording)return;const r=state.rows.find(r=>r.key===key);if(r){stopRow(r);state.rows=state.rows.filter(x=>x!==r);renderFeeds();saveRows();sendStatus()}};
+navigator.mediaDevices?.addEventListener?.('devicechange',()=>{if(!state.recording)refreshDevices().catch(()=>{})});
+window.addEventListener('online',()=>{drainQueue();sendStatus()});
+window.addEventListener('beforeunload',e=>{if(state.recording){e.preventDefault();e.returnValue=''}});
+state.heartbeat=setInterval(()=>{if(state.station){sendStatus();drainQueue()}},10000);
+boot().catch(e=>setError(e.message));
+</script></body></html>

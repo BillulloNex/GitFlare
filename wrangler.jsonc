@@ -116,6 +116,10 @@
 				// Per-repo merge queue (src/do/ticket-queue.ts)
 				"name": "TICKET_QUEUE",
 				"class_name": "TicketQueue"
+			},
+			{
+				"name": "CAPTURE_ROOM",
+				"class_name": "CaptureRoom"
 			}
 		]
 	},
@@ -150,6 +154,10 @@
 			"deleted_classes": [
 				"CISession"
 			]
+		},
+		{
+			"tag": "v4",
+			"new_sqlite_classes": ["CaptureRoom"]
 		}
 	],
 	// ─── Secrets ────────────────────────────────────────────────
@@ -167,7 +175,7 @@
 	// any missing secret. The deploy workflow checks the critical ones instead.
 	// ─── Environment Variables ──────────────────────────────────
 	"vars": {
-		"GITFLARE_VERSION": "1.1.16",
+		"GITFLARE_VERSION": "1.1.17",
 		// Git LFS (src/api/lfs.ts). Objects live in the STORAGE bucket under lfs/<repoId>/<oid>.
 		// Transfer mode is "presigned" when the R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY secrets
 		// are set (bytes go straight to R2, objects up to 5 GiB) and "proxy" otherwise (bytes

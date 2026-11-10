@@ -42,6 +42,8 @@ type EntryRow = {
 	author_id: string | null;
 	created_at: string;
 	updated_at: string;
+	capture_session_id?: string | null;
+	capture_batch?: number | null;
 };
 
 type MediaRow = {
@@ -108,6 +110,7 @@ async function withMedia(c: Context<DiaryEnv>, entries: EntryRow[]) {
 		author_id: e.author_id,
 		created_at: e.created_at,
 		updated_at: e.updated_at,
+		...(e.capture_session_id ? { capture_session_id: e.capture_session_id, capture_batch: e.capture_batch } : {}),
 		media: (byEntry.get(e.id) ?? []).map((m) => publicMedia(c, m)),
 	}));
 }
@@ -202,7 +205,7 @@ app.get('/:repo/diary', async (c) => {
 // ─── POST /api/repos/:repo/diary ────────────────────────────────
 // { text?, happened_at?, media_ids? } — at least text or one media item.
 app.post('/:repo/diary', async (c) => {
-	const body = await readJsonObject<{ text: unknown; happened_at: unknown; media_ids: unknown }>(c);
+	const body = await readJsonObject<{ text: unknown; happened_at: unknown; media_ids: unknown; capture_session_id: unknown; capture_batch: unknown }>(c);
 	if (!body) return c.json({ error: 'Expected a JSON object' }, 400);
 	const text = parseText(body.text);
 	if (text === null) return c.json({ error: TEXT_ERROR }, 400);
@@ -211,6 +214,20 @@ app.post('/:repo/diary', async (c) => {
 	const mediaIds = parseMediaIds(body.media_ids);
 	if (mediaIds === null) return c.json({ error: MEDIA_IDS_ERROR }, 400);
 	if (!text && !mediaIds?.length) return c.json({ error: 'An entry needs text or at least one photo/video' }, 400);
+	const isCapture = body.capture_session_id !== undefined || body.capture_batch !== undefined;
+	if (isCapture && (c.get('authType') !== 'station' || typeof body.capture_session_id !== 'string'
+		|| !/^[a-f0-9-]{36}$/.test(body.capture_session_id)
+		|| !Number.isInteger(body.capture_batch) || (body.capture_batch as number) < 0 || (body.capture_batch as number) > 999)) {
+		return c.json({ error: 'Invalid capture session' }, 400);
+	}
+	if (isCapture) {
+		const existing = await c.env.DB.prepare('SELECT * FROM diary_entries WHERE repo_id = ? AND capture_session_id = ? AND capture_batch = ?')
+			.bind(c.get('repoRecord').id, body.capture_session_id, body.capture_batch).first<EntryRow>();
+		if (existing) {
+			if (existing.author_id !== author(c).id) return c.json({ error: 'Capture session belongs to another station' }, 409);
+			return c.json({ data: (await withMedia(c, [existing]))[0] });
+		}
+	}
 
 	const media = await claimableMedia(c, mediaIds ?? [], null);
 	if (typeof media === 'string') return c.json({ error: media }, 400);
@@ -226,16 +243,25 @@ app.post('/:repo/diary', async (c) => {
 		author_id: who.id,
 		created_at: now,
 		updated_at: now,
+		capture_session_id: isCapture ? body.capture_session_id as string : null,
+		capture_batch: isCapture ? body.capture_batch as number : null,
 	};
-	await c.env.DB.batch([
+	try { await c.env.DB.batch([
 		c.env.DB.prepare(
-			`INSERT INTO diary_entries (id, repo_id, body, happened_at, author, author_id, created_at, updated_at)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-		).bind(entry.id, entry.repo_id, entry.body, entry.happened_at, entry.author, entry.author_id, entry.created_at, entry.updated_at),
+			`INSERT INTO diary_entries (id, repo_id, body, happened_at, author, author_id, created_at, updated_at, capture_session_id, capture_batch)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		).bind(entry.id, entry.repo_id, entry.body, entry.happened_at, entry.author, entry.author_id, entry.created_at, entry.updated_at, entry.capture_session_id, entry.capture_batch),
 		...media.map((m, i) =>
 			c.env.DB.prepare('UPDATE diary_media SET entry_id = ?, position = ? WHERE id = ? AND entry_id IS NULL').bind(entry.id, i, m.id)
 		),
-	]);
+	]); } catch (error) {
+		if (isCapture) {
+			const existing = await c.env.DB.prepare('SELECT * FROM diary_entries WHERE repo_id = ? AND capture_session_id = ? AND capture_batch = ?')
+				.bind(c.get('repoRecord').id, body.capture_session_id, body.capture_batch).first<EntryRow>();
+			if (existing && existing.author_id === author(c).id) return c.json({ data: (await withMedia(c, [existing]))[0] });
+		}
+		throw error;
+	}
 	await auditDiary(c, 'diary.create', { entry_id: entry.id, media: media.length });
 	const [shaped] = await withMedia(c, [entry]);
 	return c.json({ data: shaped }, 201);
@@ -387,6 +413,10 @@ app.put('/:repo/diary/media/:id/parts/:n', async (c) => {
 });
 
 app.post('/:repo/diary/media/:id/complete', async (c) => {
+	const existing = await loadMedia(c, c.req.param('id'));
+	if (existing?.status === 'ready' && existing.created_by_id === author(c).id) {
+		return c.json({ data: publicMedia(c, existing) });
+	}
 	const media = await ownPendingUpload(c);
 	if (media instanceof Response) return media;
 	const body = await readJsonObject<{ parts: unknown }>(c);

@@ -80,6 +80,8 @@ export interface Env {
 	REPO_COORDINATOR: DurableObjectNamespace;
 	/** Per-repo merge queue state machine (src/do/ticket-queue.ts). */
 	TICKET_QUEUE: DurableObjectNamespace;
+	/** One signaling room per paired workshop capture station. */
+	CAPTURE_ROOM: DurableObjectNamespace;
 
 	// ── Secrets (set via `wrangler secret put`) ──
 	/** Fallback Coolify credentials for deploy targets without their own (optional). */
@@ -119,6 +121,9 @@ export interface Env {
 	/** R2 API token (secrets). When both are set, LFS bytes go straight to R2 via presigned URLs. */
 	R2_ACCESS_KEY_ID?: string;
 	R2_SECRET_ACCESS_KEY?: string;
+	/** Optional Cloudflare Realtime TURN key; enables relay across restrictive networks. */
+	REALTIME_TURN_KEY_ID?: string;
+	REALTIME_TURN_API_TOKEN?: string;
 
 	// ── Runner (secrets) ──
 	/** Base URL of the external runner service (packages/runner). */

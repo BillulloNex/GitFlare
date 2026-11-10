@@ -23,6 +23,7 @@ import internalGithub from './api/internal-github.ts';
 import ticketsApp from './api/tickets.ts';
 import ideasApp from './api/ideas.ts';
 import diaryApp from './api/diary.ts';
+import stationsApp, { claimApp } from './api/stations.ts';
 import tablesApp from './api/tables.ts';
 import authApp from './api/auth.ts';
 import keysApp from './api/keys.ts';
@@ -35,12 +36,15 @@ import type { MirrorSyncMessage } from './env.ts';
 import { runScheduledMaintenance } from './lib/maintenance.ts';
 import { runOnshapeSync } from './lib/onshape-sync.ts';
 import dashboardHtml from './dashboard/index.html';
+import stationsHtml from './dashboard/stations.html';
+import stationHtml from './dashboard/station.html';
 import lfsDocsHtml from './docs/lfs.html';
 import { LOGO_SVG, FAVICON_SVG, WORDMARK_SVG } from './lib/brand';
 
 // ─── Re-export Durable Objects ──────────────────────────────────
 export { RepoCoordinator } from './do/repo-coordinator.ts';
 export { TicketQueue } from './do/ticket-queue.ts';
+export { CaptureRoom } from './do/capture-room.ts';
 
 // ─── Hono App ───────────────────────────────────────────────────
 const app = new Hono<{ Bindings: Env; Variables: RequestIdVariables }>();
@@ -95,7 +99,7 @@ app.get('/health', (c) => {
 	return c.json({
 		service: 'gitflare',
 		status: 'ok',
-		version: c.env.GITFLARE_VERSION ?? '1.1.16',
+		version: c.env.GITFLARE_VERSION ?? '1.1.17',
 	});
 });
 
@@ -112,9 +116,17 @@ app.get('/', async (c) => {
 	return c.json({
 		service: 'gitflare',
 		status: 'ok',
-		version: c.env.GITFLARE_VERSION ?? '1.1.16',
+		version: c.env.GITFLARE_VERSION ?? '1.1.17',
 	});
 });
+
+app.get('/stations', async c => {
+	if (!(await validateSession(c.env.DB, c.req.header('Cookie')))) return c.redirect('/api/auth/login');
+	return c.html(stationsHtml);
+});
+// Pairing is performed with a signed-in session; an already-paired station
+// later authenticates its uploads and signaling with its own scoped token.
+app.get('/station', c => c.html(stationHtml));
 
 // Public docs: the push guard and LFS error messages link here.
 app.get('/docs/lfs', (c) => c.html(lfsDocsHtml));
@@ -190,6 +202,8 @@ app.route('/api/repos', ideasApp);
 
 // Diary (build log of text + photos/videos): /api/repos/:repo/diary/*
 app.route('/api/repos', diaryApp);
+app.route('/api/repos', stationsApp);
+app.route('/api/stations', claimApp);
 
 // Data tables (CSV files under tables/, one commit per save): /api/repos/:repo/tables/*
 app.route('/api/repos', tablesApp);

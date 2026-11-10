@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Camera stations · GitFlare</title><link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#0c0c0b;--surface:#131312;--surface2:#1b1b19;--border:#2a2a27;--text:#f2f1ee;--secondary:#b0afa8;--muted:#8f8e87;--orange:#f6821f;--green:#5fd38d;--red:#ff7a6b;--font:"Geist",sans-serif;--display:"Bricolage Grotesque",sans-serif;--mono:"Geist Mono",monospace}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 var(--font)}button,input,select{font:inherit}button{cursor:pointer}button:disabled{cursor:default;opacity:.45}a{color:var(--orange)}:focus-visible{outline:2px solid var(--orange);outline-offset:2px}
+.shell{max-width:1440px;margin:auto;padding:24px 28px 48px}.top{display:flex;align-items:center;gap:18px;border-bottom:1px solid var(--border);padding-bottom:18px}.brand{font:700 23px/1 var(--display);color:var(--text);text-decoration:none}.top small{color:var(--muted);font:500 12px var(--mono)}.top nav{margin-left:auto}.top nav a{color:var(--secondary);text-decoration:none}.top nav a:hover{color:var(--text)}
+.heading{display:flex;align-items:end;gap:16px;margin:28px 0 22px}.heading h1{font:700 clamp(27px,3vw,39px)/1.08 var(--display);letter-spacing:-.045em;margin:0}.heading p{color:var(--secondary);margin:7px 0 0}.heading .right{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+select,input{color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:7px;padding:9px 11px;min-height:38px}select option{background:var(--surface2)}.btn{border:1px solid var(--border);border-radius:7px;padding:9px 13px;background:var(--surface2);color:var(--text);min-height:38px}.btn:hover:not(:disabled){border-color:#55554d}.btn.primary{background:var(--orange);color:#160c04;border-color:var(--orange);font-weight:700}.btn.danger{border-color:#7a3630;color:var(--red)}
+.workspace{display:grid;grid-template-columns:248px minmax(0,1fr);gap:22px}.rail{border-right:1px solid var(--border);padding-right:20px}.rail-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;font-weight:600}.rail-list{display:grid;gap:5px}.station-item{display:block;width:100%;text-align:left;background:transparent;color:var(--text);border:1px solid transparent;border-radius:7px;padding:10px}.station-item.selected{background:var(--surface2);border-color:var(--border)}.station-item strong{display:block;font-weight:600}.station-item small{display:block;color:var(--muted);margin-top:3px}.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--muted);margin-right:6px;vertical-align:1px}.dot.online{background:var(--green)}.dot.recording{background:var(--red)}.rail-empty{color:var(--muted);font-size:13px;padding:12px}
+.monitor{min-width:0}.monitor-top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px}.monitor-top h2{font:700 21px var(--display);margin:0}.monitor-top .state{color:var(--secondary);font-size:13px}.monitor-top .actions{margin-left:auto;display:flex;gap:8px;align-items:center}.monitor-top .btn.record{background:var(--red);border-color:var(--red);color:#210a08;font-weight:700}.monitor-top .btn.stop{background:var(--surface2);border-color:var(--red);color:var(--red);font-weight:700}
+.status-line{display:flex;flex-wrap:wrap;gap:8px 22px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:10px 0;color:var(--secondary);font-size:12px;margin-bottom:18px}.status-line strong{color:var(--text);font-weight:600}.status-line .problem{color:var(--red)}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.feed{border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface)}.feed-stage{background:#000;aspect-ratio:16/9;display:flex;align-items:center;justify-content:center}.feed video{width:100%;height:100%;object-fit:contain}.feed-foot{padding:9px 11px;display:flex;align-items:center;justify-content:space-between;gap:8px}.feed-foot strong{font-size:13px}.feed-foot button{background:none;color:var(--secondary);border:0;padding:3px}.feed-foot button:hover{color:var(--text)}.empty{min-height:360px;display:flex;align-items:center;justify-content:center;border:1px dashed var(--border);border-radius:8px;text-align:center;padding:24px}.empty h2{font:700 22px var(--display);margin:0 0 6px}.empty p{color:var(--secondary);margin:0;max-width:400px}.notice{color:var(--muted);font-size:12px;margin-top:14px}
+.pair{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:10;padding:20px;align-items:center;justify-content:center}.pair.open{display:flex}.pair-panel{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:24px;width:min(500px,100%)}.pair-panel h2{font:700 24px var(--display);margin:0 0 8px}.pair-panel p{color:var(--secondary);margin:0 0 18px}.pair-panel label{display:block;font-weight:600;margin-bottom:6px}.pair-panel input{width:100%;margin-bottom:16px}.pair-actions{display:flex;gap:8px;justify-content:flex-end}.code{font:600 31px var(--mono);letter-spacing:.08em;margin:14px 0;color:var(--orange)}.pair-steps{padding-left:20px;color:var(--secondary);margin:10px 0 20px}.pair-steps li{margin:6px 0}.error{color:var(--red);font-size:13px;min-height:20px}
+@media(max-width:900px){.workspace{grid-template-columns:1fr}.rail{border-right:0;border-bottom:1px solid var(--border);padding:0 0 16px}.rail-list{display:flex;overflow-x:auto}.station-item{min-width:180px}.grid{grid-template-columns:1fr}}@media(max-width:600px){.shell{padding:16px}.heading{align-items:start;flex-direction:column}.heading .right{margin-left:0}.monitor-top .actions{margin-left:0;width:100%}.monitor-top .actions .btn{flex:1}}
+</style>
+</head>
+<body><div class="shell">
+<header class="top"><a class="brand" href="/">GitFlare</a><small>Camera stations</small><nav><a href="/">Back to GitFlare</a></nav></header>
+<div class="heading"><div><h1>Workshop cameras</h1><p>Watch the room and control recording from this browser.</p></div><div class="right"><label for="repo" style="color:var(--muted)">Repository</label><select id="repo" aria-label="Repository"></select><button class="btn primary" id="pairOpen">Add station</button></div></div>
+<div class="workspace"><aside class="rail"><div class="rail-head">Stations <button class="btn" id="refresh" aria-label="Refresh stations">Refresh</button></div><div class="rail-list" id="stationList"></div></aside>
+<main class="monitor"><div id="monitorEmpty" class="empty"><div><h2>Choose a station</h2><p>Your Mac mini will appear here after you pair it.</p></div></div>
+<div id="monitorContent" hidden><div class="monitor-top"><h2 id="stationName"></h2><span class="state" id="stationState"></span><div class="actions"><button class="btn record" id="startBtn" disabled>Start recording</button><button class="btn stop" id="stopBtn" disabled hidden>Stop recording</button><button class="btn danger" id="removeBtn">Remove</button></div></div>
+<div class="status-line" id="statusLine"></div><div class="grid" id="feedGrid"></div><div class="notice" id="rtcNotice"></div></div></main></div>
+</div>
+<div class="pair" id="pairDialog" role="dialog" aria-modal="true" aria-labelledby="pairTitle"><div class="pair-panel"><h2 id="pairTitle">Add a camera station</h2><div id="pairForm"><p>Name the Mac mini as it should appear in this repository.</p><label for="pairName">Station name</label><input id="pairName" maxlength="80" value="Workshop Mac mini" autocomplete="off"><div class="error" id="pairError"></div><div class="pair-actions"><button class="btn" id="pairCancel">Cancel</button><button class="btn primary" id="pairCreate">Create pairing code</button></div></div>
+<div id="pairResult" hidden><p>On the Mac mini, open this address and enter the code:</p><p><a id="stationLink" href="/station" target="_blank" rel="noopener"></a></p><div class="code" id="pairCode"></div><p id="pairExpiry"></p><ol class="pair-steps"><li>In Safari, add the station page to the Dock first if you want an app window. It has separate site storage.</li><li>Sign in and enter the code in the window you will keep open.</li><li>Allow camera and microphone access, then choose your feeds.</li></ol><div class="pair-actions"><button class="btn primary" id="pairDone">Done</button></div></div></div></div>
+<script>
+const $ = id => document.getElementById(id);
+const state = { repo:'', repos:[], stations:[], station:null, ws:null, pc:null, streams:new Map(), streamNames:new Map(), rtc:null, retry:null, command:null, pendingCandidates:[] };
+async function api(path, options={}) {
+  const res = await fetch(path,{credentials:'same-origin',...options});
+  if(res.status===401){location.href='/api/auth/login';throw Error('Sign in required')}
+  const data=await res.json().catch(()=>({}));
+  if(!res.ok)throw Error(data.error||'Request failed');
+  return data.data??data;
+}
+const repoUrl = suffix => `/api/repos/${encodeURIComponent(state.repo)}/stations${suffix}`;
+function text(id,value){$(id).textContent=value}
+function esc(value){return String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+async function loadRepos(){
+  let offset=0,rows=[];
+  do{const page=await api(`/api/repos?limit=100&offset=${offset}`);rows.push(...page.repos);if(page.repos.length<100)break;offset+=100}while(offset<1000);
+  state.repos=rows;
+  $('repo').innerHTML=rows.map(r=>`<option value="${esc(r.name)}">${esc(r.name)}</option>`).join('');
+  const wanted=new URLSearchParams(location.search).get('repo');
+  state.repo=rows.find(r=>r.name===wanted)?.name||rows[0]?.name||'';
+  $('repo').value=state.repo;
+  if(state.repo)await loadStations();else text('stationList','No repositories available.');
+}
+async function loadStations(){
+  if(!state.repo)return;
+  const data=await api(repoUrl(''));
+  state.stations=data;
+  $('stationList').innerHTML=data.length?data.map(s=>`<button class="station-item ${state.station?.id===s.id?'selected':''}" data-id="${esc(s.id)}"><strong><span class="dot ${s.online?(s.status?.recording?'recording':'online'):''}"></span>${esc(s.name)}</strong><small>${s.online?(s.status?.recording?'Recording':'Online'):'Offline'}</small></button>`).join(''):'<div class="rail-empty">No stations yet. Add the Mac mini to begin.</div>';
+  const selected=data.find(s=>s.id===state.station?.id);
+  if(selected){state.station=selected;renderStatus()}
+  else if(data.length)selectStation(data[0].id);
+  else{closeConnection();state.station=null;$('monitorEmpty').hidden=false;$('monitorContent').hidden=true}
+}
+function closeConnection(){
+  clearTimeout(state.retry);state.ws?.close();state.ws=null;state.pc?.close();state.pc=null;state.streams.clear();state.streamNames.clear();state.pendingCandidates=[];$('feedGrid').replaceChildren()
+}
+async function selectStation(id){
+  const found=state.stations.find(s=>s.id===id);if(!found)return;
+  closeConnection();state.station=found;$('monitorEmpty').hidden=true;$('monitorContent').hidden=false;
+  document.querySelectorAll('.station-item').forEach(el=>el.classList.toggle('selected',el.dataset.id===id));
+  renderStatus();
+  try{state.rtc=await api(repoUrl(`/${encodeURIComponent(id)}/rtc`));connectSocket(id)}catch(e){text('rtcNotice',e.message)}
+}
+function renderStatus(){
+  const s=state.station;if(!s)return;
+  text('stationName',s.name);
+  const online=s.online;
+  text('stationState',online?(s.status?.recording?'● Recording':'● Online'):'● Offline');
+  $('stationState').style.color=online?(s.status?.recording?'var(--red)':'var(--green)'):'var(--muted)';
+  $('startBtn').disabled=!online||Boolean(s.status?.recording)||Boolean(state.command);
+  $('stopBtn').disabled=!online||!s.status?.recording||Boolean(state.command);
+  $('startBtn').hidden=Boolean(s.status?.recording);$('stopBtn').hidden=!s.status?.recording;
+  $('statusLine').innerHTML=`<span>Camera feeds <strong>${esc(s.status?.feeds?.length??0)}</strong></span><span>Clips waiting to upload <strong>${esc(s.status?.pending??0)}</strong></span><span>Last seen <strong>${s.last_seen_at?esc(new Date(s.last_seen_at).toLocaleTimeString()):'Never'}</strong></span>${s.status?.error?`<span class="problem">${esc(s.status.error)}</span>`:''}`;
+  text('rtcNotice',state.rtc?.relayAvailable?'Private live preview is available on local and remote networks.':'Live preview uses a direct connection. Some remote networks may need relay support.');
+}
+function connectSocket(id){
+  if(state.station?.id!==id)return;
+  const protocol=location.protocol==='https:'?'wss:':'ws:';
+  const ws=new WebSocket(`${protocol}//${location.host}${repoUrl(`/${encodeURIComponent(id)}/socket`)}`);
+  state.ws=ws;
+  ws.onopen=()=>renderStatus();
+  ws.onmessage=async event=>{
+    let msg;try{msg=JSON.parse(event.data)}catch{return}
+    if(msg.type==='hello'){state.station.online=Boolean(msg.stationOnline);renderStatus();if(msg.stationOnline)ws.send(JSON.stringify({type:'watch'}))}
+    if(msg.type==='station_online'){state.station.online=true;renderStatus();ws.send(JSON.stringify({type:'watch'}))}
+    if(msg.type==='station_offline'){state.station.online=false;closePeer();renderStatus()}
+    if(msg.type==='status'){state.station.status=msg.data;state.station.online=true;renderStatus()}
+    if(msg.type==='signal')await handleSignal(msg.data);
+    if(msg.type==='ack'&&msg.commandId===state.command){state.command=null;if(msg.error)text('rtcNotice',msg.error);renderStatus()}
+  };
+  ws.onclose=()=>{if(state.ws!==ws)return;state.station.online=false;closePeer();renderStatus();state.retry=setTimeout(()=>connectSocket(id),3000)};
+}
+function sendSignal(data){if(state.ws?.readyState===1)state.ws.send(JSON.stringify({type:'signal',data}))}
+function closePeer(){state.pc?.close();state.pc=null;state.streams.clear();$('feedGrid').replaceChildren()}
+async function handleSignal(data){
+  if(!data||typeof data!=='object')return;
+  if(data.description?.type==='offer'){
+    closePeer();
+    for(const stream of data.streams||[])state.streamNames.set(stream.id,stream.name);
+    const pc=new RTCPeerConnection({iceServers:state.rtc?.iceServers||[{urls:'stun:stun.cloudflare.com:3478'}]});state.pc=pc;
+    pc.onicecandidate=e=>{if(e.candidate)sendSignal({candidate:e.candidate})};
+    pc.ontrack=e=>{const stream=e.streams[0];if(stream){state.streams.set(stream.id,stream);renderFeeds()}};
+    pc.onconnectionstatechange=()=>{if(pc.connectionState==='failed')text('rtcNotice','Preview connection failed. Recording on the Mac mini can continue.')};
+    await pc.setRemoteDescription(data.description);
+    for(const candidate of state.pendingCandidates.splice(0)){try{await pc.addIceCandidate(candidate)}catch(e){console.warn('ICE candidate rejected',e)}}
+    const answer=await pc.createAnswer();await pc.setLocalDescription(answer);
+    sendSignal({description:pc.localDescription});
+  }else if(data.candidate){if(!state.pc?.remoteDescription)state.pendingCandidates.push(data.candidate);else try{await state.pc.addIceCandidate(data.candidate)}catch(e){console.warn('ICE candidate rejected',e)}}
+}
+function renderFeeds(){
+  const grid=$('feedGrid');
+  for(const [id,stream] of state.streams){
+    let tile=[...grid.children].find(el=>el.dataset.stream===id);
+    if(!tile){tile=document.createElement('div');tile.className='feed';tile.dataset.stream=id;tile.innerHTML='<div class="feed-stage"><video autoplay muted playsinline></video></div><div class="feed-foot"><strong></strong><button type="button">Listen</button></div>';grid.append(tile)}
+    const video=tile.querySelector('video');video.srcObject=stream;
+    tile.querySelector('strong').textContent=state.streamNames.get(id)||'Camera';
+    const btn=tile.querySelector('button');btn.hidden=!stream.getAudioTracks().length;
+    btn.onclick=()=>{const enable=video.muted;grid.querySelectorAll('video').forEach(v=>v.muted=true);grid.querySelectorAll('.feed-foot button').forEach(b=>b.textContent='Listen');video.muted=!enable;btn.textContent=enable?'Mute':'Listen'};
+  }
+}
+function command(action){
+  if(state.ws?.readyState!==1)return;
+  const commandId=crypto.randomUUID();state.command=commandId;renderStatus();
+  state.ws.send(JSON.stringify({type:'control',action,commandId}));
+  setTimeout(()=>{if(state.command===commandId){state.command=null;text('rtcNotice','The station did not confirm the command. Check its connection.');renderStatus()}},10000);
+}
+$('repo').onchange=()=>{state.repo=$('repo').value;history.replaceState(null,'',`/stations?repo=${encodeURIComponent(state.repo)}`);closeConnection();state.station=null;loadStations().catch(e=>text('stationList',e.message))};
+$('stationList').onclick=e=>{const item=e.target.closest('[data-id]');if(item)selectStation(item.dataset.id)};
+$('refresh').onclick=()=>loadStations().catch(e=>text('stationList',e.message));
+$('startBtn').onclick=()=>command('start');$('stopBtn').onclick=()=>command('stop');
+$('removeBtn').onclick=async()=>{if(!state.station||!confirm(`Remove ${state.station.name} from GitFlare? The Mac mini must be paired again to reconnect.`))return;try{await api(repoUrl(`/${state.station.id}`),{method:'DELETE'});closeConnection();state.station=null;await loadStations()}catch(e){text('rtcNotice',e.message)}};
+$('pairOpen').onclick=()=>{$('pairDialog').classList.add('open');$('pairForm').hidden=false;$('pairResult').hidden=true;$('pairName').focus()};
+$('pairCancel').onclick=$('pairDone').onclick=()=>{$('pairDialog').classList.remove('open');loadStations().catch(()=>{})};
+$('pairCreate').onclick=async()=>{text('pairError','');$('pairCreate').disabled=true;try{const data=await api(repoUrl('/pairings'),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:$('pairName').value})});$('pairForm').hidden=true;$('pairResult').hidden=false;text('pairCode',data.code);text('pairExpiry',`Expires at ${new Date(data.expires_at).toLocaleTimeString()}`);$('stationLink').href=location.origin+'/station';text('stationLink',location.origin+'/station')}catch(e){text('pairError',e.message)}finally{$('pairCreate').disabled=false}};
+setInterval(()=>loadStations().catch(()=>{}),10000);
+loadRepos().catch(e=>{text('stationList',e.message)});
+</script></body></html>
