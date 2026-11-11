@@ -468,6 +468,76 @@ export interface CreateDiaryEntryInput {
   media_ids?: string[];
 }
 
+// ─── AI Traces ──────────────────────────────────────────────────
+
+/** One message or tool call in an agent session. */
+export interface TraceStep {
+  role: 'user' | 'assistant' | 'tool' | 'system';
+  content: string;
+  /** Tool name, for role = tool. */
+  name?: string;
+  at?: string;
+}
+
+export interface TraceRefs {
+  commits?: string[];
+  branch?: string;
+  ci_run_id?: string;
+}
+
+/** One AI agent session logged on a repo. `steps` is present on get/create, not in lists. */
+export interface Trace {
+  id: string;
+  session_id: string | null;
+  agent: string;
+  model: string | null;
+  title: string;
+  summary: string;
+  started_at: string;
+  ended_at: string | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cost_usd: number | null;
+  refs: TraceRefs | null;
+  step_count: number;
+  author: string;
+  author_id: string | null;
+  created_at: string;
+  updated_at: string;
+  steps?: TraceStep[];
+}
+
+export interface TraceUsage {
+  count: number;
+  input_tokens: number;
+  output_tokens: number;
+  cost_usd: number;
+}
+
+export interface TracePage {
+  data: Trace[];
+  next_cursor: string | null;
+  /** Whole repo, regardless of filters. */
+  totals: TraceUsage & { by_agent: (TraceUsage & { agent: string })[] };
+}
+
+export interface LogTraceInput {
+  /** Re-posting the same session_id replaces that trace. */
+  session_id?: string;
+  agent: string;
+  model?: string;
+  title: string;
+  summary?: string;
+  /** ISO-8601 with a time zone. Defaults to now. */
+  started_at?: string;
+  ended_at?: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  cost_usd?: number;
+  refs?: TraceRefs;
+  steps?: TraceStep[];
+}
+
 // ─── Tables ─────────────────────────────────────────────────────
 
 /** A data table: `tables/<name>.csv` on a branch. Every cell is text. */

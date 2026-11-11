@@ -31,6 +31,9 @@ import {
   type DiaryMedia,
   type DiaryPage,
   type CreateDiaryEntryInput,
+  type Trace,
+  type TracePage,
+  type LogTraceInput,
   type TableList,
   type Table,
   type SaveTableInput,
@@ -378,6 +381,29 @@ class DiaryClient {
   }
 }
 
+class TracesClient {
+  constructor(private http: Http) {}
+
+  /** Sessions newest first, paged by `cursor`, with repo-wide usage totals. */
+  async list(repo: string, opts: { agent?: string; limit?: number; cursor?: string } = {}): Promise<TracePage> {
+    const res = await this.http.raw('GET', `/api/repos/${seg(repo)}/traces${query(opts)}`);
+    return (await res.json()) as TracePage;
+  }
+
+  get(repo: string, id: string): Promise<Trace> {
+    return this.http.data('GET', `/api/repos/${seg(repo)}/traces/${seg(id)}`);
+  }
+
+  /** Log a session; with a `session_id` you logged before, replaces that trace. */
+  log(repo: string, input: LogTraceInput): Promise<Trace> {
+    return this.http.data('POST', `/api/repos/${seg(repo)}/traces`, input);
+  }
+
+  delete(repo: string, id: string): Promise<{ id: string; deleted: boolean }> {
+    return this.http.data('DELETE', `/api/repos/${seg(repo)}/traces/${seg(id)}`);
+  }
+}
+
 // ─── Main Client ────────────────────────────────────────────────
 
 export class GitFlareClient {
@@ -390,6 +416,7 @@ export class GitFlareClient {
   public readonly mirrors: MirrorsClient;
   public readonly lfs: LfsClient;
   public readonly diary: DiaryClient;
+  public readonly traces: TracesClient;
   public readonly tables: TablesClient;
   private readonly http: Http;
 
@@ -404,6 +431,7 @@ export class GitFlareClient {
     this.mirrors = new MirrorsClient(this.http);
     this.lfs = new LfsClient(this.http);
     this.diary = new DiaryClient(this.http);
+    this.traces = new TracesClient(this.http);
     this.tables = new TablesClient(this.http);
   }
 

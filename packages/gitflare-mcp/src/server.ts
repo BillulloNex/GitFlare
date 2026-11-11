@@ -46,7 +46,8 @@ export function createServer(client: GitFlareClient): McpServer {
       instructions:
         'GitFlare is a git host. Repos are cloned/pushed with ordinary git over HTTPS using an API key as the password. ' +
         'Files over 32 MB must be committed through Git LFS (git lfs track "<pattern>"); GitFlare rejects oversized blobs with a fix recipe. ' +
-        'Use gitflare_lfs_status before committing large artifacts. gitflare_files_read returns a structured `lfs` object for LFS pointer files — fetch bytes via its download_url, never edit the pointer text.',
+        'Use gitflare_lfs_status before committing large artifacts. gitflare_files_read returns a structured `lfs` object for LFS pointer files — fetch bytes via its download_url, never edit the pointer text. ' +
+        'When you finish a task on a GitFlare repo, log your session with gitflare_trace_log.',
     }
   );
 
@@ -334,6 +335,62 @@ export function createServer(client: GitFlareClient): McpServer {
       }
       return absolute(await client.diary.create(repo, { text, happened_at, media_ids }));
     }),
+  );
+
+  // ── AI Traces ──
+  server.tool(
+    'gitflare_trace_log',
+    "Log an AI agent session on a repo: what you were asked, what you did, the model, token usage, cost, commits, and optionally the transcript. " +
+      'Pass a stable session_id (e.g. your conversation id) and call again as the work grows: the same session_id replaces the earlier trace.',
+    {
+      repo: z.string(),
+      session_id: z.string().max(128).optional().describe('Letters, digits and . _ : -'),
+      agent: z.string().max(60).describe('The tool you run in, e.g. claude-code, cursor, codex'),
+      model: z.string().max(100).optional().describe('e.g. claude-opus-4-5, gpt-5'),
+      title: z.string().max(200).describe('The task, in one line'),
+      summary: z.string().max(20000).optional().describe('Markdown: what was asked, what you did, the outcome'),
+      started_at: z.string().optional().describe('ISO-8601 with a time zone. Default: now'),
+      ended_at: z.string().optional(),
+      input_tokens: z.number().int().min(0).optional(),
+      output_tokens: z.number().int().min(0).optional(),
+      cost_usd: z.number().min(0).optional(),
+      refs: z
+        .object({ commits: z.array(z.string()).max(50).optional(), branch: z.string().optional(), ci_run_id: z.string().optional() })
+        .optional()
+        .describe('Commits you made, the branch, a CI run'),
+      steps: z
+        .array(
+          z.object({
+            role: z.enum(['user', 'assistant', 'tool', 'system']),
+            content: z.string().max(20000),
+            name: z.string().max(100).optional().describe('Tool name, for role = tool'),
+            at: z.string().optional(),
+          }),
+        )
+        .max(500)
+        .optional()
+        .describe('Transcript, trimmed: user prompts, your replies, tool calls (under ~900 KB total)'),
+    },
+    run(({ repo, ...input }) => client.traces.log(repo, input)),
+  );
+
+  server.tool(
+    'gitflare_trace_list',
+    "List a repo's AI agent sessions (newest first, without transcripts) with repo-wide token and cost totals per agent.",
+    {
+      repo: z.string(),
+      agent: z.string().optional(),
+      limit: z.number().int().min(1).max(100).optional().describe('Default 30'),
+      cursor: z.string().optional().describe('next_cursor from the previous page'),
+    },
+    run(({ repo, ...opts }) => client.traces.list(repo, opts)),
+  );
+
+  server.tool(
+    'gitflare_trace_get',
+    'Get one AI agent session with its transcript',
+    { repo: z.string(), id: z.string() },
+    run(({ repo, id }) => client.traces.get(repo, id)),
   );
 
   // ── Tables ──

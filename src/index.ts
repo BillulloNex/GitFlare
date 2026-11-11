@@ -23,6 +23,7 @@ import internalGithub from './api/internal-github.ts';
 import ticketsApp from './api/tickets.ts';
 import ideasApp from './api/ideas.ts';
 import diaryApp from './api/diary.ts';
+import tracesApp from './api/traces.ts';
 import stationsApp, { claimApp } from './api/stations.ts';
 import tablesApp from './api/tables.ts';
 import authApp from './api/auth.ts';
@@ -99,7 +100,7 @@ app.get('/health', (c) => {
 	return c.json({
 		service: 'gitflare',
 		status: 'ok',
-		version: c.env.GITFLARE_VERSION ?? '1.1.18',
+		version: c.env.GITFLARE_VERSION ?? '1.1.19',
 	});
 });
 
@@ -116,7 +117,7 @@ app.get('/', async (c) => {
 	return c.json({
 		service: 'gitflare',
 		status: 'ok',
-		version: c.env.GITFLARE_VERSION ?? '1.1.18',
+		version: c.env.GITFLARE_VERSION ?? '1.1.19',
 	});
 });
 
@@ -204,6 +205,9 @@ app.route('/api/repos', ideasApp);
 app.route('/api/repos', diaryApp);
 app.route('/api/repos', stationsApp);
 app.route('/api/stations', claimApp);
+
+// AI traces (agent sessions: model, tokens, cost, transcript): /api/repos/:repo/traces/*
+app.route('/api/repos', tracesApp);
 
 // Data tables (CSV files under tables/, one commit per save): /api/repos/:repo/tables/*
 app.route('/api/repos', tablesApp);

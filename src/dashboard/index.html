@@ -754,6 +754,20 @@
         .diary-edit-actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center; flex-wrap: wrap; }
         .diary-more { display: flex; justify-content: center; margin: 8px 0 24px; }
 
+        /* ─── AI traces ──────────────────────────────────────────── */
+        .trace-totals { display: flex; gap: 28px; align-items: center; flex-wrap: wrap; padding: 14px 16px; margin-bottom: 16px; }
+        .trace-stat { display: flex; flex-direction: column; gap: 5px; }
+        .trace-stat b { font: 600 var(--text-lg)/1 var(--font-mono); }
+        .trace-stat span { font-size: var(--text-xs); color: var(--text-muted); }
+        .trace-agents { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+        .trace-steps { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; }
+        .trace-step { padding: 10px 14px; }
+        .trace-step.role-user { border-left: 2px solid var(--accent-flare); }
+        .trace-step-role { display: flex; gap: 6px; align-items: center; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); cursor: default; }
+        .trace-step summary.trace-step-role { cursor: pointer; }
+        .trace-step pre { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 400 var(--text-sm)/1.55 var(--font-sans); color: var(--text-primary); }
+        .trace-step.role-tool pre, .trace-step.role-system pre { font: 400 12px/1.5 var(--font-mono); color: var(--text-secondary); max-height: 320px; overflow: auto; }
+
         .recorder { position: fixed; inset: 0; z-index: 1000; background: rgba(5,5,4,0.88); display: none; align-items: center; justify-content: center; padding: 24px; }
         .recorder.show { display: flex; }
         .recorder-panel { width: min(960px, 100%); background: var(--bg-subtle); border: 1px solid var(--border-default); border-radius: var(--radius-md); overflow: hidden; }
@@ -1516,6 +1530,7 @@
         <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></symbol>
         <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
         <symbol id="i-camera" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></symbol>
+        <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="M9.94 15.5a2 2 0 0 0-1.44-1.44l-6.13-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0l1.58 6.14a2 2 0 0 0 1.44 1.44l6.14 1.58a.5.5 0 0 1 0 .96l-6.14 1.58a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></symbol>
         <symbol id="i-notebook" viewBox="0 0 24 24"><path d="M2 6h4"/><path d="M2 10h4"/><path d="M2 14h4"/><path d="M2 18h4"/><rect width="16" height="20" x="4" y="2" rx="2"/><path d="M16 2v20"/></symbol>
         <symbol id="i-table" viewBox="0 0 24 24"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/></symbol>
         <symbol id="i-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></symbol>
@@ -1572,7 +1587,7 @@
                             <svg class="i" width="16" height="16" aria-hidden="true"><use href="#i-log-out"/></svg>
                             Sign out
                         </button>
-                        <div class="menu-foot">GitFlare v1.1.18</div>
+                        <div class="menu-foot">GitFlare v1.1.19</div>
                     </div>
                 </div>
             </div>
@@ -1644,6 +1659,10 @@
                         <button class="nav-tab" id="tab-btn-diary" role="tab" aria-selected="false" onclick="switchMainTab('diary')">
                             <svg class="i" aria-hidden="true"><use href="#i-notebook"/></svg>
                             Diary
+                        </button>
+                        <button class="nav-tab" id="tab-btn-traces" role="tab" aria-selected="false" onclick="switchMainTab('traces')">
+                            <svg class="i" aria-hidden="true"><use href="#i-sparkles"/></svg>
+                            AI traces
                         </button>
                         <button class="nav-tab" id="tab-btn-tables" role="tab" aria-selected="false" onclick="switchMainTab('tables')">
                             <svg class="i" aria-hidden="true"><use href="#i-table"/></svg>
@@ -1837,6 +1856,25 @@
                             <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-arrow-left"/></svg> All ideas
                         </button>
                         <div id="ideaDetail"></div>
+                    </div>
+                </div>
+
+                <!-- TAB: AI TRACES -->
+                <div id="view-traces" style="display:none;">
+                    <div id="tracesListMode">
+                        <div class="page-head">
+                            <div class="page-title">AI traces</div>
+                            <button class="btn btn-sm btn-icon" data-action="traces-refresh" aria-label="Refresh AI traces">
+                                <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-refresh"/></svg>
+                            </button>
+                        </div>
+                        <div id="tracesContainer"></div>
+                    </div>
+                    <div id="traceDetailMode" style="display:none;">
+                        <button class="back-link" data-action="trace-back">
+                            <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-arrow-left"/></svg> All traces
+                        </button>
+                        <div id="traceDetail"></div>
                     </div>
                 </div>
 
@@ -2564,6 +2602,7 @@
             else if (currentTab === 'commits') fetchCommits();
             else if (currentTab === 'ideas') { exitIdeaDetail(); fetchIdeas(); }
             else if (currentTab === 'diary') fetchDiary();
+            else if (currentTab === 'traces') { exitTraceDetail(); fetchTraces(); }
             else if (currentTab === 'tables') showTablesTab();
             else if (currentTab === 'ci') fetchCIRuns();
             else if (currentTab === 'deploys') fetchDeployTargets();
@@ -2638,7 +2677,7 @@
         function switchMainTab(tab) {
             closeSecrets();
             currentTab = tab;
-            ['code', 'commits', 'ideas', 'diary', 'tables', 'ci', 'deploys', 'cad'].forEach(t => {
+            ['code', 'commits', 'ideas', 'diary', 'traces', 'tables', 'ci', 'deploys', 'cad'].forEach(t => {
                 const btn = document.getElementById(`tab-btn-${t}`);
                 const view = document.getElementById(`view-${t}`);
                 if (btn) {
@@ -2658,6 +2697,7 @@
             else if (tab === 'commits') fetchCommits();
             else if (tab === 'ideas') { exitIdeaDetail(); fetchIdeas(); }
             else if (tab === 'diary') fetchDiary();
+            else if (tab === 'traces') { exitTraceDetail(); fetchTraces(); }
             else if (tab === 'tables') showTablesTab();
             else if (tab === 'ci') fetchCIRuns();
             else if (tab === 'deploys') fetchDeployTargets();
@@ -4837,6 +4877,150 @@
                 toast('Idea deleted', 'success');
                 exitIdeaDetail();
                 fetchIdeas();
+            } catch (e) {
+                toast(`Couldn't delete: ${e.message}`, 'error');
+            }
+        }
+
+        // ─── AI traces ──────────────────────────────────────────────────
+        // Agent sessions logged through MCP (gitflare_trace_log) or the REST API.
+        let traces = [];
+        let traceCursor = null;
+        let traceTotals = null;
+        let activeTrace = null;
+
+        const traceUrl = (id = '') => `${repoApi()}/traces${id ? '/' + encodeURIComponent(id) : ''}`;
+        const formatTokens = (n) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n || 0);
+        const formatCost = (n) => `$${(n || 0).toFixed(2)}`;
+
+        /** "12.3k in · 4.1k out", "$0.42", "8 min" — whichever the trace reported. */
+        function traceUsage(t) {
+            const parts = [];
+            if (t.input_tokens != null || t.output_tokens != null) parts.push(`${formatTokens(t.input_tokens)} in · ${formatTokens(t.output_tokens)} out`);
+            if (t.cost_usd != null) parts.push(formatCost(t.cost_usd));
+            if (t.ended_at) parts.push(`${Math.max(1, Math.round((Date.parse(t.ended_at) - Date.parse(t.started_at)) / 60000))} min`);
+            return parts.map(p => `<span>·</span><span class="mono">${esc(p)}</span>`).join('');
+        }
+
+        function traceMeta(t) {
+            return `<span class="badge">${icon('sparkles', 12)} ${esc(t.agent)}</span>${t.model ? `<span class="mono">${esc(t.model)}</span>` : ''}
+                <span>·</span><strong>${esc(t.author)}</strong><span>·</span><span>${esc(timeAgo(t.started_at))}</span>${traceUsage(t)}`;
+        }
+
+        async function fetchTraces({ more = false } = {}) {
+            const container = document.getElementById('tracesContainer');
+            const repoAtStart = activeRepo;
+            if (!more) container.innerHTML = `<div class="card">${skeletonList(4)}</div>`;
+            try {
+                const q = new URLSearchParams({ limit: '30' });
+                if (more && traceCursor) q.set('cursor', traceCursor);
+                const res = await apiFetch(`${traceUrl()}?${q}`, { headers: authHeaders() });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const json = await res.json();
+                if (activeRepo !== repoAtStart) return;
+                traces = more ? traces.concat(json.data || []) : (json.data || []);
+                traceCursor = json.next_cursor || null;
+                traceTotals = json.totals;
+                renderTraces();
+            } catch (e) {
+                if (!more) container.innerHTML = `<div class="card">${emptyState('Failed to load AI traces.', { error: true })}</div>`;
+                else toast("Couldn't load more traces", 'error');
+            }
+        }
+
+        function renderTraces() {
+            const container = document.getElementById('tracesContainer');
+            if (!traces.length) {
+                container.innerHTML = `<div class="card">${emptyState('<strong>No AI traces yet.</strong> Agents connected to the GitFlare MCP log their sessions here with <code>gitflare_trace_log</code>.', { iconName: 'sparkles' })}</div>`;
+                return;
+            }
+            const t = traceTotals || { count: traces.length, input_tokens: 0, output_tokens: 0, cost_usd: 0, by_agent: [] };
+            const stat = (value, label) => `<div class="trace-stat"><b>${esc(value)}</b><span>${esc(label)}</span></div>`;
+            container.innerHTML = `
+                <div class="card trace-totals">
+                    ${stat(t.count, t.count === 1 ? 'session' : 'sessions')}
+                    ${stat(formatTokens(t.input_tokens), 'tokens in')}
+                    ${stat(formatTokens(t.output_tokens), 'tokens out')}
+                    ${stat(formatCost(t.cost_usd), 'cost')}
+                    <div class="trace-agents">${t.by_agent.map(a => `<span class="badge" title="${esc(formatCost(a.cost_usd))}">${esc(a.agent)} · ${esc(a.count)}</span>`).join('')}</div>
+                </div>
+                <div class="card">${traces.map(tr => {
+                    const snippet = (tr.summary || '').replace(/[#*`>\-]/g, '').replace(/\s+/g, ' ').trim();
+                    return `<div class="idea-row" data-action="open-trace" data-id="${esc(tr.id)}" role="button" tabindex="0">
+                        <div class="idea-row-main">
+                            <div class="idea-row-title">${esc(tr.title)}</div>
+                            ${snippet ? `<div class="idea-row-snippet">${esc(snippet.slice(0, 180))}</div>` : ''}
+                            <div class="idea-meta">${traceMeta(tr)}</div>
+                        </div>
+                    </div>`;
+                }).join('')}</div>
+                ${traceCursor ? `<div class="diary-more"><button class="btn btn-sm" data-action="traces-more">Load more</button></div>` : ''}`;
+        }
+
+        function exitTraceDetail() {
+            activeTrace = null;
+            document.getElementById('traceDetailMode').style.display = 'none';
+            document.getElementById('tracesListMode').style.display = 'block';
+        }
+
+        async function openTrace(id) {
+            document.getElementById('tracesListMode').style.display = 'none';
+            document.getElementById('traceDetailMode').style.display = 'block';
+            const host = document.getElementById('traceDetail');
+            host.innerHTML = `<div class="card">${skeletonList(3)}</div>`;
+            try {
+                const res = await apiFetch(traceUrl(id), { headers: authHeaders() });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                activeTrace = (await res.json()).data;
+                renderTraceDetail();
+            } catch (e) {
+                host.innerHTML = `<div class="card">${emptyState('Failed to load trace.', { error: true })}</div>`;
+            }
+        }
+
+        function renderTraceStep(s) {
+            const label = `${esc(s.role)}${s.name ? ` · <span class="mono">${esc(s.name)}</span>` : ''}${s.at ? ` · ${esc(timeAgo(s.at))}` : ''}`;
+            const body = `<pre>${esc(s.content)}</pre>`;
+            return s.role === 'tool' || s.role === 'system'
+                ? `<details class="card trace-step role-${esc(s.role)}"><summary class="trace-step-role">${label}</summary>${body}</details>`
+                : `<div class="card trace-step role-${esc(s.role)}"><div class="trace-step-role">${label}</div>${body}</div>`;
+        }
+
+        function renderTraceDetail() {
+            const t = activeTrace;
+            if (!t) return;
+            const refs = t.refs || {};
+            const pills = [
+                ...(refs.commits || []).map(sha => `<span class="sha-pill" role="button" tabindex="0" data-action="idea-open-commit" data-sha="${esc(sha)}" title="Open commit">${icon('commit', 12)}${esc(shortSha(sha))}</span>`),
+                refs.branch ? `<span class="badge">${icon('branch', 12)} ${esc(refs.branch)}</span>` : '',
+                refs.ci_run_id ? `<span class="sha-pill" role="button" tabindex="0" data-action="jump-ci-run" data-run-id="${esc(refs.ci_run_id)}">${icon('play', 12)} CI run</span>` : '',
+            ].filter(Boolean).join('');
+            const steps = t.steps || [];
+            document.getElementById('traceDetail').innerHTML = `
+                <div class="card idea-head">
+                    <div class="idea-head-top">
+                        <div style="min-width:0; flex:1;">
+                            <div class="idea-title" style="cursor:default;">${esc(t.title)}</div>
+                            <div class="idea-meta" style="margin-top:6px;">${traceMeta(t)}</div>
+                            ${pills ? `<div class="idea-log-refs">${pills}</div>` : ''}
+                        </div>
+                        <button class="btn btn-sm btn-ghost btn-danger" data-action="trace-delete">${icon('trash', 14)} Delete</button>
+                    </div>
+                    ${t.summary ? `<div class="idea-body"><div class="markdown-body">${renderSimpleMarkdown(t.summary)}</div></div>` : ''}
+                </div>
+                <div class="idea-section-title">Transcript${steps.length ? ` · ${steps.length}` : ''}</div>
+                ${steps.length ? `<div class="trace-steps">${steps.map(renderTraceStep).join('')}</div>` : `<div class="idea-body-empty">No transcript was logged with this session.</div>`}`;
+        }
+
+        async function deleteTrace() {
+            if (!activeTrace || !confirm(`Delete the trace "${activeTrace.title}"?`)) return;
+            try {
+                const res = await apiFetch(traceUrl(activeTrace.id), { method: 'DELETE', headers: authHeaders() });
+                const json = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+                toast('Trace deleted', 'success');
+                exitTraceDetail();
+                fetchTraces();
             } catch (e) {
                 toast(`Couldn't delete: ${e.message}`, 'error');
             }
@@ -7214,6 +7398,11 @@
                 case 'lightbox-close': closeDiaryLightbox(); break;
                 case 'lightbox-prev': stepDiaryLightbox(-1); break;
                 case 'lightbox-next': stepDiaryLightbox(1); break;
+                case 'traces-refresh': exitTraceDetail(); fetchTraces(); break;
+                case 'traces-more': fetchTraces({ more: true }); break;
+                case 'open-trace': openTrace(d.id); break;
+                case 'trace-back': exitTraceDetail(); break;
+                case 'trace-delete': deleteTrace(); break;
                 case 'open-idea':
                     openIdea(d.id);
                     break;
