@@ -7,7 +7,7 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&family=Instrument+Serif&display=swap" rel="stylesheet">
     <!-- three.js for the 3D model viewer; modules load only when a model is opened. -->
     <script type="importmap">
     { "imports": {
@@ -54,6 +54,7 @@
 
             --font-display: "Bricolage Grotesque", "Geist", -apple-system, sans-serif;
             --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            --font-serif: "Instrument Serif", Georgia, "Times New Roman", serif;
             --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 
             --text-xs: 12px;
@@ -755,18 +756,130 @@
         .diary-more { display: flex; justify-content: center; margin: 8px 0 24px; }
 
         /* ─── AI traces ──────────────────────────────────────────── */
-        .trace-totals { display: flex; gap: 28px; align-items: center; flex-wrap: wrap; padding: 14px 16px; margin-bottom: 16px; }
-        .trace-stat { display: flex; flex-direction: column; gap: 5px; }
-        .trace-stat b { font: 600 var(--text-lg)/1 var(--font-mono); }
-        .trace-stat span { font-size: var(--text-xs); color: var(--text-muted); }
-        .trace-agents { display: flex; gap: 6px; flex-wrap: wrap; margin-left: auto; }
-        .trace-steps { display: flex; flex-direction: column; gap: 8px; margin-bottom: 24px; }
-        .trace-step { padding: 10px 14px; }
-        .trace-step.role-user { border-left: 2px solid var(--accent-flare); }
-        .trace-step-role { display: flex; gap: 6px; align-items: center; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); cursor: default; }
-        .trace-step summary.trace-step-role { cursor: pointer; }
-        .trace-step pre { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font: 400 var(--text-sm)/1.55 var(--font-sans); color: var(--text-primary); }
-        .trace-step.role-tool pre, .trace-step.role-system pre { font: 400 12px/1.5 var(--font-mono); color: var(--text-secondary); max-height: 320px; overflow: auto; }
+        /* A chat-app reading view: sessions on the left, the transcript as a
+           thread on the right. Built only from theme tokens, so it follows
+           the app theme; orange stays a pinpoint accent. */
+        .traces-app { display: grid; grid-template-columns: 272px minmax(0, 1fr); min-height: calc(100vh - 260px); }
+        .traces-side { position: sticky; top: 0; align-self: start; max-height: calc(100vh - 250px); display: flex; flex-direction: column; padding-right: 18px; border-right: 1px solid var(--border-muted); }
+        .traces-side-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+        .traces-side-head .page-title { font-size: 18px; }
+        .traces-side-sum { font: 500 11px var(--font-mono); color: var(--text-muted); white-space: nowrap; }
+        .traces-search { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 10px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); color: var(--text-muted); margin-bottom: 8px; }
+        .traces-search:focus-within { border-color: var(--accent-ring); }
+        .traces-search input { flex: 1; min-width: 0; background: none; border: 0; outline: none; color: var(--text-primary); font: 400 var(--text-sm) var(--font-sans); }
+        .traces-agents { display: flex; gap: 2px; flex-wrap: wrap; margin-bottom: 6px; }
+        .traces-agents button { font: 500 11px var(--font-mono); padding: 3px 7px; border-radius: var(--radius-pill); border: 0; background: none; color: var(--text-muted); cursor: pointer; }
+        .traces-agents button:hover { color: var(--text-primary); }
+        .traces-agents button.is-on { background: var(--bg-muted); color: var(--text-primary); }
+        .traces-list { overflow-y: auto; flex: 1; min-height: 0; margin: 0 -6px; padding: 0 6px 12px; scrollbar-width: thin; }
+        .traces-group { font: 500 10px var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-faint); margin: 14px 0 4px 10px; }
+        .trace-item { position: relative; display: block; padding: 8px 10px; border-radius: var(--radius-sm); cursor: pointer; transition: background 0.15s; }
+        .trace-item:hover { background: var(--bg-subtle); }
+        .trace-item.is-active { background: var(--bg-muted); }
+        .trace-item.is-active::before { content: ''; position: absolute; left: 0; top: 9px; bottom: 9px; width: 2px; border-radius: 2px; background: var(--accent-flare); }
+        .trace-item-title { font-size: var(--text-sm); font-weight: 500; color: var(--text-primary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .trace-item-meta { display: flex; gap: 6px; margin-top: 2px; font: 400 11px var(--font-mono); color: var(--text-muted); }
+        .trace-item-meta .ab { color: var(--text-faint); }
+        .trace-item-meta .cost { margin-left: auto; }
+        .traces-side-foot { display: flex; justify-content: space-between; padding: 10px 4px 2px; border-top: 1px solid var(--border-muted); font: 500 11px var(--font-mono); color: var(--text-muted); }
+        .traces-side-foot b { color: var(--text-primary); font-weight: 500; }
+        .traces-more { display: flex; justify-content: center; margin-top: 8px; }
+
+        .trace-chat { min-width: 0; display: flex; flex-direction: column; }
+        .trace-chat-head { display: flex; align-items: center; gap: 10px; padding: 0 0 14px 28px; border-bottom: 1px solid var(--border-muted); min-width: 0; }
+        .trace-chat-head h2 { font: 600 var(--text-md)/1.3 var(--font-sans); letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+        .trace-chat-head .trace-back { display: none; }
+        .trace-chat-head .actions { margin-left: auto; display: flex; gap: 2px; flex-shrink: 0; }
+        .trace-chip { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: var(--radius-sm); border: 1px solid var(--border-default); font: 500 11px var(--font-mono); color: var(--text-muted); white-space: nowrap; flex-shrink: 0; }
+        .trace-chip .i { width: 11px; height: 11px; }
+        .trace-col { width: 100%; max-width: 780px; margin: 0 auto; padding: 32px 28px 24px; display: flex; flex-direction: column; gap: 28px; }
+
+        .trace-outcome { padding-bottom: 24px; border-bottom: 1px solid var(--border-default); }
+        .trace-kicker { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; font: 500 10px var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-faint); }
+        .trace-kicker b { color: var(--text-muted); font-weight: 500; }
+        .trace-kicker .sha-pill { letter-spacing: 0; text-transform: none; }
+        .trace-lede { margin-top: 10px; font: 400 20px/1.45 var(--font-serif); color: var(--text-secondary); }
+        .trace-lede strong { font-weight: 400; color: var(--text-primary); }
+        .trace-lede p { margin: 0 0 8px; } .trace-lede p:last-child { margin: 0; }
+        .trace-lede ul, .trace-lede ol { margin: 0 0 8px 20px; }
+        .trace-lede code { font-size: 14px; }
+        .trace-lede-empty { font: 400 20px/1.45 var(--font-serif); color: var(--text-faint); margin-top: 10px; }
+        .trace-stats { display: flex; flex-wrap: wrap; gap: 14px 32px; margin-top: 18px; }
+        .trace-stats b { display: block; font: 500 15px/1 var(--font-mono); color: var(--text-primary); }
+        .trace-stats span { display: block; margin-top: 6px; font: 500 10px var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-faint); }
+
+        .trace-break { display: flex; align-items: center; gap: 12px; font: 500 10px var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-faint); }
+        .trace-break::before, .trace-break::after { content: ''; flex: 1; height: 1px; background: var(--border-muted); }
+
+        .trace-user { align-self: flex-end; max-width: 78%; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+        .trace-bubble { background: var(--bg-muted); color: var(--text-primary); padding: 9px 15px 10px; border-radius: 16px 16px 4px 16px; font: 400 19px/1.35 var(--font-serif); white-space: pre-wrap; overflow-wrap: anywhere; }
+        .trace-attachments { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+        .trace-attachment { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 12px 0 10px; border-radius: var(--radius-md); border: 1px solid var(--border-default); background: var(--bg-subtle); font: 500 12px var(--font-mono); color: var(--text-secondary); }
+        .trace-attachment .i { color: var(--text-muted); }
+        .trace-attachment small { color: var(--text-faint); font-size: 11px; }
+        .trace-msg-meta { display: flex; align-items: center; gap: 10px; font: 400 11px var(--font-mono); color: var(--text-faint); }
+        .trace-msg-meta button { background: none; border: 0; padding: 2px; color: var(--text-faint); cursor: pointer; border-radius: 4px; display: inline-flex; }
+        .trace-msg-meta button:hover { color: var(--text-primary); }
+
+        .trace-agent { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+        .trace-who { display: flex; align-items: center; gap: 7px; font: 500 11px var(--font-mono); color: var(--text-faint); }
+        .trace-who .i { color: var(--accent-flare); }
+        .trace-answer { font-size: 15px; line-height: 1.7; color: var(--text-secondary); overflow-wrap: anywhere; }
+        .trace-answer > *:last-child { margin-bottom: 0; }
+        .trace-answer p, .trace-answer ul, .trace-answer ol, .trace-answer pre, .trace-answer blockquote { margin: 0 0 12px; }
+        .trace-answer strong { color: var(--text-primary); font-weight: 600; }
+        .trace-answer ul, .trace-answer ol { padding-left: 22px; }
+        .trace-answer ul li::marker { content: '— '; color: var(--text-faint); }
+        .trace-answer li { margin: 3px 0; }
+        .trace-answer h4 { font: 600 var(--text-base) var(--font-sans); color: var(--text-primary); margin: 16px 0 6px; }
+        .trace-answer code { font-size: 0.9em; background: var(--bg-muted); border-radius: 4px; padding: 1px 5px; }
+        .trace-answer pre { background: var(--bg-code); border: 1px solid var(--border-muted); border-radius: var(--radius-sm); padding: 10px 12px; overflow-x: auto; }
+        .trace-answer pre code { background: none; padding: 0; font: 400 12.5px/1.6 var(--font-mono); }
+        .trace-answer blockquote { border-left: 2px solid var(--border-strong); padding-left: 12px; color: var(--text-muted); }
+        .trace-answer a { color: var(--accent-hover); }
+
+        .trace-work { align-self: flex-start; max-width: 100%; border: 1px solid var(--border-muted); border-radius: var(--radius-md); }
+        .trace-work > summary { display: flex; align-items: center; gap: 8px; padding: 7px 10px; font: 400 12px var(--font-mono); color: var(--text-muted); cursor: pointer; list-style: none; border-radius: var(--radius-md); }
+        .trace-work > summary::-webkit-details-marker { display: none; }
+        .trace-work > summary b { color: var(--text-secondary); font-weight: 500; }
+        .trace-work > summary .chev { margin-left: auto; transition: transform 0.15s; color: var(--text-faint); }
+        .trace-work[open] > summary { border-bottom: 1px solid var(--border-muted); border-radius: var(--radius-md) var(--radius-md) 0 0; }
+        .trace-work[open] > summary .chev { transform: rotate(90deg); }
+        .trace-work-list { padding: 4px 0; }
+        .trace-tool > summary { display: grid; grid-template-columns: 14px auto minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 5px 10px; font: 400 12px var(--font-mono); color: var(--text-muted); cursor: pointer; list-style: none; }
+        .trace-tool > summary::-webkit-details-marker { display: none; }
+        .trace-tool > summary:hover { color: var(--text-secondary); }
+        .trace-tool > summary b { color: var(--text-secondary); font-weight: 500; }
+        .trace-tool > summary .arg { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-faint); }
+        .trace-tool > summary .at { color: var(--text-faint); }
+        .trace-tool pre { margin: 2px 10px 8px 32px; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--bg-code); border: 1px solid var(--border-muted); color: var(--text-secondary); font: 400 11.5px/1.6 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow-y: auto; }
+
+        .trace-event { align-self: center; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 8px; font: 500 11px var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-faint); }
+        .trace-event .sha-pill { letter-spacing: 0; text-transform: none; }
+
+        .trace-dock { position: sticky; bottom: -64px; padding: 8px 28px 64px; background: linear-gradient(to bottom, transparent, var(--bg-canvas) 28px); }
+        .trace-composer { max-width: 724px; margin: 0 auto; border: 1px solid var(--border-default); border-radius: 14px; background: var(--bg-subtle); }
+        .trace-composer-text { padding: 12px 16px 4px; font: 400 17px/1.4 var(--font-serif); color: var(--text-muted); overflow-wrap: anywhere; }
+        .trace-composer-text code { font: 400 12px var(--font-mono); color: var(--text-secondary); background: var(--bg-muted); padding: 2px 6px; border-radius: 4px; }
+        .trace-composer-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 10px 10px; }
+        .trace-composer-bar .grow { flex: 1; }
+        .trace-resume { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: var(--radius-pill); border: 0; background: var(--text-primary); color: var(--bg-canvas); font: 500 12px var(--font-sans); cursor: pointer; }
+        .trace-resume:hover { opacity: 0.88; }
+        .trace-chat-empty { padding: 48px 28px; }
+
+        @media (max-width: 900px) {
+            .traces-app { grid-template-columns: minmax(0, 1fr); min-height: 0; }
+            .traces-side { position: static; max-height: none; padding-right: 0; border-right: 0; min-width: 0; }
+            .traces-list { margin: 0; padding: 0 0 12px; }
+            .traces-app.has-open .traces-side { display: none; }
+            .traces-app:not(.has-open) .trace-chat { display: none; }
+            .trace-chat-head { padding-left: 0; }
+            .trace-chat-head .trace-back { display: inline-flex; }
+            .trace-chat-head .trace-chip { display: none; }
+            .trace-col { padding: 24px 0 16px; }
+            .trace-dock { position: static; padding: 8px 0 0; background: none; }
+            .trace-user { max-width: 92%; }
+        }
 
         .recorder { position: fixed; inset: 0; z-index: 1000; background: rgba(5,5,4,0.88); display: none; align-items: center; justify-content: center; padding: 24px; }
         .recorder.show { display: flex; }
@@ -1587,7 +1700,7 @@
                             <svg class="i" width="16" height="16" aria-hidden="true"><use href="#i-log-out"/></svg>
                             Sign out
                         </button>
-                        <div class="menu-foot">GitFlare v1.1.19</div>
+                        <div class="menu-foot">GitFlare v1.1.20</div>
                     </div>
                 </div>
             </div>
@@ -1861,20 +1974,24 @@
 
                 <!-- TAB: AI TRACES -->
                 <div id="view-traces" style="display:none;">
-                    <div id="tracesListMode">
-                        <div class="page-head">
-                            <div class="page-title">AI traces</div>
-                            <button class="btn btn-sm btn-icon" data-action="traces-refresh" aria-label="Refresh AI traces">
-                                <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-refresh"/></svg>
-                            </button>
-                        </div>
-                        <div id="tracesContainer"></div>
-                    </div>
-                    <div id="traceDetailMode" style="display:none;">
-                        <button class="back-link" data-action="trace-back">
-                            <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-arrow-left"/></svg> All traces
-                        </button>
-                        <div id="traceDetail"></div>
+                    <div class="traces-app" id="tracesApp">
+                        <aside class="traces-side" aria-label="AI sessions">
+                            <div class="traces-side-head">
+                                <div class="page-title">Sessions</div>
+                                <span class="traces-side-sum" id="tracesSum"></span>
+                                <button class="btn btn-sm btn-icon btn-ghost" data-action="traces-refresh" aria-label="Refresh AI traces" style="margin-left:auto;">
+                                    <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-refresh"/></svg>
+                                </button>
+                            </div>
+                            <label class="traces-search">
+                                <svg class="i" width="14" height="14" aria-hidden="true"><use href="#i-search"/></svg>
+                                <input type="search" id="tracesSearch" placeholder="Search sessions" aria-label="Search sessions" oninput="onTraceSearch(this.value)">
+                            </label>
+                            <div class="traces-agents" id="tracesAgents"></div>
+                            <div class="traces-list" id="tracesContainer"></div>
+                            <div class="traces-side-foot" id="tracesFoot"></div>
+                        </aside>
+                        <section class="trace-chat" id="traceDetail" aria-live="polite"></section>
                     </div>
                 </div>
 
@@ -4883,37 +5000,156 @@
         }
 
         // ─── AI traces ──────────────────────────────────────────────────
-        // Agent sessions logged through MCP (gitflare_trace_log) or the REST API.
+        // Agent sessions logged through MCP (gitflare_trace_log) or the REST API,
+        // shown like a chat app: sessions on the left, the transcript as a thread.
         let traces = [];
         let traceCursor = null;
         let traceTotals = null;
         let activeTrace = null;
+        let traceAgent = '';
+        let traceQuery = '';
+        let traceOpening = null;
+        let traceRepo = null;
 
         const traceUrl = (id = '') => `${repoApi()}/traces${id ? '/' + encodeURIComponent(id) : ''}`;
         const formatTokens = (n) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n || 0);
         const formatCost = (n) => `$${(n || 0).toFixed(2)}`;
+        const traceNarrow = () => window.matchMedia('(max-width: 900px)').matches;
+        const TRACE_AGENT_SHORT = { 'claude-code': 'CC', claude: 'CC', codex: 'CX', cursor: 'CU', gemini: 'GM', copilot: 'GH', aider: 'AI' };
+        const traceAgentShort = (a) => TRACE_AGENT_SHORT[String(a).toLowerCase()] || String(a).replace(/[^a-z0-9]/gi, '').slice(0, 2).toUpperCase();
 
-        /** "12.3k in · 4.1k out", "$0.42", "8 min" — whichever the trace reported. */
-        function traceUsage(t) {
-            const parts = [];
-            if (t.input_tokens != null || t.output_tokens != null) parts.push(`${formatTokens(t.input_tokens)} in · ${formatTokens(t.output_tokens)} out`);
-            if (t.cost_usd != null) parts.push(formatCost(t.cost_usd));
-            if (t.ended_at) parts.push(`${Math.max(1, Math.round((Date.parse(t.ended_at) - Date.parse(t.started_at)) / 60000))} min`);
-            return parts.map(p => `<span>·</span><span class="mono">${esc(p)}</span>`).join('');
+        function traceMinutes(t) {
+            if (!t.ended_at) return null;
+            return Math.max(1, Math.round((Date.parse(t.ended_at) - Date.parse(t.started_at)) / 60000));
+        }
+        const clockTime = (iso) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const dayLabel = (iso) => new Date(iso).toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' });
+
+        function traceGroupLabel(iso) {
+            const d = new Date(iso);
+            const start = new Date(); start.setHours(0, 0, 0, 0);
+            const days = Math.floor((start - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+            if (days <= 0) return 'Today';
+            if (days === 1) return 'Yesterday';
+            if (days < 7) return 'This week';
+            if (days < 30) return 'This month';
+            return d.toLocaleDateString([], { month: 'long', year: 'numeric' });
         }
 
-        function traceMeta(t) {
-            return `<span class="badge">${icon('sparkles', 12)} ${esc(t.agent)}</span>${t.model ? `<span class="mono">${esc(t.model)}</span>` : ''}
-                <span>·</span><strong>${esc(t.author)}</strong><span>·</span><span>${esc(timeAgo(t.started_at))}</span>${traceUsage(t)}`;
+        /**
+         * Step content as logged can be a raw provider message ({"role", "content"} JSON,
+         * content arrays, Langfuse media tokens, "[image …]" and "Attached image … saved at"
+         * markers). Returns readable text plus the attachments it mentioned.
+         */
+        function normalizeTraceContent(raw) {
+            let text = String(raw ?? '');
+            const trimmed = text.trim();
+            if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+                try {
+                    const msg = JSON.parse(trimmed);
+                    if (msg && typeof msg === 'object' && 'content' in msg) text = traceContentText(msg.content);
+                } catch { /* not JSON: keep as written */ }
+            }
+            const attachments = [];
+            text = text.replace(/\[image ([\w.+\/-]+)\s*~?\s*([\d.]+\s*[KMG]?B)\]/gi, (_, mime, size) => {
+                attachments.push({ name: mime.split('/').pop().toUpperCase() + ' image', size });
+                return '';
+            });
+            text = text.replace(/\[Attached (?:image|file) "([^"]+)" is saved at:[^\]\n]*\]/gi, (_, name) => {
+                const slot = attachments.find(a => !a.named);
+                if (slot) { slot.name = name; slot.named = true; } else attachments.push({ name, size: '', named: true });
+                return '';
+            });
+            text = text.replace(/@@@langfuseMedia:[^@]*@@@/g, '');
+            return { text: text.replace(/\n{3,}/g, '\n\n').trim(), attachments };
+        }
+
+        function traceContentText(content) {
+            if (typeof content === 'string') return content;
+            if (Array.isArray(content)) {
+                return content.map(part => typeof part === 'string' ? part
+                    : part?.type === 'text' ? part.text
+                    : part?.type === 'image' || part?.type === 'image_url' ? '[image image/* ~?B]'
+                    : part?.text ?? '').filter(Boolean).join('\n\n');
+            }
+            return JSON.stringify(content, null, 2);
+        }
+
+        /** Tool output: pretty-print JSON, otherwise as written. */
+        function traceToolText(raw) {
+            const s = String(raw ?? '');
+            const t = s.trim();
+            if ((t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'))) {
+                try { return JSON.stringify(JSON.parse(t), null, 2); } catch { /* keep */ }
+            }
+            return s;
+        }
+
+        /** Small, safe markdown for transcripts: paragraphs, lists, headings, quotes, code. */
+        function traceMarkdown(src) {
+            const inline = (s) => {
+                const codes = [];
+                let h = esc(s).replace(/`([^`]+)`/g, (_, c) => { codes.push(c); return `\u0000${codes.length - 1}\u0000`; });
+                h = h.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/(^|[^*\w])\*([^*\s](?:[^*]*?[^*\s])?)\*(?!\*)/g, '$1<em>$2</em>')
+                    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, label, url) => {
+                        const href = safeLinkHref(url);
+                        return href ? `<a href="${href}" target="_blank" rel="noopener noreferrer nofollow">${label}</a>` : label;
+                    });
+                return h.replace(/\u0000(\d+)\u0000/g, (_, n) => `<code>${codes[n]}</code>`);
+            };
+            const lines = String(src || '').split('\n');
+            const out = [];
+            const isBullet = (l) => /^\s*[-*•]\s+/.test(l);
+            const isNumber = (l) => /^\s*\d+[.)]\s+/.test(l);
+            const isBlockStart = (l) => /^```/.test(l) || /^#{1,6}\s/.test(l) || /^>\s?/.test(l) || isBullet(l) || isNumber(l);
+            for (let i = 0; i < lines.length;) {
+                const line = lines[i];
+                if (!line.trim()) { i++; continue; }
+                if (/^```/.test(line)) {
+                    const body = [];
+                    for (i++; i < lines.length && !/^```/.test(lines[i]); i++) body.push(lines[i]);
+                    i++;
+                    out.push(`<pre><code>${esc(body.join('\n'))}</code></pre>`);
+                } else if (/^#{1,6}\s/.test(line)) {
+                    out.push(`<h4>${inline(line.replace(/^#+\s*/, ''))}</h4>`); i++;
+                } else if (/^>\s?/.test(line)) {
+                    const body = [];
+                    for (; i < lines.length && /^>\s?/.test(lines[i]); i++) body.push(inline(lines[i].replace(/^>\s?/, '')));
+                    out.push(`<blockquote>${body.join('<br>')}</blockquote>`);
+                } else if (isBullet(line) || isNumber(line)) {
+                    const ordered = isNumber(line);
+                    const items = [];
+                    for (; i < lines.length && lines[i].trim(); i++) {
+                        const l = lines[i];
+                        if (ordered ? isNumber(l) : isBullet(l)) items.push(l.replace(ordered ? /^\s*\d+[.)]\s+/ : /^\s*[-*•]\s+/, ''));
+                        else if (items.length && !isBlockStart(l)) items[items.length - 1] += ' ' + l.trim();
+                        else break;
+                    }
+                    out.push(`<${ordered ? 'ol' : 'ul'}>${items.map(it => `<li>${inline(it)}</li>`).join('')}</${ordered ? 'ol' : 'ul'}>`);
+                } else {
+                    const body = [];
+                    for (; i < lines.length && lines[i].trim() && !isBlockStart(lines[i]); i++) body.push(inline(lines[i]));
+                    out.push(`<p>${body.join('<br>')}</p>`);
+                }
+            }
+            return out.join('');
         }
 
         async function fetchTraces({ more = false } = {}) {
             const container = document.getElementById('tracesContainer');
             const repoAtStart = activeRepo;
-            if (!more) container.innerHTML = `<div class="card">${skeletonList(4)}</div>`;
+            if (traceRepo !== activeRepo) {
+                traceRepo = activeRepo;
+                traceAgent = '';
+                traceQuery = '';
+                document.getElementById('tracesSearch').value = '';
+            }
+            if (!more) container.innerHTML = skeletonList(6);
             try {
                 const q = new URLSearchParams({ limit: '30' });
                 if (more && traceCursor) q.set('cursor', traceCursor);
+                if (traceAgent) q.set('agent', traceAgent);
                 const res = await apiFetch(`${traceUrl()}?${q}`, { headers: authHeaders() });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const json = await res.json();
@@ -4922,94 +5158,227 @@
                 traceCursor = json.next_cursor || null;
                 traceTotals = json.totals;
                 renderTraces();
+                if (!more && !activeTrace && traces.length && !traceNarrow()) openTrace(traces[0].id);
+                if (!traces.length) renderTraceEmpty();
             } catch (e) {
-                if (!more) container.innerHTML = `<div class="card">${emptyState('Failed to load AI traces.', { error: true })}</div>`;
+                if (!more) container.innerHTML = emptyState('Failed to load AI traces.', { error: true });
                 else toast("Couldn't load more traces", 'error');
             }
         }
 
+        function onTraceSearch(value) {
+            traceQuery = value.trim().toLowerCase();
+            renderTraces();
+        }
+
+        function setTraceAgent(agent) {
+            if (traceAgent === agent) return;
+            traceAgent = agent;
+            exitTraceDetail();
+            fetchTraces();
+        }
+
         function renderTraces() {
             const container = document.getElementById('tracesContainer');
+            const t = traceTotals || { count: traces.length, input_tokens: 0, output_tokens: 0, cost_usd: 0, by_agent: [] };
+            document.getElementById('tracesSum').textContent = t.count ? `${t.count} · ${formatCost(t.cost_usd)}` : '';
+            document.getElementById('tracesFoot').innerHTML = t.count
+                ? `<span><b>${esc(formatTokens(t.input_tokens))}</b> in · <b>${esc(formatTokens(t.output_tokens))}</b> out</span><span><b>${esc(formatCost(t.cost_usd))}</b></span>`
+                : '';
+            const agents = t.by_agent || [];
+            document.getElementById('tracesAgents').innerHTML = agents.length > 1 || traceAgent
+                ? [`<button class="${traceAgent ? '' : 'is-on'}" data-action="trace-agent" data-agent="">All</button>`,
+                   ...agents.map(a => `<button class="${traceAgent === a.agent ? 'is-on' : ''}" data-action="trace-agent" data-agent="${esc(a.agent)}">${esc(a.agent)} ${esc(a.count)}</button>`)].join('')
+                : '';
             if (!traces.length) {
-                container.innerHTML = `<div class="card">${emptyState('<strong>No AI traces yet.</strong> Agents connected to the GitFlare MCP log their sessions here with <code>gitflare_trace_log</code>.', { iconName: 'sparkles' })}</div>`;
+                container.innerHTML = `<div class="idea-body-empty" style="padding:12px 10px;">No sessions yet.</div>`;
                 return;
             }
-            const t = traceTotals || { count: traces.length, input_tokens: 0, output_tokens: 0, cost_usd: 0, by_agent: [] };
-            const stat = (value, label) => `<div class="trace-stat"><b>${esc(value)}</b><span>${esc(label)}</span></div>`;
-            container.innerHTML = `
-                <div class="card trace-totals">
-                    ${stat(t.count, t.count === 1 ? 'session' : 'sessions')}
-                    ${stat(formatTokens(t.input_tokens), 'tokens in')}
-                    ${stat(formatTokens(t.output_tokens), 'tokens out')}
-                    ${stat(formatCost(t.cost_usd), 'cost')}
-                    <div class="trace-agents">${t.by_agent.map(a => `<span class="badge" title="${esc(formatCost(a.cost_usd))}">${esc(a.agent)} · ${esc(a.count)}</span>`).join('')}</div>
-                </div>
-                <div class="card">${traces.map(tr => {
-                    const snippet = (tr.summary || '').replace(/[#*`>\-]/g, '').replace(/\s+/g, ' ').trim();
-                    return `<div class="idea-row" data-action="open-trace" data-id="${esc(tr.id)}" role="button" tabindex="0">
-                        <div class="idea-row-main">
-                            <div class="idea-row-title">${esc(tr.title)}</div>
-                            ${snippet ? `<div class="idea-row-snippet">${esc(snippet.slice(0, 180))}</div>` : ''}
-                            <div class="idea-meta">${traceMeta(tr)}</div>
-                        </div>
-                    </div>`;
-                }).join('')}</div>
-                ${traceCursor ? `<div class="diary-more"><button class="btn btn-sm" data-action="traces-more">Load more</button></div>` : ''}`;
+            const shown = traceQuery
+                ? traces.filter(tr => [tr.title, tr.summary, tr.agent, tr.model, tr.author].some(v => String(v || '').toLowerCase().includes(traceQuery)))
+                : traces;
+            let lastGroup = '';
+            container.innerHTML = (shown.length ? shown.map(tr => {
+                const group = traceGroupLabel(tr.started_at);
+                const head = group !== lastGroup ? `<div class="traces-group">${esc(group)}</div>` : '';
+                lastGroup = group;
+                return `${head}<div class="trace-item${activeTrace?.id === tr.id || traceOpening === tr.id ? ' is-active' : ''}" data-action="open-trace" data-id="${esc(tr.id)}" role="button" tabindex="0" title="${esc(tr.title)}">
+                    <div class="trace-item-title">${esc(tr.title)}</div>
+                    <div class="trace-item-meta"><span class="ab" title="${esc(tr.agent)}">${esc(traceAgentShort(tr.agent))}</span><span>${esc(timeAgo(tr.started_at))}</span>${tr.cost_usd != null ? `<span class="cost">${esc(formatCost(tr.cost_usd))}</span>` : ''}</div>
+                </div>`;
+            }).join('') : `<div class="idea-body-empty" style="padding:12px 10px;">No sessions match “${esc(traceQuery)}”.</div>`)
+                + (traceCursor ? `<div class="traces-more"><button class="btn btn-sm btn-ghost" data-action="traces-more">Load older</button></div>` : '');
+        }
+
+        function renderTraceEmpty() {
+            document.getElementById('tracesApp').classList.add('has-open');
+            document.getElementById('traceDetail').innerHTML = `<div class="trace-chat-empty">${emptyState('<strong>No AI traces yet.</strong> Agents connected to the GitFlare MCP log their sessions here with <code>gitflare_trace_log</code>.', { iconName: 'sparkles' })}</div>`;
         }
 
         function exitTraceDetail() {
             activeTrace = null;
-            document.getElementById('traceDetailMode').style.display = 'none';
-            document.getElementById('tracesListMode').style.display = 'block';
+            traceOpening = null;
+            document.getElementById('tracesApp').classList.remove('has-open');
+            document.getElementById('traceDetail').innerHTML = '';
+            document.querySelectorAll('.trace-item.is-active').forEach(el => el.classList.remove('is-active'));
         }
 
         async function openTrace(id) {
-            document.getElementById('tracesListMode').style.display = 'none';
-            document.getElementById('traceDetailMode').style.display = 'block';
+            traceOpening = id;
+            document.getElementById('tracesApp').classList.add('has-open');
+            document.querySelectorAll('.trace-item').forEach(el => el.classList.toggle('is-active', el.dataset.id === id));
             const host = document.getElementById('traceDetail');
-            host.innerHTML = `<div class="card">${skeletonList(3)}</div>`;
+            host.innerHTML = `<div class="trace-col">${skeletonList(4)}</div>`;
             try {
                 const res = await apiFetch(traceUrl(id), { headers: authHeaders() });
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                activeTrace = (await res.json()).data;
+                const data = (await res.json()).data;
+                if (traceOpening !== id) return;
+                activeTrace = data;
                 renderTraceDetail();
             } catch (e) {
-                host.innerHTML = `<div class="card">${emptyState('Failed to load trace.', { error: true })}</div>`;
+                if (traceOpening === id) host.innerHTML = `<div class="trace-chat-empty">${emptyState('Failed to load trace.', { error: true })}</div>`;
             }
         }
 
-        function renderTraceStep(s) {
-            const label = `${esc(s.role)}${s.name ? ` · <span class="mono">${esc(s.name)}</span>` : ''}${s.at ? ` · ${esc(timeAgo(s.at))}` : ''}`;
-            const body = `<pre>${esc(s.content)}</pre>`;
-            return s.role === 'tool' || s.role === 'system'
-                ? `<details class="card trace-step role-${esc(s.role)}"><summary class="trace-step-role">${label}</summary>${body}</details>`
-                : `<div class="card trace-step role-${esc(s.role)}"><div class="trace-step-role">${label}</div>${body}</div>`;
+        const TRACE_TOOL_ICON = { read: 'file', write: 'file-text', edit: 'pencil', multiedit: 'pencil', bash: 'terminal', shell: 'terminal', webfetch: 'globe', websearch: 'search', grep: 'search', glob: 'folder', ls: 'folder', task: 'sparkles', agent: 'sparkles' };
+        const traceToolIcon = (name) => TRACE_TOOL_ICON[String(name || '').toLowerCase().replace(/[^a-z]/g, '')] || 'braces';
+
+        function traceDurationLabel(fromIso, toIso) {
+            if (!fromIso || !toIso) return '';
+            const s = Math.round((Date.parse(toIso) - Date.parse(fromIso)) / 1000);
+            if (!(s > 0)) return '';
+            return s < 60 ? `${s}s` : s < 3600 ? `${Math.floor(s / 60)}m ${s % 60}s` : `${Math.floor(s / 3600)}h ${Math.round((s % 3600) / 60)}m`;
+        }
+
+        function renderTraceWork(tools, endAt) {
+            if (!tools.length) return '';
+            const took = traceDurationLabel(tools[0].at, endAt || tools[tools.length - 1].at);
+            const n = tools.length;
+            const rows = tools.map(s => {
+                const isSystem = s.role === 'system';
+                const body = traceToolText(s.content);
+                const first = body.split('\n').find(l => l.trim()) || '';
+                return `<details class="trace-tool"><summary>${icon(isSystem ? 'info' : traceToolIcon(s.name), 13)}<b>${esc(isSystem ? 'system' : (s.name || 'tool'))}</b><span class="arg">${esc(first.slice(0, 200))}</span>${s.at ? `<span class="at">${esc(clockTime(s.at))}</span>` : ''}</summary><pre>${esc(body)}</pre></details>`;
+            }).join('');
+            return `<details class="trace-work"><summary>${icon('sparkles', 13)}${took ? `<b>Worked for ${esc(took)}</b> · ` : ''}${n} ${n === 1 ? 'step' : 'steps'}${icon('chevron-right', 13, 'chev')}</summary><div class="trace-work-list">${rows}</div></details>`;
         }
 
         function renderTraceDetail() {
             const t = activeTrace;
             if (!t) return;
             const refs = t.refs || {};
-            const pills = [
-                ...(refs.commits || []).map(sha => `<span class="sha-pill" role="button" tabindex="0" data-action="idea-open-commit" data-sha="${esc(sha)}" title="Open commit">${icon('commit', 12)}${esc(shortSha(sha))}</span>`),
-                refs.branch ? `<span class="badge">${icon('branch', 12)} ${esc(refs.branch)}</span>` : '',
-                refs.ci_run_id ? `<span class="sha-pill" role="button" tabindex="0" data-action="jump-ci-run" data-run-id="${esc(refs.ci_run_id)}">${icon('play', 12)} CI run</span>` : '',
-            ].filter(Boolean).join('');
             const steps = t.steps || [];
+            const minutes = traceMinutes(t);
+            const commits = refs.commits || [];
+            const commitPill = (sha) => `<span class="sha-pill" role="button" tabindex="0" data-action="idea-open-commit" data-sha="${esc(sha)}" title="Open commit">${icon('commit', 12)}${esc(shortSha(sha))}</span>`;
+            const stat = (value, label) => `<div><b>${esc(value)}</b><span>${esc(label)}</span></div>`;
+            const stats = [
+                t.input_tokens != null ? stat(formatTokens(t.input_tokens), 'tokens in') : '',
+                t.output_tokens != null ? stat(formatTokens(t.output_tokens), 'tokens out') : '',
+                t.cost_usd != null ? stat(formatCost(t.cost_usd), 'cost') : '',
+                minutes ? stat(`${minutes}m`, 'duration') : '',
+                stat(String(steps.length || t.step_count || 0), steps.length === 1 ? 'step' : 'steps'),
+            ].join('');
+
+            let thread = `<div class="trace-break">${esc(dayLabel(t.started_at))} · ${esc(clockTime(t.started_at))}</div>`;
+            let pending = [];
+            let lastAt = t.started_at;
+            const flush = (endAt) => { const html = renderTraceWork(pending, endAt); pending = []; return html; };
+            steps.forEach((s, idx) => {
+                if (s.role === 'tool' || s.role === 'system') { pending.push(s); return; }
+                if (s.at && lastAt && Date.parse(s.at) - Date.parse(lastAt) > 10 * 60000 && s.role === 'user') {
+                    const gap = Math.round((Date.parse(s.at) - Date.parse(lastAt)) / 60000);
+                    thread += flush() + `<div class="trace-break">${gap >= 120 ? esc(`${dayLabel(s.at)} · ${clockTime(s.at)}`) : `${gap} min later`}</div>`;
+                }
+                if (s.at) lastAt = s.at;
+                const { text, attachments } = normalizeTraceContent(s.content);
+                if (s.role === 'user') {
+                    thread += flush();
+                    thread += `<div class="trace-user">
+                        ${attachments.length ? `<div class="trace-attachments">${attachments.map(a => `<span class="trace-attachment">${icon('camera', 15)}${esc(a.name)}${a.size ? ` <small>${esc(a.size)}</small>` : ''}</span>`).join('')}</div>` : ''}
+                        ${text ? `<div class="trace-bubble">${esc(text)}</div>` : ''}
+                        <div class="trace-msg-meta"><span>${esc(t.author)}${s.at ? ` · ${esc(clockTime(s.at))}` : ''}</span></div>
+                    </div>`;
+                } else {
+                    thread += `<div class="trace-agent">
+                        <div class="trace-who">${icon('sparkles', 13)}${esc(t.agent)}</div>
+                        ${flush(s.at)}
+                        <div class="trace-answer">${traceMarkdown(text)}</div>
+                        <div class="trace-msg-meta">${s.at ? `<span>${esc(clockTime(s.at))}</span>` : ''}<button data-action="trace-copy-step" data-index="${idx}" aria-label="Copy message" title="Copy">${icon('copy', 13)}</button></div>
+                    </div>`;
+                }
+            });
+            if (pending.length) thread += `<div class="trace-agent"><div class="trace-who">${icon('sparkles', 13)}${esc(t.agent)}</div>${flush()}</div>`;
+            if (!steps.length) thread += `<div class="idea-body-empty" style="text-align:center;">No transcript was logged with this session.</div>`;
+            if (commits.length || refs.ci_run_id) {
+                thread += `<div class="trace-event">${commits.length ? `Committed ${commits.map(commitPill).join('')}` : ''}${refs.branch ? ` on ${esc(refs.branch)}` : ''}${refs.ci_run_id ? `<span class="sha-pill" role="button" tabindex="0" data-action="jump-ci-run" data-run-id="${esc(refs.ci_run_id)}">${icon('play', 12)} CI run</span>` : ''}</div>`;
+            }
+
+            const resume = traceResumeCommand(t);
+            const ended = t.ended_at ? `Session ended ${clockTime(t.ended_at)}` : `Session started ${clockTime(t.started_at)}`;
             document.getElementById('traceDetail').innerHTML = `
-                <div class="card idea-head">
-                    <div class="idea-head-top">
-                        <div style="min-width:0; flex:1;">
-                            <div class="idea-title" style="cursor:default;">${esc(t.title)}</div>
-                            <div class="idea-meta" style="margin-top:6px;">${traceMeta(t)}</div>
-                            ${pills ? `<div class="idea-log-refs">${pills}</div>` : ''}
-                        </div>
-                        <button class="btn btn-sm btn-ghost btn-danger" data-action="trace-delete">${icon('trash', 14)} Delete</button>
+                <div class="trace-chat-head">
+                    <button class="btn btn-sm btn-icon btn-ghost trace-back" data-action="trace-back" aria-label="All sessions">${icon('arrow-left', 14)}</button>
+                    <h2 title="${esc(t.title)}">${esc(t.title)}</h2>
+                    <span class="trace-chip">${icon('sparkles', 11)}${esc(t.agent)}</span>
+                    ${t.model ? `<span class="trace-chip">${esc(t.model)}</span>` : ''}
+                    <div class="actions">
+                        <button class="btn btn-sm btn-icon btn-ghost" data-action="trace-json" aria-label="Download JSON" title="Download JSON">${icon('braces', 14)}</button>
+                        <button class="btn btn-sm btn-icon btn-ghost" data-action="trace-delete" aria-label="Delete trace" title="Delete">${icon('trash', 14)}</button>
                     </div>
-                    ${t.summary ? `<div class="idea-body"><div class="markdown-body">${renderSimpleMarkdown(t.summary)}</div></div>` : ''}
                 </div>
-                <div class="idea-section-title">Transcript${steps.length ? ` · ${steps.length}` : ''}</div>
-                ${steps.length ? `<div class="trace-steps">${steps.map(renderTraceStep).join('')}</div>` : `<div class="idea-body-empty">No transcript was logged with this session.</div>`}`;
+                <div class="trace-col">
+                    <div class="trace-outcome">
+                        <div class="trace-kicker"><b>Outcome</b><span>${esc(dayLabel(t.started_at))} · ${esc(clockTime(t.started_at))}</span><span>by ${esc(t.author)}</span>${commits.slice(0, 2).map(commitPill).join('')}${refs.branch ? `<span>${icon('branch', 11)} ${esc(refs.branch)}</span>` : ''}</div>
+                        ${t.summary ? `<div class="trace-lede">${traceMarkdown(t.summary)}</div>` : `<div class="trace-lede-empty">No summary was logged.</div>`}
+                        <div class="trace-stats">${stats}</div>
+                    </div>
+                    ${thread}
+                </div>
+                <div class="trace-dock"><div class="trace-composer">
+                    <div class="trace-composer-text">${esc(ended)}${resume ? ` — pick it up with <code>${esc(resume)}</code>` : t.session_id ? ` · session <code>${esc(t.session_id)}</code>` : ''}</div>
+                    <div class="trace-composer-bar">
+                        <span class="trace-chip">${icon('sparkles', 11)}${esc(t.agent)}</span>
+                        ${t.model ? `<span class="trace-chip">${esc(t.model)}</span>` : ''}
+                        ${refs.branch ? `<span class="trace-chip">${icon('branch', 11)}${esc(refs.branch)}</span>` : ''}
+                        <span class="grow"></span>
+                        ${resume || t.session_id ? `<button class="trace-resume" data-action="trace-copy-resume">${icon('copy', 13)} ${resume ? 'Copy resume command' : 'Copy session id'}</button>` : ''}
+                    </div>
+                </div></div>`;
+        }
+
+        function traceResumeCommand(t) {
+            if (!t.session_id) return '';
+            const agent = String(t.agent).toLowerCase();
+            if (agent === 'claude-code' || agent === 'claude') return `claude --resume ${t.session_id}`;
+            if (agent === 'codex') return `codex resume ${t.session_id}`;
+            return '';
+        }
+
+        function copyTraceStep(index) {
+            const s = activeTrace?.steps?.[Number(index)];
+            if (!s) return;
+            navigator.clipboard.writeText(normalizeTraceContent(s.content).text);
+            toast('Copied message', 'success');
+        }
+
+        function copyTraceResume() {
+            if (!activeTrace) return;
+            const value = traceResumeCommand(activeTrace) || activeTrace.session_id;
+            if (!value) return;
+            navigator.clipboard.writeText(value);
+            toast('Copied', 'success');
+        }
+
+        function downloadTraceJson() {
+            if (!activeTrace) return;
+            const blob = new Blob([JSON.stringify(activeTrace, null, 2)], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `trace-${activeTrace.id}.json`;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(a.href), 1000);
         }
 
         async function deleteTrace() {
@@ -7403,6 +7772,10 @@
                 case 'open-trace': openTrace(d.id); break;
                 case 'trace-back': exitTraceDetail(); break;
                 case 'trace-delete': deleteTrace(); break;
+                case 'trace-agent': setTraceAgent(d.agent || ''); break;
+                case 'trace-json': downloadTraceJson(); break;
+                case 'trace-copy-resume': copyTraceResume(); break;
+                case 'trace-copy-step': copyTraceStep(d.index); break;
                 case 'open-idea':
                     openIdea(d.id);
                     break;
